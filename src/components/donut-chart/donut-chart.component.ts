@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, OnInit, ElementRef, ViewChild, OnChanges, SimpleChanges, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import * as d3 from 'd3';
 
@@ -17,15 +17,25 @@ import * as d3 from 'd3';
     </div>
   `
 })
-export class DonutChartComponent implements OnInit {
+export class DonutChartComponent implements OnInit, OnChanges, AfterViewInit {
   @Input() statusCounts: { [key: string]: number } = {};
   @Input() title: string = '';
   @Input() subtitle: string = '';
   @ViewChild('chartRef') chartRef!: ElementRef;
   @ViewChild('legendRef') legendRef!: ElementRef;
+  private viewInitialized = false;
 
-  ngOnInit() {
-    setTimeout(() => this.createChart(), 100);
+  ngOnInit() {}
+
+  ngAfterViewInit(): void {
+    this.viewInitialized = true;
+    this.createChart();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (this.viewInitialized && (changes['statusCounts'])) {
+      this.createChart();
+    }
   }
 
   private createChart() {
@@ -135,6 +145,8 @@ export class DonutChartComponent implements OnInit {
       .text("Total");
 
     // Add hover effects
+    // Ensure single tooltip instance
+    d3.selectAll("body > div.tooltip").remove();
     const tooltip = d3.select("body").append("div")
       .attr("class", "tooltip");
 

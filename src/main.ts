@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { HttpClientModule } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { importProvidersFrom } from '@angular/core';
 import { DataService, DashboardData } from './services/data.service';
 import { ThemeService } from './services/theme.service';
@@ -19,6 +20,7 @@ import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     KpiCardsComponent,
     LineChartComponent,
     BarChartComponent,
@@ -106,7 +108,30 @@ import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-
                 <p class="card-subtitle">Distribution of Demand by SPOCs</p>
               </div>
               <div class="card-content">
-                <app-donut-chart [statusCounts]="getSpocDemandCounts()"></app-donut-chart>
+                <div class="filter-controls">
+                  <div class="filter-group">
+                    <span class="filter-label">View</span>
+                    <div class="radio-group">
+                      <label class="radio-option">
+                        <input type="radio" name="demandView" [value]="'Current'" [(ngModel)]="selectedDemandView" />
+                        <span>Current</span>
+                      </label>
+                      <label class="radio-option">
+                        <input type="radio" name="demandView" [value]="'All'" [(ngModel)]="selectedDemandView" />
+                        <span>All</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="filter-group">
+                    <span class="filter-label">Month</span>
+                    <select class="filter-select" [(ngModel)]="selectedMonthId">
+                      <option [ngValue]="currentMonthId">{{ formatMonthLabel(currentMonthId) }} (Current)</option>
+                      <option [ngValue]="''">All Months</option>
+                      <option *ngFor="let m of getAvailableMonthIds()" [ngValue]="m">{{ formatMonthLabel(m) }}</option>
+                    </select>
+                  </div>
+                </div>
+                <app-donut-chart [statusCounts]="getFilteredSpocDemandCounts()"></app-donut-chart>
               </div>
             </div>
           </div>
@@ -120,7 +145,17 @@ import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-
                 <p class="card-subtitle">Breakdown of Demands by status</p>
               </div>
               <div class="card-content">
-                <app-donut-chart [statusCounts]="dashboardData.statusCounts"></app-donut-chart>
+                <div class="filter-controls">
+                  <div class="filter-group">
+                    <span class="filter-label">Month</span>
+                    <select class="filter-select" [(ngModel)]="selectedStatusMonthId">
+                      <option [ngValue]="currentMonthId">{{ formatMonthLabel(currentMonthId) }} (Current)</option>
+                      <option [ngValue]="''">All Months</option>
+                      <option *ngFor="let m of getAvailableMonthIds()" [ngValue]="m">{{ formatMonthLabel(m) }}</option>
+                    </select>
+                  </div>
+                </div>
+                <app-donut-chart [statusCounts]="getFilteredStatusCounts()"></app-donut-chart>
               </div>
             </div>
           </div>
@@ -134,8 +169,30 @@ import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-
                 <p class="card-subtitle">Demand Distribution by Skills</p>
               </div>
               <div class="card-content">
-                <app-horizontal-bar-chart [data]="getSkillCurrentDemand()"></app-horizontal-bar-chart>
-
+                <div class="filter-controls">
+                  <div class="filter-group">
+                    <span class="filter-label">View</span>
+                    <div class="radio-group">
+                      <label class="radio-option">
+                        <input type="radio" name="skillDemandView" [value]="'Current'" [(ngModel)]="selectedSkillDemandView" />
+                        <span>Current</span>
+                      </label>
+                      <label class="radio-option">
+                        <input type="radio" name="skillDemandView" [value]="'All'" [(ngModel)]="selectedSkillDemandView" />
+                        <span>All</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="filter-group">
+                    <span class="filter-label">Month</span>
+                    <select class="filter-select" [(ngModel)]="selectedSkillMonthId">
+                      <option [ngValue]="currentMonthId">{{ formatMonthLabel(currentMonthId) }} (Current)</option>
+                      <option [ngValue]="''">All Months</option>
+                      <option *ngFor="let m of getAvailableMonthIds()" [ngValue]="m">{{ formatMonthLabel(m) }}</option>
+                    </select>
+                  </div>
+                </div>
+                <app-horizontal-bar-chart [data]="getFilteredSkillDemandCounts()"></app-horizontal-bar-chart>
               </div>
             </div>
           </div>
@@ -216,6 +273,13 @@ import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-
 export class App implements OnInit {
   dashboardData: DashboardData | null = null;
   loading = true;
+  selectedDemandView: 'Current' | 'All' = 'Current';
+  selectedMonthId: string = '';
+  currentMonthId: string = '';
+  selectedStatusMonthId: string = '';
+  // Part 4 separate state
+  selectedSkillDemandView: 'Current' | 'All' = 'Current';
+  selectedSkillMonthId: string = '';
 
   constructor(
     private dataService: DataService,
@@ -231,6 +295,11 @@ export class App implements OnInit {
     this.dataService.getDashboardData().subscribe({
       next: (data) => {
         this.dashboardData = data;
+        this.currentMonthId = this.getCurrentMonthId();
+        // Default month selection: current month
+        this.selectedMonthId = this.currentMonthId;
+        this.selectedStatusMonthId = this.currentMonthId;
+        this.selectedSkillMonthId = this.currentMonthId;
         this.loading = false;
       },
       error: (error) => {
@@ -285,6 +354,95 @@ getSupplyRequiredCount(): number {
         const positions = d.positions ?? 0;
         acc[spoc] = (acc[spoc] || 0) + positions;
       }
+      return acc;
+    }, {} as { [key: string]: number });
+  }
+  
+  // Part 2: Filters and computed SPOC distribution
+  getFilteredSpocDemandCounts(): { [key: string]: number } {
+    if (!this.dashboardData || !this.dashboardData.demands) return {};
+    const monthId = this.selectedMonthId || '';
+    const view = this.selectedDemandView;
+    const ignoreRadio = !!monthId && monthId !== this.currentMonthId; // past month selection ignores radio
+
+    const filtered = this.dashboardData.demands.filter(d => {
+      const demandMonth = (d.date || '').slice(0, 7); // YYYY-MM
+      const matchesMonth = monthId ? demandMonth === monthId : true;
+      if (!ignoreRadio && view === 'Current') {
+        return matchesMonth && (d.status?.toLowerCase() === 'supply required');
+      }
+      // view === 'All'
+      return matchesMonth;
+    });
+
+    return filtered.reduce((acc, d) => {
+      const spoc = d.spoc || 'Unknown';
+      const positions = d.positions ?? 0;
+      acc[spoc] = (acc[spoc] || 0) + positions;
+      return acc;
+    }, {} as { [key: string]: number });
+  }
+
+  getAvailableMonthIds(): string[] {
+    if (!this.dashboardData) return [];
+    const ids = Array.from(new Set(this.dashboardData.demands
+      .map(d => (d.date || '').slice(0, 7))
+      .filter(m => !!m)));
+    // Ensure current month shows first in dropdown list uniqueness
+    return ids
+      .filter(id => id !== this.currentMonthId)
+      .sort((a, b) => a < b ? 1 : -1); // desc
+  }
+
+  getCurrentMonthId(): string {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = (now.getMonth() + 1).toString().padStart(2, '0');
+    return `${y}-${m}`;
+  }
+
+  formatMonthLabel(id: string): string {
+    if (!id) return 'All Months';
+    const [y, m] = id.split('-').map(x => parseInt(x, 10));
+    const dt = new Date(y, (m || 1) - 1, 1);
+    return dt.toLocaleString(undefined, { month: 'short', year: 'numeric' });
+  }
+
+  // Part 4: Current Demand by Skill with same filter logic
+  getFilteredSkillDemandCounts(): { [key: string]: number } {
+    if (!this.dashboardData || !this.dashboardData.demands) return {};
+    const monthId = this.selectedSkillMonthId || '';
+    const view = this.selectedSkillDemandView;
+
+    const filtered = this.dashboardData.demands.filter(d => {
+      const demandMonth = (d.date || '').slice(0, 7);
+      const matchesMonth = monthId ? demandMonth === monthId : true;
+      if (view === 'Current') {
+        return matchesMonth && (d.status?.toLowerCase() === 'supply required');
+      }
+      return matchesMonth;
+    });
+
+    return filtered.reduce((acc, d) => {
+      const skill = d.skill || 'Unknown';
+      const positions = d.positions ?? 0;
+      acc[skill] = (acc[skill] || 0) + positions;
+      return acc;
+    }, {} as { [key: string]: number });
+  }
+
+  // Part 3: Demand by Status filtered by month
+  getFilteredStatusCounts(): { [key: string]: number } {
+    if (!this.dashboardData || !this.dashboardData.demands) return {};
+    const monthId = this.selectedStatusMonthId || '';
+    const filtered = this.dashboardData.demands.filter(d => {
+      const demandMonth = (d.date || '').slice(0, 7);
+      return monthId ? demandMonth === monthId : true;
+    });
+    return filtered.reduce((acc, d) => {
+      const status = d.status || 'Unknown';
+      const positions = d.supplyRequired || d.positions || 0;
+      acc[status] = (acc[status] || 0) + positions;
       return acc;
     }, {} as { [key: string]: number });
   }

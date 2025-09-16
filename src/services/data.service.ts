@@ -42,6 +42,7 @@ private SUBMISSION_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQ
 
 private DEMAND_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7Pm_7pTn04ONGLY_xA69cq2ZHP9wf7Hb5VlFBJLFdGjL9ocdgnHo5fxeA6Dtjq5dPzGDs7/pub?gid=1637620106&single=true&output=csv';
 
+private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7Pm_7pTn04ONGLY_xA69cq2ZHP9wf7Hb5VlFBJLFdGjL9ocdgnHo5fxeA6Dtjq5dPzGDs7/pub?gid=364112528&single=true&output=csv';
   constructor(private http: HttpClient) {}
 
   getDashboardData(): Observable<DashboardData> {
