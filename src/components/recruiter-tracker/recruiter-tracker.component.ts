@@ -75,7 +75,7 @@ export interface RecruiterActivityData {
         </div>
 
         <!-- Skill Distribution Pie Chart -->
-        <div class="chart-section">
+        <div class="chart-section" style="display: none;">
           <h4 class="chart-section-title">Skill Distribution</h4>
           <div class="chart-container" style="height: 400px;">
             <svg #pieChartRef></svg>
@@ -122,6 +122,20 @@ export interface RecruiterActivityData {
       font-size: 0.75rem;
       color: var(--text-secondary);
     }
+
+    .tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.2;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      z-index: 9999;
+    }
   `]
 })
 export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
@@ -137,23 +151,34 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
   availableMonths: { [key: string]: string } = {};
   availableRecruiters: string[] = [];
   filteredData: RecruiterActivityData[] = [];
+  private redrawTimer: any;
+  private onResize = () => this.scheduleCreateCharts();
 
   ngOnInit() {
     this.initializeFilters();
-    setTimeout(() => this.createCharts(), 200);
-    window.addEventListener('resize', () => this.createCharts());
+    this.scheduleCreateCharts();
+    window.addEventListener('resize', this.onResize);
   }
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['data'] && this.data.length > 0) {
       this.initializeFilters();
       this.filterData();
-      setTimeout(() => this.createCharts(), 200);
+      this.scheduleCreateCharts();
     }
   }
 
   ngOnDestroy() {
-    window.removeEventListener('resize', () => this.createCharts());
+    window.removeEventListener('resize', this.onResize);
+  }
+
+  private scheduleCreateCharts(delay: number = 80) {
+    if (this.redrawTimer) {
+      clearTimeout(this.redrawTimer);
+    }
+    this.redrawTimer = setTimeout(() => {
+      this.createCharts();
+    }, delay);
   }
 
   private initializeFilters() {
@@ -190,17 +215,17 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
 
   onViewTypeChange() {
     this.filterData();
-    this.createCharts();
+    this.scheduleCreateCharts();
   }
 
   onMonthChange() {
     this.filterData();
-    this.createCharts();
+    this.scheduleCreateCharts();
   }
 
   onRecruiterChange() {
     this.filterData();
-    this.createCharts();
+    this.scheduleCreateCharts();
   }
 
   private filterData() {
@@ -215,16 +240,16 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
 
   private createCharts() {
     this.createStackedBarChart();
-    this.createPieChart();
+    // Skip rendering hidden pie chart for performance
     this.createTrendChart();
   }
 
   private createStackedBarChart() {
     const element = this.stackedBarRef.nativeElement;
-    const margin = { top: 20, right: 80, bottom: 80, left: 60 };
+    const margin = { top: 20, right: 20, bottom: 120, left: 60 };
     const containerWidth = element.parentElement?.clientWidth || 900;
     const width = containerWidth - margin.left - margin.right;
-    const height = 400 - margin.top - margin.bottom;
+    const height = 500 - margin.top - margin.bottom;
 
     d3.select(element).selectAll("*").remove();
     d3.select("body").selectAll(".tooltip").remove();
@@ -287,15 +312,26 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
       .call(d3.axisBottom(xScale))
       .selectAll("text")
       .style("text-anchor", "end")
-      .attr("dx", "-.8em")
+      .attr("dx", "-.5em")
       .attr("dy", ".15em")
-      .attr("transform", "rotate(-45)")
+      .attr("transform", "rotate(-30)")
       .style("font-size", "10px")
       .style("color", "var(--text-secondary)");
 
     g.append("g")
-      .call(d3.axisLeft(yScale))
+      .call(d3.axisLeft(yScale).ticks(6).tickFormat(d3.format("~s")))
       .style("color", "var(--text-secondary)");
+
+    // gridlines
+    g.append("g")
+      .attr("class", "grid")
+      .call(d3.axisLeft(yScale)
+        .ticks(6)
+        .tickSize(-width)
+        .tickFormat(() => ""))
+      .selectAll("line")
+      .attr("stroke", "var(--border-color)")
+      .attr("stroke-opacity", 0.3);
 
     // Add stacked bars
     g.selectAll(".stack")
@@ -310,31 +346,32 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
       .attr("y", height)
       .attr("height", 0)
       .attr("width", xScale.bandwidth())
+      .attr("rx", 3)
       .transition()
       .delay((d, i) => i * 100)
       .duration(800)
       .attr("y", d => yScale(d[1]))
       .attr("height", d => yScale(d[0]) - yScale(d[1]));
 
-    // Add legend
+    // Add legend below chart, centered
+    const legendLabels = ['CVs Sourced', 'Calls Connected', 'Submission', 'Resubmittal'];
     const legend = svg.append("g")
-      .attr("transform", `translate(${width + margin.left + 10}, 20)`);
+      .attr("transform", `translate(${margin.left}, ${height + margin.top + 50})`);
 
-    const legendLabels = ['CVs Sourced', 'Calls Connected', 'Recommended', 'Resubmittal'];
     const legendItems = legend.selectAll(".legend-item")
       .data(keys)
       .enter().append("g")
       .attr("class", "legend-item")
-      .attr("transform", (d, i) => `translate(0, ${i * 20})`);
+      .attr("transform", (d, i) => `translate(${i * 160}, 0)`);
 
     legendItems.append("rect")
-      .attr("width", 12)
-      .attr("height", 12)
-      .attr("fill", (d, i) => color(d));
+      .attr("width", 14)
+      .attr("height", 14)
+      .attr("fill", (d) => color(d));
 
     legendItems.append("text")
-      .attr("x", 18)
-      .attr("y", 9)
+      .attr("x", 20)
+      .attr("y", 10)
       .attr("dy", ".35em")
       .style("font-size", "12px")
       .style("fill", "var(--text-primary)")
@@ -345,7 +382,7 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
 
     g.selectAll(".stack rect")
       .on("mouseover", function(event, d: any) {
-        const key = d3.select(this.parentNode).datum() as any;
+        const key = d3.select((this as SVGElement).parentElement).datum() as any;
         const keyIndex = keys.indexOf(key.key);
         const value = d[1] - d[0];
         
@@ -475,12 +512,13 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
 
   private createTrendChart() {
     const element = this.trendChartRef.nativeElement;
-    const margin = { top: 20, right: 80, bottom: 40, left: 60 };
+    const margin = { top: 20, right: 20, bottom: 100, left: 60 };
     const containerWidth = element.parentElement?.clientWidth || 900;
     const width = containerWidth - margin.left - margin.right;
-    const height = 350 - margin.top - margin.bottom;
+    const height = 380 - margin.top - margin.bottom;
 
     d3.select(element).selectAll("*").remove();
+    d3.select("body").selectAll(".tooltip").remove();
 
     const svg = d3.select(element)
       .attr("width", width + margin.left + margin.right)
@@ -564,8 +602,19 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
       .style("color", "var(--text-secondary)");
 
     g.append("g")
-      .call(d3.axisLeft(yScale))
+      .call(d3.axisLeft(yScale).ticks(6).tickFormat(d3.format("~s")))
       .style("color", "var(--text-secondary)");
+
+    // gridlines
+    g.append("g")
+      .attr("class", "grid")
+      .call(d3.axisLeft(yScale)
+        .ticks(6)
+        .tickSize(-width)
+        .tickFormat(() => ""))
+      .selectAll("line")
+      .attr("stroke", "var(--border-color)")
+      .attr("stroke-opacity", 0.3);
 
     // Line generators
     const lineCV = d3.line<any>()
@@ -586,9 +635,9 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
     // Add lines
     const colors = ['#4A90E2', '#87CEEB', '#1B365D'];
     const lines = [
-      { data: trendData, line: lineCV, color: colors[0], label: 'CVs Sourced' },
-      { data: trendData, line: lineCalls, color: colors[1], label: 'Calls Connected' },
-      { data: trendData, line: lineRecommended, color: colors[2], label: 'Recommended' }
+      { key: 'cvsSourced', data: trendData, line: lineCV, color: colors[0], label: 'CVs Sourced' },
+      { key: 'callsConnected', data: trendData, line: lineCalls, color: colors[1], label: 'Calls Connected' },
+      { key: 'recommended', data: trendData, line: lineRecommended, color: colors[2], label: 'Submission' }
     ];
 
     lines.forEach((lineConfig, index) => {
@@ -596,7 +645,7 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
         .datum(lineConfig.data)
         .attr("fill", "none")
         .attr("stroke", lineConfig.color)
-        .attr("stroke-width", 2)
+        .attr("stroke-width", 2.5)
         .attr("d", lineConfig.line);
 
       const totalLength = path.node()?.getTotalLength() || 0;
@@ -607,28 +656,70 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
           .duration(1500)
           .ease(d3.easeLinear)
           .attr("stroke-dashoffset", 0);
+      // add points for tooltips to ensure visibility of each series
+      g.selectAll(`.point-${index}`)
+        .data(lineConfig.data)
+        .enter()
+        .append("circle")
+        .attr("class", `point point-${index}`)
+        .attr("cx", d => xScale(d.date))
+        .attr("cy", d => {
+          if (lineConfig.key === 'cvsSourced') return yScale(d.cvsSourced);
+          if (lineConfig.key === 'callsConnected') return yScale(d.callsConnected);
+          return yScale(d.recommended);
+        })
+        .attr("r", 3.5)
+        .attr("fill", lineConfig.color)
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 1.5)
+        .style("pointer-events", "all");
     });
+
+    // Tooltip for trend chart
+    const trendTooltip = d3.select("body").append("div").attr("class", "tooltip");
+    const formatDate = d3.timeFormat("%b %d, %Y");
+
+    g.selectAll('.point')
+      .on("mouseover", function(event, d: any) {
+        const classList = (this as SVGCircleElement).classList;
+        let label = '';
+        if (classList.contains('point-0')) {
+          label = 'CVs Sourced';
+        } else if (classList.contains('point-1')) {
+          label = 'Calls Connected';
+        } else {
+          label = 'Submission';
+        }
+        const value = label === 'CVs Sourced' ? d.cvsSourced : label === 'Calls Connected' ? d.callsConnected : d.recommended;
+        trendTooltip.transition().duration(150).style("opacity", 0.9);
+        trendTooltip.html(`${formatDate(d.date)}<br/>${label}: ${value}`)
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", function() {
+        trendTooltip.transition().duration(300).style("opacity", 0);
+      });
 
     // Add legend
     const legend = svg.append("g")
-      .attr("transform", `translate(${width + margin.left + 10}, 20)`);
+      .attr("transform", `translate(${margin.left}, ${height + margin.top + 40})`);
 
     const legendItems = legend.selectAll(".legend-item")
       .data(lines)
       .enter().append("g")
       .attr("class", "legend-item")
-      .attr("transform", (d, i) => `translate(0, ${i * 20})`);
+      .attr("transform", (d, i) => `translate(${i * 200}, 0)`);
 
     legendItems.append("line")
       .attr("x1", 0)
-      .attr("x2", 15)
+      .attr("x2", 18)
       .attr("y1", 6)
       .attr("y2", 6)
       .attr("stroke", d => d.color)
-      .attr("stroke-width", 2);
+      .attr("stroke-width", 3);
 
     legendItems.append("text")
-      .attr("x", 20)
+      .attr("x", 24)
       .attr("y", 9)
       .attr("dy", ".35em")
       .style("font-size", "12px")
