@@ -228,9 +228,7 @@ import { RecruiterTrackerComponent } from './components/recruiter-tracker/recrui
           </div>
 
           <!-- Recruiter Case Tracker -->
-          <div class="charts-grid single-chart">
-            <app-recruiter-tracker [data]="dashboardData.recruiterActivity"></app-recruiter-tracker>
-          </div>
+        
 
           <!-- Observations Section -->
           <div class="observations">
