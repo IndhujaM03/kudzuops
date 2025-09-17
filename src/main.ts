@@ -15,6 +15,7 @@ import { AreaChartComponent } from './components/area-chart/area-chart.component
 import { HorizontalBarChartComponent } from './components/horizontal-bar-chart/horizontal-bar-chart.component';
 import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-calendar.component';
 import { RecruiterTrackerComponent } from './components/recruiter-tracker/recruiter-tracker.component';
+import { RecruiterPerformanceTrackerComponent } from './components/recruiter-performance-tracker/recruiter-performance-tracker.component';
 
 @Component({
   selector: 'app-root',
@@ -30,7 +31,8 @@ import { RecruiterTrackerComponent } from './components/recruiter-tracker/recrui
     AreaChartComponent,
     HorizontalBarChartComponent,
     HeatmapCalendarComponent,
-    RecruiterTrackerComponent
+    RecruiterTrackerComponent,
+    RecruiterPerformanceTrackerComponent
   ],
   template: `
     <div style="min-height: 100vh; background-color: var(--primary-bg);">
@@ -228,7 +230,13 @@ import { RecruiterTrackerComponent } from './components/recruiter-tracker/recrui
           </div>
 
           <!-- Recruiter Case Tracker -->
-        
+          <div class="charts-grid">
+            <div class="card single-chart">
+              <div class="card-content">
+                <app-recruiter-performance-tracker [data]="dashboardData.recruiterPerformance"></app-recruiter-performance-tracker>
+              </div>
+            </div>
+          </div>
 
           <!-- Observations Section -->
           <div class="observations">
