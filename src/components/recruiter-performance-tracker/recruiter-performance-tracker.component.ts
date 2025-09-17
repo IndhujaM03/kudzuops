@@ -8,6 +8,7 @@ export interface RecruiterPerformanceData {
   recruiterName: string;
   callsMade: number;
   submissions: number;
+  skill?: string; // Optional skill field for breakdown
 }
 
 @Component({
@@ -81,7 +82,7 @@ export interface RecruiterPerformanceData {
           <div class="stat-card">
             <div class="stat-icon">📤</div>
             <div class="stat-value">{{ getTotalSubmissions() }}</div>
-            <div class="stat-label">Total Submissions</div>
+            <div class="stat-label">Recommended Profiles</div>
           </div>
           <div class="stat-card">
             <div class="stat-icon">📈</div>
@@ -92,6 +93,11 @@ export interface RecruiterPerformanceData {
             <div class="stat-icon">⭐</div>
             <div class="stat-value">{{ getTopPerformer() }}</div>
             <div class="stat-label">Top Performer</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🎯</div>
+            <div class="stat-value">{{ getUniqueSkills() }}</div>
+            <div class="stat-label">Skills Covered</div>
           </div>
         </div>
       </div>
@@ -290,15 +296,16 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
     const g = svg.append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Prepare chart data based on time range
-    let chartData: { date: Date; callsMade: number; submissions: number; label: string }[] = [];
+    // Prepare chart data based on time range with skill breakdown
+    let chartData: { date: Date; callsMade: number; submissions: number; label: string; skillBreakdown?: string }[] = [];
 
     if (this.selectedTimeRange === 'daily') {
       const grouped = d3.rollup(
         this.filteredData,
         v => ({
           callsMade: d3.sum(v, d => d.callsMade),
-          submissions: d3.sum(v, d => d.submissions)
+          submissions: d3.sum(v, d => d.submissions),
+          skillBreakdown: this.getSkillBreakdown(v)
         }),
         d => d.date
       );
@@ -312,7 +319,8 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
         this.filteredData,
         v => ({
           callsMade: d3.sum(v, d => d.callsMade),
-          submissions: d3.sum(v, d => d.submissions)
+          submissions: d3.sum(v, d => d.submissions),
+          skillBreakdown: this.getSkillBreakdown(v)
         }),
         d => d3.timeWeek.floor(new Date(d.date)).toISOString().split('T')[0]
       );
@@ -326,7 +334,8 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
         this.filteredData,
         v => ({
           callsMade: d3.sum(v, d => d.callsMade),
-          submissions: d3.sum(v, d => d.submissions)
+          submissions: d3.sum(v, d => d.submissions),
+          skillBreakdown: this.getSkillBreakdown(v)
         }),
         d => d.date.slice(0, 7) + '-01'
       );
@@ -458,7 +467,7 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
       .style("font-size", "12px")
       .style("fill", submissionsColor)
       .style("font-weight", "600")
-      .text("📤 Submissions");
+      .text("📤 Recommended Profiles");
 
     // Legend
     const legend = svg.append("g")
@@ -466,7 +475,7 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
 
     const legendData = [
       { label: '📞 Calls Made', color: callsColor },
-      { label: '📤 Submissions', color: submissionsColor }
+      { label: '📤 Recommended Profiles', color: submissionsColor }
     ];
 
     const legendItems = legend.selectAll(".legend-item")
@@ -498,9 +507,10 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
         const isCallsBar = d3.select(this).classed("calls-bar");
         const value = isCallsBar ? d.callsMade : d.submissions;
         const type = isCallsBar ? 'Calls Made' : 'Submissions';
+        const skillInfo = !isCallsBar && d.skillBreakdown ? `<br/>📋 Skills: ${d.skillBreakdown}` : '';
         
         tooltip.transition().duration(200).style("opacity", 0.9);
-        tooltip.html(`${d.label}<br/>📊 ${type}: ${value}`)
+        tooltip.html(`${d.label}<br/>📊 ${type}: ${value}${skillInfo}`)
           .style("left", (event.pageX + 10) + "px")
           .style("top", (event.pageY - 28) + "px");
       })
@@ -509,6 +519,35 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
       });
   }
 
+  // Helper method to get skill breakdown for tooltip
+  private getSkillBreakdown(data: RecruiterPerformanceData[]): string {
+    const skillCounts: { [key: string]: number } = {};
+    
+    // Get skills from the original recruiter activity data if available
+    if (this.data.length > 0 && 'skill' in this.data[0]) {
+      data.forEach(d => {
+        const activityData = this.data.find(ad => 
+          ad.date === d.date && 
+          ad.recruiterName === d.recruiterName
+        ) as any;
+        
+        if (activityData && activityData.skill) {
+          const skill = activityData.skill;
+          skillCounts[skill] = (skillCounts[skill] || 0) + d.submissions;
+        }
+      });
+    }
+    
+    // Format skill breakdown
+    const skillEntries = Object.entries(skillCounts);
+    if (skillEntries.length === 0) return 'Multiple Skills';
+    
+    return skillEntries
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3) // Show top 3 skills
+      .map(([skill, count]) => `${skill} (${count})`)
+      .join(', ');
+  }
   // Summary statistics methods
   getTotalCalls(): number {
     return this.filteredData.reduce((sum, d) => sum + d.callsMade, 0);
@@ -537,5 +576,17 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
       .reduce((a, b) => a[1] > b[1] ? a : b, ['N/A', 0]);
     
     return topRecruiter[0];
+  }
+
+  getUniqueSkills(): number {
+    if (this.filteredData.length === 0) return 0;
+    
+    const skills = new Set(
+      this.filteredData
+        .filter(d => d.skill && d.skill.trim() !== '')
+        .map(d => d.skill)
+    );
+    
+    return skills.size;
   }
 }

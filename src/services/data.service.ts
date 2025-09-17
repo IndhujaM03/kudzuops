@@ -147,7 +147,8 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
         date: this.parseDate(r['Date'] || r['date'] || ''),
         recruiterName: r['Recruiter Name'] || r['Recruiter'] || r['recruiter'] || r['RECRUITER'] || '',
         callsMade: parseInt(r['Calls Made'] || r['Calls Connected'] || r['calls_made'] || r['Calls'] || '0', 10) || 0,
-        submissions: parseInt(r['Recommended'] || r['recommended'] || r['Submissions'] || r['submissions'] || '0', 10) || 0
+        submissions: parseInt(r['Recommended Profiles'] || r['Recommended'] || r['recommended'] || r['Submissions'] || r['submissions'] || '0', 10) || 0,
+        skill: r['Skill'] || r['skill'] || r['SKILL'] || '' // Add skill field
       })).filter(r => r.date && r.recruiterName); // Filter out empty rows
     } catch (error) {
       console.error('Error parsing recruiter performance CSV:', error);
