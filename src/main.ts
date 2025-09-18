@@ -245,13 +245,13 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
               <div>
                 <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Key Insights</h3>
                 <ul class="observations-list">
-                  <li>Supply Required: {{ getSupplyGap() }} total profiles needed across all skills</li>
+                  <li>Supply Required: Profiles needed against {{ getSupplyGap() }} unique demands.</li>
                   <li>Profiles Submitted: {{ dashboardData.totalSubmissions }} profiles submitted to date</li>
-                  <li>SPOC-wise Submissions: {{ getTopSpoc() }} gets the maximum supply of {{ getTopSpocCount() }} submissions</li>
+                  <li>SPOC-wise Submissions: {{ getTopSpoc() }} gets maximum supply among SPOCs ({{ getTopSpocCount() }} submissions)</li>
                   <li>High Demand Skill: {{ getTopDemandSkill() }} requires {{ getTopDemandCount() }} profiles</li>
                 </ul>
               </div>
-              <div>
+             
                 <!-- <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Recommendations</h3>
                 <ul class="observations-list">
                   <li>Prioritize {{ getTopDemandSkill() }} skill recruitment to meet {{ getTopDemandCount() }} profile requirement</li>
@@ -259,7 +259,7 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
                   <li>Leverage top-performing SPOCs to mentor others and share best practices</li>
                   <li>Focus on skills with highest supply requirements for maximum impact</li>
                 </ul> -->
-              </div>
+            
             </div>
           </div>
         </div>

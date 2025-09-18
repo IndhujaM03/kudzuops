@@ -368,12 +368,11 @@ g.append("g")
 
 
   // Grid lines
-  // g.append("g")
-  //   .attr("class", "grid")
-  //   .call(d3.axisLeft(yScale).ticks(6).tickSize(-width).tickFormat(() => ""))
-  //   .selectAll("line")
-  //   .attr("stroke", "var(--border-color)")
-  //   .attr("stroke-opacity", 0.3);
+  g.append("g").attr("class", "grid").attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(xScale).tickSize(-height).tickFormat(() => "")).style("stroke-dasharray", "3,3").style("opacity", 0.3);
+    g.append("g").attr("class", "grid")
+      .call(d3.axisLeft(yScale).tickSize(-width).tickFormat(() => "")).style("stroke-dasharray", "3,3").style("opacity", 0.3);
+
 
   // Line generator
   const line = d3.line<any>()

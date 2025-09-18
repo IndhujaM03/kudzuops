@@ -126,31 +126,27 @@ private createChart() {
     .style("opacity", 1);
 
   // Tooltip
-  const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+  const tooltip = d3.select("body").append("div")
+    .attr("class", "tooltip")
+    .style("position", "absolute")
+    .style("pointer-events", "none")
+    .style("z-index", "10000")
+    .style("opacity", "0");
 
   // Hover interactions
-  const positionTooltip = (event: MouseEvent) => {
-    const offsetX = 12, offsetY = 14;
-    const maxX = window.innerWidth - 200;
-    const maxY = window.innerHeight - 80;
-    const x = Math.min(event.pageX + offsetX, maxX);
-    const y = Math.min(event.pageY - offsetY, maxY);
-    tooltip.style("left", x + "px").style("top", y + "px");
-  };
-
   g.selectAll(".bar")
-    .style("cursor", "pointer")
-    .style("pointer-events", "visiblePainted")
     .on("mouseover", (event: MouseEvent, d: any) => {
-      tooltip.transition().duration(120).style("opacity", 0.95);
-      tooltip.html(`<strong>${d.fullLabel}</strong><br/>Count: ${d.value}`);
-      positionTooltip(event);
+      tooltip.transition().duration(120).style("opacity", "0.95");
+      tooltip.html(`<strong>${d.fullLabel}</strong><br/>Count: ${d.value}`)
+        .style("left", (event.pageX + 10) + "px")
+        .style("top", (event.pageY - 28) + "px");
     })
     .on("mousemove", (event: MouseEvent) => {
-      positionTooltip(event);
+      tooltip.style("left", (event.pageX + 10) + "px")
+             .style("top", (event.pageY - 28) + "px");
     })
     .on("mouseout", () => {
-      tooltip.transition().duration(160).style("opacity", 0);
+      tooltip.transition().duration(160).style("opacity", "0");
     });
 }
 
