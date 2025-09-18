@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { forkJoin, Observable, map } from 'rxjs';
 import * as d3 from 'd3-dsv';
-import { RecruiterActivityData } from '../components/recruiter-tracker/recruiter-tracker.component';
 import { RecruiterPerformanceData } from '../components/recruiter-performance-tracker/recruiter-performance-tracker.component';
 
 export interface SubmissionData {
@@ -36,7 +35,6 @@ export interface DashboardData {
   skillDemands: { [key: string]: number };
   weeklySubmissions: { [key: string]: number };
   dailySubmissions: { [key: string]: number };
-  recruiterActivity: RecruiterActivityData[];
   recruiterPerformance: RecruiterPerformanceData[];
 }
 
@@ -61,15 +59,15 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
         
         const submissions = this.parseSubmissions(submissionsCsv);
         const demands = this.parseDemands(demandsCsv);
-        const recruiterActivity = this.parseRecruiterActivity(recruiterCsv);
+     
         const recruiterPerformance = this.parseRecruiterPerformance(recruiterCsv);
         
         console.log('Parsed Submissions:', submissions);
         console.log('Parsed Demands:', demands);
-        console.log('Parsed Recruiter Activity:', recruiterActivity);
+      
         console.log('Parsed Recruiter Performance:', recruiterPerformance);
         
-        return this.processDashboardData(submissions, demands, recruiterActivity, recruiterPerformance);
+        return this.processDashboardData(submissions, demands, recruiterPerformance);
       })
     );
   }
@@ -117,26 +115,7 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
     }
   }
 
-  private parseRecruiterActivity(csv: string): RecruiterActivityData[] {
-    try {
-      const rows = d3.csvParse(csv);
-      console.log('Recruiter CSV Headers:', rows.columns);
-      console.log('First few recruiter rows:', rows.slice(0, 3));
-      
-      return rows.map(r => ({
-        date: this.parseDate(r['Date'] || r['date'] || ''),
-        recruiterName: r['Recruiter Name'] || r['Recruiter'] || r['recruiter'] || r['RECRUITER'] || '',
-        skill: r['Skill'] || r['skill'] || r['SKILL'] || '',
-        cvsSourced: parseInt(r['Number of CVs Sourced'] || r['CVs Sourced'] || r['cvs_sourced'] || '0', 10) || 0,
-        callsConnected: parseInt(r['Calls Connected'] || r['calls_connected'] || r['Calls'] || '0', 10) || 0,
-        recommended: parseInt(r['Recommended'] || r['recommended'] || r['RECOMMENDED'] || '0', 10) || 0,
-        resubmittal: parseInt(r['Resubmittal'] || r['resubmittal'] || r['RESUBMITTAL'] || '0', 10) || 0
-      })).filter(r => r.date && r.recruiterName); // Filter out empty rows
-    } catch (error) {
-      console.error('Error parsing recruiter activity CSV:', error);
-      return [];
-    }
-  }
+
 
   private parseRecruiterPerformance(csv: string): RecruiterPerformanceData[] {
     try {
@@ -188,7 +167,7 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
     }
   }
 
-  private processDashboardData(submissions: SubmissionData[], demands: DemandData[], recruiterActivity: RecruiterActivityData[], recruiterPerformance: RecruiterPerformanceData[]): DashboardData {
+  private processDashboardData(submissions: SubmissionData[], demands: DemandData[], recruiterPerformance: RecruiterPerformanceData[]): DashboardData {
     const totalSubmissions = submissions.length;
     // Current demand is count of entries with supply required > 0
     const currentDemand = demands.filter(d => (d.supplyRequired || d.positions) > 0).length;
@@ -231,7 +210,6 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
     const processedData = {
       submissions,
       demands,
-      recruiterActivity,
       recruiterPerformance,
       totalSubmissions,
       currentDemand,

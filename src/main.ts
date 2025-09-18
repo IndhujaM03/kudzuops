@@ -6,15 +6,10 @@ import { FormsModule } from '@angular/forms';
 import { importProvidersFrom } from '@angular/core';
 import { DataService, DashboardData } from './services/data.service';
 import { ThemeService } from './services/theme.service';
-import { KpiCardsComponent } from './components/kpi-cards/kpi-cards.component';
 import { LineChartComponent } from './components/line-chart/line-chart.component';
 import { BarChartComponent } from './components/bar-chart/bar-chart.component';
 import { DonutChartComponent } from './components/donut-chart/donut-chart.component';
-import { GroupedBarChartComponent } from './components/grouped-bar-chart/grouped-bar-chart.component';
-import { AreaChartComponent } from './components/area-chart/area-chart.component';
 import { HorizontalBarChartComponent } from './components/horizontal-bar-chart/horizontal-bar-chart.component';
-import { HeatmapCalendarComponent } from './components/heatmap-calendar/heatmap-calendar.component';
-import { RecruiterTrackerComponent } from './components/recruiter-tracker/recruiter-tracker.component';
 import { RecruiterPerformanceTrackerComponent } from './components/recruiter-performance-tracker/recruiter-performance-tracker.component';
 
 @Component({
@@ -23,15 +18,12 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
   imports: [
     CommonModule,
     FormsModule,
-    KpiCardsComponent,
     LineChartComponent,
     BarChartComponent,
     DonutChartComponent,
-    GroupedBarChartComponent,
-    AreaChartComponent,
+  
     HorizontalBarChartComponent,
-    HeatmapCalendarComponent,
-    RecruiterTrackerComponent,
+ 
     RecruiterPerformanceTrackerComponent
   ],
   template: `
@@ -74,7 +66,10 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
               <div class="highlight-item">
                 <div class="highlight-number">{{ dashboardData.totalSubmissions }}</div>
                 <div class="highlight-label">Total Submissions</div>
-                <div class="highlight-subtitle">From Aug 18th to Sep 11th</div>
+               <div class="highlight-subtitle">
+                  From Aug 18th to {{ today | date:'MMM d' }}
+                </div>
+
               </div>
               <div class="highlight-item">
                 <div class="highlight-number">{{ getSupplyGap() }}</div>
@@ -231,7 +226,12 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
 
           <!-- Recruiter Case Tracker -->
           <div class="charts-grid">
-            <div class="card single-chart">
+            <div class="card ">
+               <div class="card-header">
+                <!-- <div class="part-label"></div> -->
+                <!-- <h3 class="card-title"></h3>
+                <p class="card-subtitle"></p> -->
+              </div>
               <div class="card-content">
                 <app-recruiter-performance-tracker [data]="dashboardData.recruiterPerformance"></app-recruiter-performance-tracker>
               </div>
@@ -302,6 +302,8 @@ export class App implements OnInit {
   ngOnInit() {
     this.loadDashboardData();
   }
+// component.ts
+today = new Date(); // This will always be current date
 
   loadDashboardData() {
     this.loading = true;
