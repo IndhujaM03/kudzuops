@@ -219,7 +219,7 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
           <div class="charts-grid">
             <div class="card">
               <div class="card-header">
-                <div class="part-label">Part 6</div>
+                <!-- <div class="part-label">Part 6</div> -->
                 <h3 class="card-title">SPOC-wise Submissions</h3>
                 <p class="card-subtitle">Number of profiles submitted to each SPOC</p>
               </div>
