@@ -347,17 +347,25 @@ private createPerformanceChart() {
     .range([height, 0]);
 
   // Axes
-  g.append("g")
-    .attr("transform", `translate(0,${height})`)
-    .call(d3.axisBottom(xScale))
-    .selectAll("text")
-    .style("text-anchor", "end")
-    .attr("dx", "-.5em")
-    .attr("dy", ".15em")
-    .attr("transform", "rotate(-45)")
-    .style("font-size", "10px");
+// X Axis (line only, no ticks/labels)
+g.append("line")
+  .attr("x1", 0)
+  .attr("y1", height)
+  .attr("x2", width)
+  .attr("y2", height)
+  .attr("stroke", "black");
 
-  g.append("g").call(d3.axisLeft(yScale).ticks(6));
+// Y Axis (line only, no ticks/labels)
+g.append("line")
+  .attr("x1", 0)
+  .attr("y1", 0)
+  .attr("x2", 0)
+  .attr("y2", height)
+  .attr("stroke", "black");
+
+g.append("g")
+  .call(d3.axisLeft(yScale).ticks(6));
+
 
   // Grid lines
   g.append("g")
@@ -405,7 +413,7 @@ const tooltip = d3.select("body").append("div").attr("class", "tooltip");
       .attr("class", `dot-${metric.key}`)
       .attr("cx", d => xScale(d.label)!)
       .attr("cy", d => yScale(d.value))
-      .attr("r", 6)
+      .attr("r", 2)
       .attr("fill", metric.color)
       .style("cursor", "pointer")
      .on("mouseover", function(event, d: any) {
