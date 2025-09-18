@@ -1,5 +1,5 @@
 import { Component, Input, OnInit, ElementRef, ViewChild,OnDestroy  } from '@angular/core';
-import { CommonModule, KeyValuePipe } from '@angular/common';
+import { CommonModule} from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as d3 from 'd3';
 import { SubmissionData } from '../../services/data.service';
@@ -7,7 +7,7 @@ import { SubmissionData } from '../../services/data.service';
 @Component({
   selector: 'app-bar-chart',
   standalone: true,
-  imports: [CommonModule, FormsModule, KeyValuePipe],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="card">
       <div class="card-header">

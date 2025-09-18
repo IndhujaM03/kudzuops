@@ -370,6 +370,7 @@ body {
   position: fixed;
   padding: 8px 10px;
   background: #fff;
+  pointer-events: none; 
   color: #111;
   border-radius: 6px;
   font-size: 12px;

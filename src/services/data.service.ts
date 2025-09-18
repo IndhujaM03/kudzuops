@@ -117,23 +117,35 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
 
 
 
-  private parseRecruiterPerformance(csv: string): RecruiterPerformanceData[] {
-    try {
-      const rows = d3.csvParse(csv);
-      console.log('Recruiter Performance CSV Headers:', rows.columns);
-      
-      return rows.map(r => ({
-        date: this.parseDate(r['Date'] || r['date'] || ''),
-        recruiterName: r['Recruiter Name'] || r['Recruiter'] || r['recruiter'] || r['RECRUITER'] || '',
-        callsMade: parseInt(r['Calls Made'] || r['Calls Connected'] || r['calls_made'] || r['Calls'] || '0', 10) || 0,
-        submissions: parseInt(r['Recommended Profiles'] || r['Recommended'] || r['recommended'] || r['Submissions'] || r['submissions'] || '0', 10) || 0,
-        skill: r['Skill'] || r['skill'] || r['SKILL'] || '' // Add skill field
-      })).filter(r => r.date && r.recruiterName); // Filter out empty rows
-    } catch (error) {
-      console.error('Error parsing recruiter performance CSV:', error);
-      return [];
-    }
+ private parseRecruiterPerformance(csv: string): RecruiterPerformanceData[] {
+  try {
+    const rows = d3.csvParse(csv);
+    console.log('Recruiter Performance CSV Headers:', rows.columns);
+
+    return rows.map(r => ({
+      date: this.parseDate(r['Date'] || r['date'] || ''),
+      recruiterName: r['Recruiter Name'] || r['Recruiter'] || r['recruiter'] || r['RECRUITER'] || '',
+      callsMade: parseInt(
+        r['Calls Made'] || r['Calls Connected'] || r['calls_made'] || r['Calls'] || '0',
+        10
+      ) || 0,
+      submissions: parseInt(
+        r['Recommended Profiles'] || r['Recommended'] || r['recommended'] || r['Submissions'] || r['submissions'] || '0',
+        10
+      ) || 0,
+      cvsSourced: parseInt(
+        r['CVs Sourced'] || r['CV Sourced'] || r['cvs_sourced'] || r['CVs'] || '0',
+        10
+      ) || 0, // ✅ Added CVs sourced parsing
+      skill: r['Skill'] || r['skill'] || r['SKILL'] || ''
+    }))
+    .filter(r => r.date && r.recruiterName); // Remove empty rows
+  } catch (error) {
+    console.error('Error parsing recruiter performance CSV:', error);
+    return [];
   }
+}
+
 
   private parseDate(dateStr: string): string {
     if (!dateStr) return '';
