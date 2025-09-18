@@ -346,22 +346,18 @@ private createPerformanceChart() {
     .nice()
     .range([height, 0]);
 
-  // Axes
-// X Axis (line only, no ticks/labels)
-g.append("line")
-  .attr("x1", 0)
-  .attr("y1", height)
-  .attr("x2", width)
-  .attr("y2", height)
-  .attr("stroke", "black");
+    // Axes
+    g.append("g")
+      .attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(xScale))
+      .selectAll("text")
+      .style("text-anchor", "end")
+      .attr("dx", "-.5em")
+      .attr("dy", ".15em")
+      .attr("transform", "rotate(-45)")
+      .style("font-size", "10px");
 
-// Y Axis (line only, no ticks/labels)
-g.append("line")
-  .attr("x1", 0)
-  .attr("y1", 0)
-  .attr("x2", 0)
-  .attr("y2", height)
-  .attr("stroke", "black");
+    g.append("g").call(d3.axisLeft(yScale).ticks(6));
 
 g.append("g")
   .call(d3.axisLeft(yScale).ticks(6));
