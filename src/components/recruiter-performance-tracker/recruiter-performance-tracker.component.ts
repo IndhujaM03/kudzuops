@@ -83,7 +83,7 @@ export interface RecruiterPerformanceData {
           <div class="stat-card">
             <div class="stat-icon">📤</div>
             <div class="stat-value">{{ getTotalSubmissions() }}</div>
-            <div class="stat-label">Recommended Profiles</div>
+            <div class="stat-label">Submitted Profiles</div>
           </div>
           <div class="stat-card">
             <div class="stat-icon">📈</div>
@@ -384,7 +384,7 @@ g.append("g")
   // Metrics
   const metrics = [
     { key: 'callsMade', label: '📞 Calls Made', color: '#4A90E2' },
-    { key: 'submissions', label: '📤 Recommended Profiles', color: '#1B365D' },
+    { key: 'submissions', label: '📤 Submitted Profiles', color: '#1B365D' },
     { key: 'cvsSourced', label: '📑 CVs Sourced', color: '#E67E22' }
   ];
 
