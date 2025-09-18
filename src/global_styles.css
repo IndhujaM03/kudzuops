@@ -94,6 +94,7 @@ body {
   height: 100%;
   background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0,0 Q50,50 100,0 L100,100 L0,100 Z" fill="rgba(255,255,255,0.1)"/></svg>') no-repeat;
   background-size: cover;
+  pointer-events: none;
 }
 
 .header-content {
@@ -366,28 +367,18 @@ body {
 
 /* Tooltip */
 .tooltip {
-  position: absolute;
-  padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.9);
-  color: white;
-  border-radius: 8px;
+  position: fixed;
+  padding: 8px 10px;
+  background: #fff;
+  color: #111;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
   pointer-events: none;
-  z-index: 1000;
+  z-index: 2147483647;
   opacity: 0;
-  transition: all 0.2s ease;
-  box-shadow: var(--shadow-lg);
-}
-.tooltip {
-  background: #fff;
-  padding: 6px 8px;
-  border-radius: 4px;
+  transition: opacity 0.15s ease;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  font-size: 12px;
-  color: #111;
-  opacity: 0;
-  transition: opacity 0.2s;
 }
 
 
@@ -494,6 +485,7 @@ body {
   height: 100%;
   background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M0,100 Q50,0 100,100 Z" fill="rgba(255,255,255,0.1)"/></svg>') no-repeat;
   background-size: cover;
+  pointer-events: none;
 }
 
 .observations h2 {

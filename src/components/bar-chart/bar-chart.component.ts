@@ -202,17 +202,28 @@ spocDemandCounts: { [key: string]: number } = {};
       .style("opacity", 1);
 
     // Add tooltip
-    const tooltip = d3.select("body").append("div")
-      .attr("class", "tooltip");
+    const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+    const positionTooltip = (event: MouseEvent) => {
+      const offsetX = 12, offsetY = 14;
+      const maxX = window.innerWidth - 200;
+      const maxY = window.innerHeight - 80;
+      const x = Math.min(event.pageX + offsetX, maxX);
+      const y = Math.min(event.pageY - offsetY, maxY);
+      tooltip.style("left", x + "px").style("top", y + "px");
+    };
 
 g.selectAll(".bar")
-  .on("mouseover", (event, d) => {
+  .style("cursor", "pointer")
+  .style("pointer-events", "visiblePainted")
+  .on("mouseover", (event: MouseEvent, d) => {
     const dataPoint = d as { recruiter: string; fullRecruiter: string; submissions: number };
 
     tooltip.transition().duration(200).style("opacity", 0.9);
-    tooltip.html(`Recruiter: ${dataPoint.fullRecruiter || dataPoint.recruiter}<br/>Submissions: ${dataPoint.submissions}`)
-      .style("left", (event.pageX + 10) + "px")
-      .style("top", (event.pageY - 28) + "px");
+    tooltip.html(`Recruiter: ${dataPoint.fullRecruiter || dataPoint.recruiter}<br/>Submissions: ${dataPoint.submissions}`);
+    positionTooltip(event);
+  })
+  .on("mousemove", (event: MouseEvent) => {
+    positionTooltip(event);
   })
   .on("mouseout", () => {
     tooltip.transition().duration(500).style("opacity", 0);

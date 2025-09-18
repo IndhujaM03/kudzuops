@@ -379,17 +379,28 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
 
     // Add tooltip
     const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+    const positionTooltip = (event: MouseEvent) => {
+      const offsetX = 12, offsetY = 14;
+      const maxX = window.innerWidth - 200;
+      const maxY = window.innerHeight - 80;
+      const x = Math.min(event.pageX + offsetX, maxX);
+      const y = Math.min(event.pageY - offsetY, maxY);
+      tooltip.style("left", x + "px").style("top", y + "px");
+    };
 
     g.selectAll(".stack rect")
-      .on("mouseover", function(event, d: any) {
+      .style("cursor", "pointer")
+      .on("mouseover", function(event: MouseEvent, d: any) {
         const key = d3.select((this as SVGElement).parentElement).datum() as any;
         const keyIndex = keys.indexOf(key.key);
         const value = d[1] - d[0];
         
         tooltip.transition().duration(200).style("opacity", 0.9);
-        tooltip.html(`${d.data.recruiter}<br/>${legendLabels[keyIndex]}: ${value}`)
-          .style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 28) + "px");
+        tooltip.html(`${d.data.recruiter}<br/>${legendLabels[keyIndex]}: ${value}`);
+        positionTooltip(event);
+      })
+      .on("mousemove", function(event: MouseEvent) {
+        positionTooltip(event);
       })
       .on("mouseout", () => {
         tooltip.transition().duration(500).style("opacity", 0);
@@ -677,10 +688,19 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
 
     // Tooltip for trend chart
     const trendTooltip = d3.select("body").append("div").attr("class", "tooltip");
+    const positionTrendTooltip = (event: MouseEvent) => {
+      const offsetX = 12, offsetY = 14;
+      const maxX = window.innerWidth - 200;
+      const maxY = window.innerHeight - 80;
+      const x = Math.min(event.pageX + offsetX, maxX);
+      const y = Math.min(event.pageY - offsetY, maxY);
+      trendTooltip.style("left", x + "px").style("top", y + "px");
+    };
     const formatDate = d3.timeFormat("%b %d, %Y");
 
     g.selectAll('.point')
-      .on("mouseover", function(event, d: any) {
+      .style("cursor", "pointer")
+      .on("mouseover", function(event: MouseEvent, d: any) {
         const classList = (this as SVGCircleElement).classList;
         let label = '';
         if (classList.contains('point-0')) {
@@ -692,9 +712,11 @@ export class RecruiterTrackerComponent implements OnInit, OnDestroy, OnChanges {
         }
         const value = label === 'CVs Sourced' ? d.cvsSourced : label === 'Calls Connected' ? d.callsConnected : d.recommended;
         trendTooltip.transition().duration(150).style("opacity", 0.9);
-        trendTooltip.html(`${formatDate(d.date)}<br/>${label}: ${value}`)
-          .style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 28) + "px");
+        trendTooltip.html(`${formatDate(d.date)}<br/>${label}: ${value}`);
+        positionTrendTooltip(event);
+      })
+      .on("mousemove", function(event: MouseEvent) {
+        positionTrendTooltip(event);
       })
       .on("mouseout", function() {
         trendTooltip.transition().duration(300).style("opacity", 0);
