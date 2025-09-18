@@ -368,12 +368,12 @@ g.append("g")
 
 
   // Grid lines
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisLeft(yScale).ticks(6).tickSize(-width).tickFormat(() => ""))
-    .selectAll("line")
-    .attr("stroke", "var(--border-color)")
-    .attr("stroke-opacity", 0.3);
+  // g.append("g")
+  //   .attr("class", "grid")
+  //   .call(d3.axisLeft(yScale).ticks(6).tickSize(-width).tickFormat(() => ""))
+  //   .selectAll("line")
+  //   .attr("stroke", "var(--border-color)")
+  //   .attr("stroke-opacity", 0.3);
 
   // Line generator
   const line = d3.line<any>()
