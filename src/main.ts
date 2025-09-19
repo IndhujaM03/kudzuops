@@ -21,9 +21,7 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
     LineChartComponent,
     BarChartComponent,
     DonutChartComponent,
-  
     HorizontalBarChartComponent,
- 
     RecruiterPerformanceTrackerComponent
   ],
   template: `
@@ -211,18 +209,47 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
           </div>
 
           <!-- Part 6: SPOC-wise Submissions -->
-          <div class="charts-grid">
-            <div class="card">
-              <div class="card-header">
-                <!-- <div class="part-label">Part 6</div> -->
-                <h3 class="card-title">SPOC-wise Submissions</h3>
-                <p class="card-subtitle">Number of profiles submitted to each SPOC</p>
+        <!-- Part 6: SPOC-wise Submissions -->
+        <div class="charts-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">SPOC-wise Submissions</h3>
+              <p class="card-subtitle">Number of profiles submitted to each SPOC</p>
+            </div>
+            <div class="card-content">
+              <!-- Filters -->
+              <div class="filter-controls">
+                <div class="filter-group">
+                  <span class="filter-label">View</span>
+                  <div class="radio-group">
+                    <label class="radio-option">
+                      <input type="radio" name="spocTimeframe" value="Daily" [(ngModel)]="spocTimeframe" />
+                      <span>Daily</span>
+                    </label>
+                    <label class="radio-option">
+                      <input type="radio" name="spocTimeframe" value="Weekly" [(ngModel)]="spocTimeframe" />
+                      <span>Weekly</span>
+                    </label>
+                    <label class="radio-option">
+                      <input type="radio" name="spocTimeframe" value="Monthly" [(ngModel)]="spocTimeframe" />
+                      <span>Monthly</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="filter-group">
+                  <span class="filter-label">Month</span>
+                  <select class="filter-select" [(ngModel)]="selectedSpocMonthId">
+                    <option [ngValue]="currentMonthId">{{ formatMonthLabel(currentMonthId) }} (Current)</option>
+                    <option [ngValue]="''">All Months</option>
+                    <option *ngFor="let m of getAvailableMonthIds()" [ngValue]="m">{{ formatMonthLabel(m) }}</option>
+                  </select>
+                </div>
               </div>
-              <div class="card-content">
-                <app-horizontal-bar-chart [data]="dashboardData.spocSubmissions"></app-horizontal-bar-chart>
-              </div>
+
+              <app-horizontal-bar-chart [data]="getFilteredSpocSubmissions()"></app-horizontal-bar-chart>
             </div>
           </div>
+        </div>
 
           <!-- Recruiter Case Tracker -->
           <div class="charts-grid">
@@ -238,30 +265,46 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
             </div>
           </div>
 
-          <!-- Observations Section -->
-          <div class="observations">
-            <h2>Observations: Supply vs. Demand</h2>
-            <div class="observations-content">
-              <div>
-                <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Key Insights</h3>
-                <ul class="observations-list">
-                  <li>Supply Required: Profiles needed against {{ getSupplyGap() }} unique demands.</li>
-                  <li>Profiles Submitted: {{ dashboardData.totalSubmissions }} profiles submitted to date</li>
-                  <li>SPOC-wise Submissions: {{ getTopSpoc() }} gets maximum supply among SPOCs ({{ getTopSpocCount() }} submissions)</li>
-                  <li>High Demand Skill: {{ getTopDemandSkill() }} requires {{ getTopDemandCount() }} profiles</li>
-                </ul>
-              </div>
-             
-                <!-- <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Recommendations</h3>
-                <ul class="observations-list">
-                  <li>Prioritize {{ getTopDemandSkill() }} skill recruitment to meet {{ getTopDemandCount() }} profile requirement</li>
-                  <li>{{ getSupplyGap() > 0 ? 'Need ' + getSupplyGap() + ' more profiles to meet total demand' : 'Supply targets are being met effectively' }}</li>
-                  <li>Leverage top-performing SPOCs to mentor others and share best practices</li>
-                  <li>Focus on skills with highest supply requirements for maximum impact</li>
-                </ul> -->
-            
-            </div>
+               <!-- Observations Section -->
+      <div class="observations">
+        <h2>Observations: Supply vs. Demand</h2>
+        <div class="filter-controls">
+                  <div class="filter-group">
+                    <span class="filter-label">View</span>
+                    <div class="radio-group">
+                      <label class="radio-option">
+                        <input type="radio"  name="timeframe" value="Daily" [(ngModel)]="timeframe" />
+                        <span>Daily</span>
+                      </label>
+                      <label class="radio-option">
+                        <input type="radio" name="timeframe" value="Weekly" [(ngModel)]="timeframe" />
+                        <span>Weekly</span>
+                      </label>
+                      <label class="radio-option">
+                        <input type="radio" name="timeframe" value="Monthly" [(ngModel)]="timeframe" />
+                        <span>Monthly</span>
+                      </label>
+                    </div>
+                  </div>
+                 
+                </div>
+        
+
+        <div class="observations-content">
+          <div>
+            <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">Key Insights</h3>
+            <ul class="observations-list">
+              <!-- Static -->
+              <li>Supply Required: Profiles needed against {{ getSupplyGap() }} unique demands.</li>
+              <li>High Demand Skill: {{ getTopDemandSkill() }} requires {{ getTopDemandCount() }} profiles</li>
+
+              <!-- Timeframe-based -->
+              <li>Profiles Submitted ({{ timeframe }}): {{ getFilteredSubmissionsCount() }} profiles submitted</li>
+              <li>SPOC-wise Submissions ({{ timeframe }}): {{ getFilteredTopSpoc() }} gets maximum supply among SPOCs ({{ getFilteredTopSpocCount() }} submissions)</li>
+            </ul>
           </div>
+        </div>
+      </div>
         </div>
 
         <div *ngIf="!loading && !dashboardData" style="text-align: center; padding: 4rem 0;">
@@ -294,6 +337,14 @@ export class App implements OnInit {
   selectedSkillDemandView: 'Current' | 'All' = 'Current';
   selectedSkillMonthId: string = '';
 
+  // NEW: timeframe for Observations
+  timeframe: 'Daily' | 'Weekly' | 'Monthly' = 'Monthly';
+  // SPOC-wise submissions filters
+
+spocTimeframe: 'Daily' | 'Weekly' | 'Monthly' = 'Monthly';
+  selectedSpocMonthId: string = '';
+  today = new Date();
+
   constructor(
     private dataService: DataService,
     public themeService: ThemeService
@@ -302,8 +353,7 @@ export class App implements OnInit {
   ngOnInit() {
     this.loadDashboardData();
   }
-// component.ts
-today = new Date(); // This will always be current date
+
 
   loadDashboardData() {
     this.loading = true;
@@ -311,22 +361,56 @@ today = new Date(); // This will always be current date
       next: (data) => {
         this.dashboardData = data;
         this.currentMonthId = this.getCurrentMonthId();
-        // Default month selection: current month
         this.selectedMonthId = this.currentMonthId;
         this.selectedStatusMonthId = this.currentMonthId;
         this.selectedSkillMonthId = this.currentMonthId;
+        this.selectedSpocMonthId = this.currentMonthId;
         this.loading = false;
       },
       error: (error) => {
         console.error('Error loading dashboard data:', error);
         this.loading = false;
-        // You can add error handling UI here
       }
     });
   }
 
+
   toggleTheme() {
     this.themeService.toggleTheme();
+  }
+  // -------------------------
+  // SPOC-wise submissions helpers
+  // -------------------------
+  private getStartDateForSpocTimeframe(): Date {
+    const now = new Date();
+    if (this.spocTimeframe === 'Daily') return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0,0,0,0);
+    if (this.spocTimeframe === 'Weekly') {
+      const day = now.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+      start.setHours(0,0,0,0);
+      return start;
+    }
+    return new Date(now.getFullYear(), now.getMonth(), 1, 0,0,0,0);
+  }
+
+  getFilteredSpocSubmissions(): { [key: string]: number } {
+    if (!this.dashboardData?.submissions) return {};
+    const start = this.getStartDateForSpocTimeframe();
+    const monthId = this.selectedSpocMonthId;
+
+    const filtered = this.dashboardData.submissions.filter(s => {
+      const dt = this.parseDateSafe(s.date);
+      const submissionMonth = dt.toISOString().slice(0,7);
+      const matchesMonth = monthId ? submissionMonth === monthId : true;
+      return dt >= start && matchesMonth;
+    });
+
+    return filtered.reduce((acc: any, s: any) => {
+      const spoc = s.spoc || 'Unknown';
+      acc[spoc] = (acc[spoc] || 0) + 1;
+      return acc;
+    }, {});
   }
 
   // getActiveStatusCount(): number {
@@ -337,13 +421,13 @@ today = new Date(); // This will always be current date
   //     .filter(([status]) => activeStatuses.some(active => status.toLowerCase().includes(active.toLowerCase())))
   //     .reduce((sum, [, count]) => sum + count, 0);
   // }
-getSupplyRequiredCount(): number {
-  if (!this.dashboardData || !this.dashboardData.statusCounts) return 0;
+  getSupplyRequiredCount(): number {
+    if (!this.dashboardData || !this.dashboardData.statusCounts) return 0;
 
-  return Object.entries(this.dashboardData.statusCounts)
-    .filter(([status]) => status.toLowerCase() === 'supply required')
-    .reduce((sum, [, count]) => sum + count, 0);
-}
+    return Object.entries(this.dashboardData.statusCounts)
+      .filter(([status]) => status.toLowerCase() === 'supply required')
+      .reduce((sum, [, count]) => sum + count, 0);
+  }
 
   getDailyAverage(): number {
     if (!this.dashboardData) return 0;
@@ -372,7 +456,7 @@ getSupplyRequiredCount(): number {
       return acc;
     }, {} as { [key: string]: number });
   }
-  
+
   // Part 2: Filters and computed SPOC distribution
   getFilteredSpocDemandCounts(): { [key: string]: number } {
     if (!this.dashboardData || !this.dashboardData.demands) return {};
@@ -461,18 +545,19 @@ getSupplyRequiredCount(): number {
       return acc;
     }, {} as { [key: string]: number });
   }
-getSkillCurrentDemand(): { [key: string]: number } {
-  if (!this.dashboardData || !this.dashboardData.demands) return {};
 
-  return this.dashboardData.demands.reduce((acc, d) => {
-    if (d.status?.toLowerCase() === "supply required") {
-      const skill = d.skill || "Unknown";
-      const positions = d.positions  ?? 0;
-      acc[skill] = (acc[skill] || 0) + positions;
-    }
-    return acc;
-  }, {} as { [key: string]: number });
-}
+  getSkillCurrentDemand(): { [key: string]: number } {
+    if (!this.dashboardData || !this.dashboardData.demands) return {};
+
+    return this.dashboardData.demands.reduce((acc, d) => {
+      if (d.status?.toLowerCase() === "supply required") {
+        const skill = d.skill || "Unknown";
+        const positions = d.positions  ?? 0;
+        acc[skill] = (acc[skill] || 0) + positions;
+      }
+      return acc;
+    }, {} as { [key: string]: number });
+  }
 
   getRecruiterSubmissions(): { [key: string]: number } {
     if (!this.dashboardData) return {};
@@ -526,6 +611,129 @@ getSkillCurrentDemand(): { [key: string]: number } {
     const skillCounts = this.dashboardData.skillDemands;
     const topSkill = Object.entries(skillCounts).reduce((a, b) => a[1] > b[1] ? a : b, ['N/A', 0]);
     return topSkill[1];
+  }
+
+  // ---------------------------
+  // NEW: Timeframe-based helpers
+  // ---------------------------
+
+  // Return start-of-period date for the selected timeframe.
+  // Daily -> today at 00:00
+  // Weekly -> start of current week (Monday)
+  // Monthly -> 1st of current month
+  private getStartDateForTimeframe(): Date {
+    const now = new Date();
+    if (this.timeframe === 'Daily') {
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    }
+    if (this.timeframe === 'Weekly') {
+      // Get Monday as start of week
+      const day = now.getDay(); // 0(Sun) - 6
+      const diffToMonday = (day === 0) ? 6 : day - 1; // if Sunday, go back 6 days
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+      start.setHours(0,0,0,0);
+      return start;
+    }
+    // Monthly
+    return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  }
+
+  // Safe parse function (handles date strings)
+  private parseDateSafe(d: any): Date {
+    // If already Date
+    if (d instanceof Date) return d;
+    // If timestamp
+    if (typeof d === 'number') return new Date(d);
+    // else try parse
+    return new Date(d);
+  }
+
+  // Number of submissions within timeframe
+  getFilteredSubmissionsCount(): number {
+    if (!this.dashboardData?.submissions) return 0;
+    const start = this.getStartDateForTimeframe();
+    return this.dashboardData.submissions.filter((s: any) => {
+      const dt = this.parseDateSafe(s.date);
+      return dt >= start;
+    }).length;
+  }
+
+  // Supply required (positions) within timeframe
+  getFilteredSupplyGap(): number {
+    if (!this.dashboardData?.demands) return 0;
+    const start = this.getStartDateForTimeframe();
+    return this.dashboardData.demands
+      .filter((d: any) => {
+        const dt = this.parseDateSafe(d.date);
+        return dt >= start && d.status?.toLowerCase() === 'supply required';
+      })
+      .reduce((sum: number, d: any) => sum + (d.positions ?? 0), 0);
+  }
+
+  // Top SPOC (by submissions) within timeframe
+  getFilteredTopSpoc(): string {
+    if (!this.dashboardData?.submissions) return 'N/A';
+    const start = this.getStartDateForTimeframe();
+    const filtered = this.dashboardData.submissions.filter((s: any) => {
+      const dt = this.parseDateSafe(s.date);
+      return dt >= start;
+    });
+    const counts = filtered.reduce((acc: any, s: any) => {
+      const spoc = s.spoc || 'Unknown';
+      acc[spoc] = (acc[spoc] || 0) + 1;
+      return acc;
+    }, {});
+    if (!Object.keys(counts).length) return 'N/A';
+    return Object.entries(counts).reduce((a: any, b: any) => a[1] > b[1] ? a : b, ['N/A', 0])[0];
+  }
+
+  getFilteredTopSpocCount(): number {
+    if (!this.dashboardData?.submissions) return 0;
+    const start = this.getStartDateForTimeframe();
+    const filtered = this.dashboardData.submissions.filter((s: any) => {
+      const dt = this.parseDateSafe(s.date);
+      return dt >= start;
+    });
+    const counts = filtered.reduce((acc: any, s: any) => {
+      const spoc = s.spoc || 'Unknown';
+      acc[spoc] = (acc[spoc] || 0) + 1;
+      return acc;
+    }, {});
+    if (!Object.keys(counts).length) return 0;
+    return Object.entries(counts).reduce((a: any, b: any) => a[1] > b[1] ? a : b, ['N/A', 0])[1] as number;
+  }
+
+  // Top demand skill (by positions) within timeframe
+  getFilteredTopDemandSkill(): string {
+    if (!this.dashboardData?.demands) return 'N/A';
+    const start = this.getStartDateForTimeframe();
+    const filtered = this.dashboardData.demands.filter((d: any) => {
+      const dt = this.parseDateSafe(d.date);
+      return dt >= start;
+    });
+    const counts = filtered.reduce((acc: any, d: any) => {
+      const skill = d.skill || 'Unknown';
+      acc[skill] = (acc[skill] || 0) + (d.positions ?? 0);
+      return acc;
+    }, {});
+    if (!Object.keys(counts).length) return 'N/A';
+    return Object.entries(counts).reduce((a: any, b: any) => a[1] > b[1] ? a : b, ['N/A', 0])[0];
+  }
+
+  getFilteredTopDemandCount(): number {
+    if (!this.dashboardData?.demands) return 0;
+    const start = this.getStartDateForTimeframe();
+    const filtered = this.dashboardData.demands.filter((d: any) => {
+      const dt = this.parseDateSafe(d.date);
+      return dt >= start;
+    });
+    const counts = filtered.reduce((acc: any, d: any) => {
+      const skill = d.skill || 'Unknown';
+      acc[skill] = (acc[skill] || 0) + (d.positions ?? 0);
+      return acc;
+    }, {});
+    if (!Object.keys(counts).length) return 0;
+    return Object.entries(counts).reduce((a: any, b: any) => a[1] > b[1] ? a : b, ['N/A', 0])[1] as number;
   }
 }
 

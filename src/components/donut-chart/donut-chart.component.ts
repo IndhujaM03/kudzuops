@@ -11,187 +11,178 @@ import * as d3 from 'd3';
       <svg #chartRef></svg>
       <div class="legend" #legendRef></div>
       <div *ngIf="(statusCounts | keyvalue).length === 0" class="no-data-message">
-  <p>No distribution data available</p>
-</div>
-
+        <p>No distribution data available</p>
+      </div>
     </div>
   `
 })
 export class DonutChartComponent implements OnInit, OnChanges, AfterViewInit {
   @Input() statusCounts: { [key: string]: number } = {};
-  @Input() title: string = '';
-  @Input() subtitle: string = '';
   @ViewChild('chartRef') chartRef!: ElementRef;
   @ViewChild('legendRef') legendRef!: ElementRef;
+
   private viewInitialized = false;
+  private lastData: string = ''; // keep previous data snapshot
+  private tooltip: any;
 
   ngOnInit() {}
 
   ngAfterViewInit(): void {
     this.viewInitialized = true;
-    this.createChart();
+    this.renderIfNeeded();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (this.viewInitialized && (changes['statusCounts'])) {
-      this.createChart();
+    if (this.viewInitialized && changes['statusCounts']) {
+      this.renderIfNeeded();
     }
+  }
+
+  private renderIfNeeded() {
+    const current = JSON.stringify(this.statusCounts);
+    if (current === this.lastData) return; // no data change → skip redraw
+    this.lastData = current;
+    this.createChart();
   }
 
   private createChart() {
     const element = this.chartRef.nativeElement;
     const containerWidth = element.parentElement?.clientWidth || 500;
     const width = Math.min(containerWidth, 500);
-    const height = 350;
+    const height = 320;
     const radius = Math.min(width, height) / 2;
     const innerRadius = radius * 0.5;
-
-    d3.select(element).selectAll("*").remove();
-
+  
+    d3.select(element).selectAll('*').remove();
+  
     const svg = d3.select(element)
-      .attr("width", width)
-      .attr("height", height);
-
-    const g = svg.append("g")
-      .attr("transform", `translate(${width / 2},${height / 2})`);
-
+      .attr('width', width)
+      .attr('height', height);
+  
+    const g = svg.append('g')
+      .attr('transform', `translate(${width / 2},${height / 2})`);
+  
     const data = Object.entries(this.statusCounts).map(([status, count]) => ({ status, count }));
-    
-    console.log('Donut Chart Data:', data);
-
+  
     if (data.length === 0) {
-      g.append("text")
-        .attr("text-anchor", "middle")
-        .attr("dy", "-0.5em")
-        .style("fill", "var(--text-secondary)")
-        .style("font-size", "14px")
-        .text("No distribution data available");
-        
-      g.append("text")
-        .attr("text-anchor", "middle")
-        .attr("dy", "1em")
-        .style("fill", "var(--text-muted)")
-        .style("font-size", "12px")
-        .text("Chart will display when data is loaded");
+      g.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '.35em')
+        .style('fill', 'var(--text-secondary)')
+        .text('No data');
       return;
     }
-
-    // const colors = ['#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
-    // // Updated colors to match reference image
-    const colors = ['#4A90E2', '#87CEEB', '#1B365D', '#40E0D0', '#32CD32', '#98FB98', '#FFA500', '#FF7F50'];
-
+  
+    const colors = ['#4A90E2', '#87CEEB', '#1B365D', '#40E0D0', '#32CD32', '#98FB98', '#FF7F50', '#FFA500'];
     const color = d3.scaleOrdinal(colors);
-
-    const pie = d3.pie<any>()
-      .value(d => d.count)
-      .sort(null);
-
-    const arc = d3.arc<any>()
-      .innerRadius(innerRadius)
-      .outerRadius(radius);
-
-    const arcHover = d3.arc<any>()
-      .innerRadius(innerRadius)
-      .outerRadius(radius + 15);
-
-    // Add arcs
-    const arcs = g.selectAll(".arc")
+  
+    const pie = d3.pie<any>().value(d => d.count).sort(null);
+    const arc = d3.arc<any>().innerRadius(innerRadius).outerRadius(radius);
+    const arcHover = d3.arc<any>().innerRadius(innerRadius).outerRadius(radius + 15);
+  
+    const arcs = g.selectAll('.arc')
       .data(pie(data))
-      .enter().append("g")
-      .attr("class", "arc");
-
-    arcs.append("path")
-      .attr("d", arc)
-      .attr("fill", (d, i) => color(i.toString()))
-      .attr("stroke", "var(--secondary-bg)")
-      .style("stroke-width", "3px")
-      .transition()
-      .delay((d, i) => i * 200)
-      .duration(1000)
-.attrTween("d", function(d) {
-  const interpolate = d3.interpolate({ startAngle: 0, endAngle: 0 }, d);
-  return function(t) {
-    return arc(interpolate(t))!; // add "!" to tell TS it won't be null
-  };
-});
-
-
-    // Add percentage labels
-    arcs.append("text")
-      .attr("transform", d => `translate(${arc.centroid(d)})`)
-      .attr("dy", ".35em")
-      .style("text-anchor", "middle")
-      .style("fill", "white")
-      .style("font-size", "12px")
-      .style("font-weight", "bold")
-      .style("text-shadow", "1px 1px 2px rgba(0,0,0,0.7)")
+      .enter().append('g')
+      .attr('class', 'arc');
+  
+    arcs.append('path')
+      .attr('d', arc)
+      .attr('fill', (d, i) => color(i.toString()))
+      .attr('stroke', 'var(--secondary-bg)')
+      .style('stroke-width', '3px');
+  
+    // Labels
+    arcs.append('text')
+      .attr('transform', d => `translate(${arc.centroid(d)})`)
+      .attr('dy', '.35em')
+      .style('text-anchor', 'middle')
+      .style('fill', 'white')
+      .style('font-size', '12px')
+      .style('font-weight', 'bold')
       .text(d => `${Math.round((d.data.count / d3.sum(data, d => d.count)) * 100)}%`);
-
-    // Add center text
+  
+    // Center text
     const total = d3.sum(data, d => d.count);
-    g.append("text")
-      .attr("text-anchor", "middle")
-      .attr("dy", "-0.5em")
-      .style("font-size", "28px")
-      .style("font-weight", "bold")
-      .style("fill", "var(--text-primary)")
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '-0.5em')
+      .style('font-size', '22px')
+      .style('font-weight', 'bold')
       .text(total);
-
-    g.append("text")
-      .attr("text-anchor", "middle")
-      .attr("dy", "1em")
-      .style("font-size", "12px")
-      .style("fill", "var(--text-secondary)")
-      .text("Total");
-
-    // Add hover effects
-    // Ensure single tooltip instance
-    d3.selectAll("body > div.tooltip").remove();
-    const tooltip = d3.select("body").append("div")
-      .attr("class", "tooltip");
-
-    arcs.on("mouseover", function(event, d) {
-      d3.select(this).select("path")
-        .transition()
-        .duration(200)
-        .attr("d", arcHover);
-        
-      tooltip.transition().duration(200).style("opacity", .9);
-      tooltip.html(`${d.data.status}: ${d.data.count}`)
-        .style("left", (event.pageX + 10) + "px")
-        .style("top", (event.pageY - 28) + "px");
+  
+    g.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '1.2em')
+      .style('font-size', '12px')
+      .style('fill', 'var(--text-secondary)')
+      .text('Total');
+  
+    // Tooltip group inside SVG (horizontal like line chart)
+    const tooltipGroup = g.append("g").style("display", "none");
+  
+    tooltipGroup.append("rect")
+      .attr("width", 140)
+      .attr("height", 40)
+      .attr("rx", 6).attr("ry", 6)
+      .attr("fill", "#fff")
+      .attr("stroke", "#4A90E2")
+      .attr("stroke-width", 1.5);
+  
+    const tooltipStatus = tooltipGroup.append("text")
+      .attr("x", 10)
+      .attr("y", 15)
+      .style("font-weight", "bold")
+      .style("fill", "#000")
+      .style("font-size", "12px");
+  
+    const tooltipCount = tooltipGroup.append("text")
+      .attr("x", 10)
+      .attr("y", 30)
+      .style("font-weight", "bold")
+      .style("fill", "#000")
+      .style("font-size", "12px");
+  
+    // Hover behavior
+    arcs.on('mouseover', function(event, d) {
+        d3.select(this).select('path').transition().duration(200).attr('d', arcHover);
+  
+        tooltipGroup.style("display", null)
+          .attr("transform", `translate(${arc.centroid(d)[0] - 70}, ${arc.centroid(d)[1] - 50})`);
+  
+        tooltipStatus.text(`${d.data.status}`);
+        tooltipCount.text(`Count: ${d.data.count}`);
     })
-    .on("mouseout", function() {
-      d3.select(this).select("path")
-        .transition()
-        .duration(200)
-        .attr("d", arc);
-        
-      tooltip.transition().duration(500).style("opacity", 0);
+    .on('mousemove', function(event, d) {
+        // keep tooltip horizontal near slice
+        tooltipGroup.attr("transform", `translate(${arc.centroid(d)[0] - 70}, ${arc.centroid(d)[1] - 50})`);
+    })
+    .on('mouseout', function() {
+        d3.select(this).select('path').transition().duration(200).attr('d', arc);
+        tooltipGroup.style("display", "none");
     });
-
-    // Create legend in separate container
+  
+    // Legend
     const legendContainer = d3.select(this.legendRef.nativeElement);
-    legendContainer.selectAll("*").remove();
-    
-    const legendItems = legendContainer.selectAll(".legend-item")
+    legendContainer.selectAll('*').remove();
+  
+    const legendItems = legendContainer.selectAll('.legend-item')
       .data(data)
-      .enter().append("div")
-      .attr("class", "legend-item")
-      .style("display", "flex")
-      .style("align-items", "center")
-      .style("gap", "0.5rem")
-      .style("margin-bottom", "0.5rem");
-
-    legendItems.append("div")
-      .style("width", "16px")
-      .style("height", "16px")
-      .style("border-radius", "3px")
-      .style("background-color", (d, i) => color(i.toString()));
-
-    legendItems.append("span")
-      .style("font-size", "12px")
-      .style("color", "var(--text-secondary)")
+      .enter().append('div')
+      .attr('class', 'legend-item')
+      .style('display', 'flex')
+      .style('align-items', 'center')
+      .style('gap', '0.5rem')
+      .style('margin-bottom', '0.5rem');
+  
+    legendItems.append('div')
+      .style('width', '16px')
+      .style('height', '16px')
+      .style('border-radius', '3px')
+      .style('background-color', (d, i) => color(i.toString()));
+  
+    legendItems.append('span')
+      .style('font-size', '12px')
       .text(d => `${d.status}: ${d.count}`);
   }
+  
 }

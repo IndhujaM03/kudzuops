@@ -142,19 +142,19 @@ export class LineChartComponent implements OnInit, OnDestroy, OnChanges {
     const containerWidth = element.parentElement?.clientWidth || 900;
     const width = containerWidth - margin.left - margin.right;
     const height = 350 - margin.top - margin.bottom;
-
+  
+    // Clear previous chart
     d3.select(element).selectAll("*").remove();
-    d3.select("body").selectAll(".tooltip").remove();
-
+  
     const svg = d3.select(element)
       .attr("width", width + margin.left + margin.right)
       .attr("height", height + margin.top + margin.bottom);
-
+  
     const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
+  
     // Prepare chart data
     let chartData: { date: Date; submissions: number }[] = [];
-
+  
     if (this.selectedViewType === 'daily') {
       const grouped = d3.rollup(this.filteredData, v => v.length, d => d.date);
       chartData = Array.from(grouped, ([date, submissions]) => ({ date: new Date(date), submissions }));
@@ -176,10 +176,10 @@ export class LineChartComponent implements OnInit, OnDestroy, OnChanges {
       );
       chartData = Array.from(grouped, ([date, submissions]) => ({ date: new Date(date), submissions }));
     }
-
+  
     chartData = chartData.filter(d => !isNaN(d.date.getTime()))
                          .sort((a, b) => a.date.getTime() - b.date.getTime());
-
+  
     if (chartData.length === 0) {
       g.append("text")
         .attr("x", width / 2)
@@ -197,12 +197,12 @@ export class LineChartComponent implements OnInit, OnDestroy, OnChanges {
         .text("Daily trends will appear as data is collected");
       return;
     }
-
+  
     const xScale = d3.scaleTime().domain(d3.extent(chartData, d => d.date) as [Date, Date]).range([0, width]);
     const yScale = d3.scaleLinear().domain([0, d3.max(chartData, d => d.submissions) || 0]).range([height, 0]);
-
+  
     const line = d3.line<any>().x(d => xScale(d.date)).y(d => yScale(d.submissions)).curve(d3.curveMonotoneX);
-
+  
     // Axis
     g.append("g")
       .attr("transform", `translate(0,${height})`)
@@ -223,29 +223,29 @@ export class LineChartComponent implements OnInit, OnDestroy, OnChanges {
       .attr("transform", "rotate(-45)")
       .style("font-size", "10px")
       .style("color", "var(--text-secondary)");
-
+  
     g.append("g").call(d3.axisLeft(yScale)).style("color", "var(--text-secondary)").selectAll("text").style("font-size", "10px");
-
+  
     // Grid
     g.append("g").attr("class", "grid").attr("transform", `translate(0,${height})`)
       .call(d3.axisBottom(xScale).tickSize(-height).tickFormat(() => "")).style("stroke-dasharray", "3,3").style("opacity", 0.3);
     g.append("g").attr("class", "grid")
       .call(d3.axisLeft(yScale).tickSize(-width).tickFormat(() => "")).style("stroke-dasharray", "3,3").style("opacity", 0.3);
-
+  
     // Line path
     const path = g.append("path").datum(chartData)
       .attr("fill", "none")
       .attr("stroke", "#4A90E2")
       .attr("stroke-width", 2)
       .attr("d", line);
-
+  
     const totalLength = path.node()?.getTotalLength() || 0;
     path.attr("stroke-dasharray", totalLength + " " + totalLength)
         .attr("stroke-dashoffset", totalLength)
         .transition().duration(1500).ease(d3.easeLinear)
         .attr("stroke-dashoffset", 0);
-
-    // Circles & tooltip
+  
+    // Circles
     g.selectAll(".dot").data(chartData).enter().append("circle")
       .attr("class", "dot")
       .attr("cx", d => xScale(d.date))
@@ -254,17 +254,84 @@ export class LineChartComponent implements OnInit, OnDestroy, OnChanges {
       .attr("fill", "#4A90E2")
       .transition().delay((d, i) => i * 100).duration(500)
       .attr("r", 3);
+  
+ // Tooltip group
+const tooltipGroup = g.append("g").style("display", "none");
 
-    const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+// Background rectangle
+const tooltipRect = tooltipGroup.append("rect")
+  .attr("fill", "#fff") // white background
+  // .attr("stroke", "#FF7F0E") // orange border
+  .attr("stroke-width", 1.5)
+  .attr("rx", 6)
+  .attr("ry", 6)
+  .attr("width", 140)
+  .attr("height", 40)
+  .attr("opacity", 0.95);
 
-    g.selectAll(".dot")
-      .on("mouseover", (event, d) => {
-        const dataPoint = d as { date: Date; submissions: number };
-        tooltip.transition().duration(200).style("opacity", 0.9);
-        tooltip.html(`Date: ${d3.timeFormat("%Y-%m-%d")(dataPoint.date)}<br/>Submissions: ${dataPoint.submissions}`)
-          .style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 28) + "px");
-      })
-      .on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0));
+// Text lines
+const tooltipDate = tooltipGroup.append("text")
+  .attr("x", 10)
+  .attr("y", 15)
+  .attr("fill", "#000") // black text
+  .style("font-size", "12px")
+  .style("font-weight", "bold");
+
+const tooltipSub = tooltipGroup.append("text")
+  .attr("x", 10)
+  .attr("y", 30)
+  .attr("fill", "#000") // black text
+  .style("font-size", "12px")
+  .style("font-weight", "bold");
+
+// Tooltip behavior
+g.selectAll(".dot")
+  .on("mouseover", function(event, d) {
+    const dataPoint = d as { date: Date; submissions: number };
+    tooltipGroup.style("display", null);
+    d3.select(this).attr("r", 6).attr("fill", "#4A90E2"); // larger orange dot
+
+    // Set text
+    tooltipDate.text(`Date: ${d3.timeFormat("%Y-%m-%d")(dataPoint.date)}`);
+    tooltipSub.text(`Submissions: ${dataPoint.submissions}`);
+
+    // Compute tooltip position
+    let x = xScale(dataPoint.date) + 10;
+    let y = yScale(dataPoint.submissions) - 50;
+
+    // Prevent tooltip from going outside chart bounds
+    const svgWidth = parseFloat(d3.select(element).attr("width"));
+    const svgHeight = parseFloat(d3.select(element).attr("height"));
+    const tooltipWidth = 140;
+    const tooltipHeight = 40;
+
+    if (x + tooltipWidth > svgWidth - 10) x = svgWidth - tooltipWidth - 10;
+    if (y < 0) y = 0;
+    if (y + tooltipHeight > svgHeight - 10) y = svgHeight - tooltipHeight - 10;
+
+    tooltipGroup.attr("transform", `translate(${x}, ${y})`);
+  })
+  .on("mousemove", function(event, d) {
+    const dataPoint = d as { date: Date; submissions: number };
+
+    // same positioning logic
+    let x = xScale(dataPoint.date) + 10;
+    let y = yScale(dataPoint.submissions) - 50;
+    const svgWidth = parseFloat(d3.select(element).attr("width"));
+    const svgHeight = parseFloat(d3.select(element).attr("height"));
+    const tooltipWidth = 140;
+    const tooltipHeight = 40;
+
+    if (x + tooltipWidth > svgWidth - 10) x = svgWidth - tooltipWidth - 10;
+    if (y < 0) y = 0;
+    if (y + tooltipHeight > svgHeight - 10) y = svgHeight - tooltipHeight - 10;
+
+    tooltipGroup.attr("transform", `translate(${x}, ${y})`);
+  })
+  .on("mouseout", function(event, d) {
+    tooltipGroup.style("display", "none");
+    d3.select(this).attr("r", 3).attr("fill", "#4A90E2");
+  });
+
   }
-}
+}  

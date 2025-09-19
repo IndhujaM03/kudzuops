@@ -256,96 +256,94 @@ export class RecruiterPerformanceTrackerComponent implements OnInit, OnDestroy, 
       return matchesMonth && matchesRecruiter;
     });
   }
-
-private createPerformanceChart() {
-  const element = this.performanceChartRef.nativeElement;
-  const margin = { top: 20, right: 80, bottom: 100, left: 60 };
-  const containerWidth = element.parentElement?.clientWidth || 900;
-  const width = containerWidth - margin.left - margin.right;
-  const height = 450 - margin.top - margin.bottom;
-
-  // Clear previous chart
-  d3.select(element).selectAll("*").remove();
-  d3.select("body").selectAll(".tooltip").remove();
-
-  const svg = d3.select(element)
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom);
-
-  const g = svg.append("g")
-    .attr("transform", `translate(${margin.left},${margin.top})`);
-
-  // Prepare chart data based on time range
-  let chartData: { date: Date; callsMade: number; submissions: number; cvsSourced: number; label: string; }[] = [];
-
-  if (this.selectedTimeRange === 'daily') {
-    const grouped = d3.rollup(
-      this.filteredData,
-      v => ({
-        callsMade: d3.sum(v, d => d.callsMade),
-        submissions: d3.sum(v, d => d.submissions),
-        cvsSourced: d3.sum(v, d => d.cvsSourced)
-      }),
-      d => d.date
-    );
-    chartData = Array.from(grouped, ([date, metrics]) => ({
-      date: new Date(date), ...metrics,
-      label: d3.timeFormat("%m/%d")(new Date(date))
-    }));
-  } else if (this.selectedTimeRange === 'weekly') {
-    const grouped = d3.rollup(
-      this.filteredData,
-      v => ({
-        callsMade: d3.sum(v, d => d.callsMade),
-        submissions: d3.sum(v, d => d.submissions),
-        cvsSourced: d3.sum(v, d => d.cvsSourced)
-      }),
-      d => d3.timeWeek.floor(new Date(d.date)).toISOString().split('T')[0]
-    );
-    chartData = Array.from(grouped, ([date, metrics]) => ({
-      date: new Date(date), ...metrics,
-      label: `Week ${d3.timeFormat("%U")(new Date(date))}`
-    }));
-  } else {
-    const grouped = d3.rollup(
-      this.filteredData,
-      v => ({
-        callsMade: d3.sum(v, d => d.callsMade),
-        submissions: d3.sum(v, d => d.submissions),
-        cvsSourced: d3.sum(v, d => d.cvsSourced)
-      }),
-      d => d.date.slice(0, 7) + '-01'
-    );
-    chartData = Array.from(grouped, ([date, metrics]) => ({
-      date: new Date(date), ...metrics,
-      label: d3.timeFormat("%b %Y")(new Date(date))
-    }));
-  }
-
-  chartData = chartData.filter(d => !isNaN(d.date.getTime()))
-                       .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  if (chartData.length === 0) {
-    g.append("text")
-      .attr("x", width / 2).attr("y", height / 2)
-      .attr("text-anchor", "middle")
-      .style("fill", "var(--text-secondary)")
-      .style("font-size", "16px")
-      .text("No performance data available");
-    return;
-  }
-
-  // Scales
-  const xScale = d3.scalePoint()
-    .domain(chartData.map(d => d.label))
-    .range([0, width])
-    .padding(0.5);
-
-  const yScale = d3.scaleLinear()
-    .domain([0, d3.max(chartData, d => Math.max(d.callsMade, d.submissions, d.cvsSourced)) || 0])
-    .nice()
-    .range([height, 0]);
-
+  private createPerformanceChart() {
+    const element = this.performanceChartRef.nativeElement;
+    const margin = { top: 20, right: 80, bottom: 100, left: 60 };
+    const containerWidth = element.parentElement?.clientWidth || 900;
+    const width = containerWidth - margin.left - margin.right;
+    const height = 450 - margin.top - margin.bottom;
+  
+    // Clear previous chart
+    d3.select(element).selectAll("*").remove();
+  
+    const svg = d3.select(element)
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom);
+  
+    const g = svg.append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+  
+    // Prepare chart data based on selected time range
+    let chartData: any[] = [];
+    if (this.selectedTimeRange === 'daily') {
+      const grouped = d3.rollup(
+        this.filteredData,
+        v => ({
+          callsMade: d3.sum(v, d => d.callsMade),
+          submissions: d3.sum(v, d => d.submissions),
+          cvsSourced: d3.sum(v, d => d.cvsSourced)
+        }),
+        d => d.date
+      );
+      chartData = Array.from(grouped, ([date, metrics]) => ({
+        date: new Date(date), ...metrics,
+        label: d3.timeFormat("%m/%d")(new Date(date))
+      }));
+    } else if (this.selectedTimeRange === 'weekly') {
+      const grouped = d3.rollup(
+        this.filteredData,
+        v => ({
+          callsMade: d3.sum(v, d => d.callsMade),
+          submissions: d3.sum(v, d => d.submissions),
+          cvsSourced: d3.sum(v, d => d.cvsSourced)
+        }),
+        d => d3.timeWeek.floor(new Date(d.date)).toISOString().split('T')[0]
+      );
+      chartData = Array.from(grouped, ([date, metrics]) => ({
+        date: new Date(date), ...metrics,
+        label: `Week ${d3.timeFormat("%U")(new Date(date))}`
+      }));
+    } else {
+      const grouped = d3.rollup(
+        this.filteredData,
+        v => ({
+          callsMade: d3.sum(v, d => d.callsMade),
+          submissions: d3.sum(v, d => d.submissions),
+          cvsSourced: d3.sum(v, d => d.cvsSourced)
+        }),
+        d => d.date.slice(0, 7) + '-01'
+      );
+      chartData = Array.from(grouped, ([date, metrics]) => ({
+        date: new Date(date), ...metrics,
+        label: d3.timeFormat("%b %Y")(new Date(date))
+      }));
+    }
+  
+    chartData = chartData.filter(d => !isNaN(d.date.getTime()))
+                         .sort((a, b) => a.date.getTime() - b.date.getTime());
+  
+    if (chartData.length === 0) {
+      g.append("text")
+        .attr("x", width / 2)
+        .attr("y", height / 2)
+        .attr("text-anchor", "middle")
+        .style("fill", "var(--text-secondary)")
+        .style("font-size", "16px")
+        .text("No performance data available");
+      return;
+    }
+  
+    // Scales
+    const xScale = d3.scalePoint()
+      .domain(chartData.map(d => d.label))
+      .range([0, width])
+      .padding(0.5);
+  
+    const yScale = d3.scaleLinear()
+      .domain([0, d3.max(chartData, d => Math.max(d.callsMade, d.submissions, d.cvsSourced)) || 0])
+      .nice()
+      .range([height, 0]);
+  
     // Axes
     g.append("g")
       .attr("transform", `translate(0,${height})`)
@@ -356,102 +354,132 @@ private createPerformanceChart() {
       .attr("dy", ".15em")
       .attr("transform", "rotate(-45)")
       .style("font-size", "10px");
-
-    g.append("g").call(d3.axisLeft(yScale).ticks(6));
-
-g.append("g")
-  .call(d3.axisLeft(yScale).ticks(6));
-
-
-  // Grid lines
-  g.append("g").attr("class", "grid").attr("transform", `translate(0,${height})`)
-      .call(d3.axisBottom(xScale).tickSize(-height).tickFormat(() => "")).style("stroke-dasharray", "3,3").style("opacity", 0.3);
+  
+    g.append("g")
+      .call(d3.axisLeft(yScale).ticks(6));
+  
+    // Grid lines
     g.append("g").attr("class", "grid")
-      .call(d3.axisLeft(yScale).tickSize(-width).tickFormat(() => "")).style("stroke-dasharray", "3,3").style("opacity", 0.3);
+      .attr("transform", `translate(0,${height})`)
+      .call(d3.axisBottom(xScale).tickSize(-height).tickFormat(() => ""))
+      .style("stroke-dasharray", "3,3").style("opacity", 0.3);
+  
+    g.append("g").attr("class", "grid")
+      .call(d3.axisLeft(yScale).tickSize(-width).tickFormat(() => ""))
+      .style("stroke-dasharray", "3,3").style("opacity", 0.3);
+  
+    // Metrics to plot
+    const metrics = [
+      { key: 'callsMade', label: '📞 Calls Made', color: '#4A90E2' },
+      { key: 'submissions', label: '📤 Submitted Profiles', color: '#1B365D' },
+      { key: 'cvsSourced', label: '📑 CVs Sourced', color: '#E67E22' }
+    ];
+  
+    // Line generator
+    const line = d3.line<any>()
+      .x(d => xScale(d.label)!)
+      .y(d => yScale(d.value))
+      .curve(d3.curveMonotoneX);
+  
+    // Tooltip group inside SVG
+    const tooltipGroup = g.append("g").style("display", "none");
+  
+    tooltipGroup.append("rect")
+      .attr("width", 180)
+      .attr("height", 45)
+      .attr("rx", 6).attr("ry", 6)
+      .attr("fill", "#fff")
+      .attr("stroke", "#4A90E2")
+      .attr("stroke-width", 1.5);
+  
+    const tooltipDate = tooltipGroup.append("text")
+      .attr("x", 10)
+      .attr("y", 15)
+      .style("font-weight", "bold")
+      .style("fill", "#000")
+      .style("font-size", "12px");
+  
+    const tooltipValue = tooltipGroup.append("text")
+      .attr("x", 10)
+      .attr("y", 30)
+      .style("font-weight", "bold")
+      .style("fill", "#000")
+      .style("font-size", "12px");
+  
+    // Draw lines and circles
+    metrics.forEach(metric => {
+      const series = chartData.map(d => ({ label: d.label, value: d[metric.key] }));
+  
+      // Line
+      g.append("path")
+        .datum(series)
+        .attr("fill", "none")
+        .attr("stroke", metric.color)
+        .attr("stroke-width", 2)
+        .attr("d", line);
+  
+      // Dots
+// Dots
+g.selectAll(`.dot-${metric.key}`)
+  .data(series)
+  .enter()
+  .append("circle")
+  .attr("class", `dot-${metric.key}`)
+  .attr("cx", d => xScale(d.label)!)
+  .attr("cy", d => yScale(d.value))
+  .attr("r", 3)
+  .attr("fill", metric.color)
+  .style("cursor", "pointer")
+  .on("mouseover", function(event, d: any) {
+    tooltipGroup.style("display", null);
+    tooltipDate.text(`Date: ${d.label}`);
+    tooltipValue.text(`${metric.label}: ${d.value}`);
+    d3.select(this).attr("r", 6);
+  })
+  .on("mousemove", function(event, d: any) {
+    const tooltipWidth = 180;
+    const tooltipHeight = 45;
 
+    let x = xScale(d.label)! - tooltipWidth / 2;
+    let y = yScale(d.value) - tooltipHeight - 10;
 
-  // Line generator
-  const line = d3.line<any>()
-    .x(d => xScale(d.label)!)
-    .y(d => yScale(d.value))
-    .curve(d3.curveMonotoneX);
+    // Keep tooltip inside SVG bounds
+    if (x < 0) x = 0;
+    if (x + tooltipWidth > width) x = width - tooltipWidth;
+    if (y < 0) y = yScale(d.value) + 10;
 
-  // Metrics
-  const metrics = [
-    { key: 'callsMade', label: '📞 Calls Made', color: '#4A90E2' },
-    { key: 'submissions', label: '📤 Submitted Profiles', color: '#1B365D' },
-    { key: 'cvsSourced', label: '📑 CVs Sourced', color: '#E67E22' }
-  ];
-
-  // Create single tooltip
-  d3.select("body").selectAll(".tooltip").remove();
-const tooltip = d3.select("body").append("div").attr("class", "tooltip");
-
-
-  // Draw lines and circles
-  metrics.forEach(metric => {
-    const series = chartData.map(d => ({ label: d.label, value: d[metric.key as keyof typeof d] as number }));
-
-    // Draw line
-    g.append("path")
-      .datum(series)
-      .attr("fill", "none")
-      .attr("stroke", metric.color)
-      .attr("stroke-width", 2)
-      .attr("d", line);
-
-    // Draw circles with hover
-    g.selectAll(`.dot-${metric.key}`)
-      .data(series)
-      .enter()
-      .append("circle")
-      .attr("class", `dot-${metric.key}`)
-      .attr("cx", d => xScale(d.label)!)
-      .attr("cy", d => yScale(d.value))
-      .attr("r", 2)
-      .attr("fill", metric.color)
-      .style("cursor", "pointer")
-     .on("mouseover", function(event, d: any) {
-    tooltip
-      .html(`<strong>${metric.label}</strong><br/>${d.label}: ${d.value}`)
-      .style("opacity", 1)
-       .style("left", event.clientX + 15 + "px")
-    .style("top", event.clientY - 15 + "px");
-    console.log("Tooltip Position", event.pageX, event.pageY, event.clientX, event.clientY);
-
-})
-.on("mousemove", function(event) {
-    tooltip
-       .style("left", event.clientX + 15 + "px")
-    .style("top", event.clientY - 15 + "px");
-})
-.on("mouseout", function() {
-    tooltip.style("opacity", 0);
-});
-
+    tooltipGroup.attr("transform", `translate(${x}, ${y})`);
+  })
+  .on("mouseout", function() {
+    tooltipGroup.style("display", "none");
+    d3.select(this).attr("r", 3);
   });
 
-  // Legend
-  const legend = svg.append("g")
-    .attr("transform", `translate(${margin.left}, ${height + margin.top + 60})`);
-
-  const legendItems = legend.selectAll(".legend-item")
-    .data(metrics)
-    .enter().append("g")
-    .attr("class", "legend-item")
-    .attr("transform", (d, i) => `translate(${i * 200}, 0)`);
-
-  legendItems.append("rect")
-    .attr("width", 14).attr("height", 14)
-    .attr("fill", d => d.color).attr("rx", 3);
-
-  legendItems.append("text")
-    .attr("x", 20).attr("y", 10)
-    .attr("dy", ".35em")
-    .style("font-size", "12px")
-    .style("fill", "var(--text-primary)")
-    .text(d => d.label);
-}
+    });
+  
+    // Legend
+    const legend = svg.append("g")
+      .attr("transform", `translate(${margin.left}, ${height + margin.top + 60})`);
+  
+    const legendItems = legend.selectAll(".legend-item")
+      .data(metrics)
+      .enter().append("g")
+      .attr("class", "legend-item")
+      .attr("transform", (d, i) => `translate(${i * 200}, 0)`);
+  
+    legendItems.append("rect")
+      .attr("width", 14).attr("height", 14)
+      .attr("fill", d => d.color).attr("rx", 3);
+  
+    legendItems.append("text")
+      .attr("x", 20).attr("y", 10)
+      .attr("dy", ".35em")
+      .style("font-size", "12px")
+      .style("fill", "var(--text-primary)")
+      .text(d => d.label);
+  }
+  
+  
 
   private getSkillBreakdown(data: RecruiterPerformanceData[]): string {
     const skillCounts: { [key: string]: number } = {};
