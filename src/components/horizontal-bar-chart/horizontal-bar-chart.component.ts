@@ -38,11 +38,7 @@ export class HorizontalBarChartComponent implements OnInit {
     const element = this.chartRef.nativeElement;
     const margin = { top: 20, right: 60, bottom: 60, left: 150 };
     const containerWidth = element.parentElement?.clientWidth || 800;
-    const width = containerWidth - margin.left - margin.right;
-    const height = Math.max(400, Object.keys(this.data).length * 40) - margin.top - margin.bottom;
   
-  
-    const barHeight =10;   // 🔑 fixed bar height
     const chartData = Object.entries(this.data)
       .map(([key, value]) => ({
         label: key.length > 20 ? key.substring(0, 20) + '...' : key,
@@ -52,6 +48,10 @@ export class HorizontalBarChartComponent implements OnInit {
       .sort((a, b) => b.value - a.value)
       .slice(0, 12);
   
+    const barCount = chartData.length;
+    const minHeight = 400; // ensure chart is never too short
+    const height = Math.max(minHeight, barCount * 25) - margin.top - margin.bottom;
+    const width = containerWidth - margin.left - margin.right;
   
     d3.select(element).selectAll('*').remove();
   
@@ -72,16 +72,20 @@ export class HorizontalBarChartComponent implements OnInit {
       return;
     }
   
+    // Scale fills available height
     const yScale = d3
       .scaleBand()
       .domain(chartData.map(d => d.label))
       .range([0, height])
-      .paddingInner(0.3);
+      .paddingInner(0.4) // control spacing
+      .paddingOuter(0.5);
   
     const xScale = d3
       .scaleLinear()
       .domain([0, d3.max(chartData, d => d.value) || 0])
       .range([0, width]);
+  
+    const barHeight = 5; // always thin
   
     // Axes
     g.append('g')
@@ -101,8 +105,8 @@ export class HorizontalBarChartComponent implements OnInit {
       .enter()
       .append('rect')
       .attr('class', 'bar')
-      .attr('y', d => yScale(d.label) || 0)
-      .attr('height', barHeight)   // 🔑 fixed height
+      .attr('y', d => (yScale(d.label) || 0) + (yScale.bandwidth() - barHeight) / 2) // center the thin bar
+      .attr('height', barHeight)
       .attr('x', 0)
       .attr('width', d => xScale(d.value))
       .attr('fill', '#4A90E2')
@@ -115,22 +119,21 @@ export class HorizontalBarChartComponent implements OnInit {
       .append('text')
       .attr('class', 'label')
       .attr('x', d => xScale(d.value) + 5)
-      .attr('y', d => (yScale(d.label) || 0) + barHeight / 2)
+      .attr('y', d => (yScale(d.label) || 0) + yScale.bandwidth() / 2)
       .attr('dy', '.35em')
       .style('font-size', '11px')
       .style('font-weight', '600')
       .style('fill', 'var(--text-primary)')
       .text(d => d.value);
   
-    // Tooltip (✅ create only once)
+    // Tooltip
     let tooltip: d3.Selection<HTMLDivElement, unknown, HTMLElement, any> = d3.select('.tooltip');
-
     if (tooltip.empty()) {
       tooltip = d3
         .select('body')
         .append('div')
         .attr('class', 'tooltip')
-        .style("cursor", "pointer")
+        .style('cursor', 'pointer')
         .style('position', 'absolute')
         .style('pointer-events', 'none')
         .style('z-index', '10000')
@@ -141,7 +144,6 @@ export class HorizontalBarChartComponent implements OnInit {
         .style('color', '#fff')
         .style('font-size', '12px');
     }
-    
   
     g.selectAll('.bar')
       .on('mouseover', (event: MouseEvent, d: any) => {
@@ -158,5 +160,6 @@ export class HorizontalBarChartComponent implements OnInit {
         tooltip.transition().duration(160).style('opacity', '0');
       });
   }
+  
   
 }
