@@ -6,6 +6,8 @@ import { FormsModule } from '@angular/forms';
 import { importProvidersFrom } from '@angular/core';
 import { DataService, DashboardData } from './services/data.service';
 import { ThemeService } from './services/theme.service';
+import { AuthService } from './services/auth.service';
+import { LoginComponent } from './components/login/login.component';
 import { LineChartComponent } from './components/line-chart/line-chart.component';
 import { BarChartComponent } from './components/bar-chart/bar-chart.component';
 import { DonutChartComponent } from './components/donut-chart/donut-chart.component';
@@ -18,6 +20,7 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
   imports: [
     CommonModule,
     FormsModule,
+    LoginComponent,
     LineChartComponent,
     BarChartComponent,
     DonutChartComponent,
@@ -25,7 +28,11 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
     RecruiterPerformanceTrackerComponent
   ],
   template: `
-    <div style="min-height: 100vh; background-color: var(--primary-bg);">
+    <!-- Show Login Screen if not authenticated -->
+    <app-login *ngIf="!(authService.isLoggedIn$ | async)"></app-login>
+
+    <!-- Show Dashboard if authenticated -->
+    <div *ngIf="authService.isLoggedIn$ | async" style="min-height: 100vh; background-color: var(--primary-bg);">
       <!-- Header -->
       <header class="header">
         <div class="container">
@@ -37,6 +44,9 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
               <p class="header-subtitle">Comprehensive analysis of recruitment metrics</p>
             </div>
             <div class="header-actions">
+              <button class="theme-toggle" (click)="logout()" title="Logout">
+                <span>🚪</span>
+              </button>
               <button class="theme-toggle" (click)="toggleTheme()" [attr.aria-label]="(themeService.isDarkMode$ | async) ? 'Switch to light mode' : 'Switch to dark mode'">
                 <span *ngIf="!(themeService.isDarkMode$ | async)">🌙</span>
                 <span *ngIf="themeService.isDarkMode$ | async">☀️</span>
@@ -347,11 +357,17 @@ spocTimeframe: 'Daily' | 'Weekly' | 'Monthly' = 'Monthly';
 
   constructor(
     private dataService: DataService,
-    public themeService: ThemeService
+    public themeService: ThemeService,
+    public authService: AuthService
   ) {}
 
   ngOnInit() {
-    this.loadDashboardData();
+    // Only load dashboard data if user is authenticated
+    this.authService.isLoggedIn$.subscribe(isLoggedIn => {
+      if (isLoggedIn && !this.dashboardData) {
+        this.loadDashboardData();
+      }
+    });
   }
 
 
@@ -378,6 +394,13 @@ spocTimeframe: 'Daily' | 'Weekly' | 'Monthly' = 'Monthly';
   toggleTheme() {
     this.themeService.toggleTheme();
   }
+
+  logout() {
+    this.authService.logout();
+    this.dashboardData = null;
+    this.loading = true;
+  }
+
   // -------------------------
   // SPOC-wise submissions helpers
   // -------------------------
