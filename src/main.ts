@@ -310,7 +310,7 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
         <div *ngIf="!loading && !dashboardData" style="text-align: center; padding: 4rem 0;">
           <p style="color: var(--text-secondary); font-size: 1.125rem;">No data available</p>
           <button class="btn btn-primary" (click)="loadDashboardData()" style="margin-top: 1rem;">
-            Load Publicis Report Data
+            Load Report Data
           </button>
         </div>
       </main>
@@ -319,7 +319,7 @@ import { RecruiterPerformanceTrackerComponent } from './components/recruiter-per
       <footer class="footer">
         <div class="container">
           <p class="footer-text">
-            © 2025 Publicis SPOC Analytics Dashboard - Supply & Demand Report
+            © 2025 Analytics Dashboard - Supply & Demand Report
           </p>
         </div>
       </footer>
