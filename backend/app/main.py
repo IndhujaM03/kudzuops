@@ -1,47 +1,58 @@
-from fastapi import FastAPI, HTTPException, Depends
+import os
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer
-import uvicorn
-from app.config import Config
-from app.login import router as login_router
+from dotenv import load_dotenv
+from .login import router as auth_router, super_router, get_current_user
 
-# Create FastAPI app
-app = FastAPI(
-    title="Kudzu Operations API",
-    description="Backend API for Kudzu Operations Dashboard",
-    version="1.0.0"
-)
+# -----------------------------
+# Load .env from backend folder
+# -----------------------------
+dotenv_path = os.path.join(os.path.dirname(__file__), "..", ".env")  # backend/.env
+load_dotenv(dotenv_path=dotenv_path, override=True)
+# Debug: print to check if .env loaded
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure this properly for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# Security
-security = HTTPBearer()
+# -----------------------------
+# FastAPI App Factory
+# -----------------------------
+def create_app() -> FastAPI:
+    app = FastAPI(title="Kudzu Recruitment Platform", version="0.1.0")
 
-# Include routers
-app.include_router(login_router, prefix="/api/auth", tags=["authentication"])
+    allowed_origins = [
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+    ]
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {"message": "Kudzu Operations API", "version": "1.0.0"}
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "kudzu-operations-api"}
-
-if __name__ == "__main__":
-    config = Config()
-    uvicorn.run(
-        "app.main:app",
-        host=config.HOST,
-        port=config.PORT,
-        reload=config.DEBUG
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
+
+    # Include authentication and superadmin routes
+    app.include_router(auth_router)
+    app.include_router(super_router)
+
+    # Health check
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "ok"}
+
+    # Dashboard route
+    @app.get("/dashboard")
+    async def dashboard(user=Depends(get_current_user)) -> dict:
+        return {
+            "message": "Dashboard data",
+            "user": {"email": user.get("sub"), "uid": user.get("uid")},
+            "widgets": ["summary", "charts", "activity"],
+        }
+
+    return app
+
+
+# -----------------------------
+# Create app instance
+# -----------------------------
+app = create_app()

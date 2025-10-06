@@ -29,12 +29,6 @@ import { SuperAdminDashboardComponent } from './components/superadmin/superadmin
         </div>
       </header>
       <main class="max-w-4xl mx-auto p-8">
-        <!-- Success message for OAuth login -->
-        <div *ngIf="showSuccessMessage" class="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative">
-          <strong class="font-bold">Success!</strong>
-          <span class="block sm:inline"> You have been successfully logged in via Google OAuth.</span>
-        </div>
-        
         <div class="bg-white rounded-lg shadow p-6">
           <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to Kudzu Dashboard</h1>
           <p class="text-gray-600">You are authenticated.</p>
@@ -45,32 +39,15 @@ import { SuperAdminDashboardComponent } from './components/superadmin/superadmin
 })
 export class DashboardComponent implements OnInit {
   private router = inject(Router);
-  showSuccessMessage = false;
-  
   ngOnInit() {
     const hash = window.location.hash || '';
-    const accessTokenMatch = hash.match(/access_token=([^&]+)/);
-    const tokenTypeMatch = hash.match(/token_type=([^&]+)/);
-    const expiresAtMatch = hash.match(/expires_at=([^&]+)/);
-    
-    if (accessTokenMatch && accessTokenMatch[1]) {
-      const token = decodeURIComponent(accessTokenMatch[1]);
-      const tokenType = tokenTypeMatch ? decodeURIComponent(tokenTypeMatch[1]) : 'bearer';
-      const expiresAt = expiresAtMatch ? decodeURIComponent(expiresAtMatch[1]) : null;
-      
+    const match = hash.match(/token=([^&]+)/);
+    if (match && match[1]) {
+      const token = decodeURIComponent(match[1]);
       if (token) {
         localStorage.setItem('access_token', token);
-        localStorage.setItem('token_type', tokenType);
-        if (expiresAt) {
-          localStorage.setItem('expires_at', expiresAt);
-        }
-        this.showSuccessMessage = true;
-        // Clean up the URL
+        localStorage.setItem('token_type', 'bearer');
         history.replaceState(null, document.title, window.location.pathname + window.location.search);
-        // Hide success message after 3 seconds
-        setTimeout(() => {
-          this.showSuccessMessage = false;
-        }, 3000);
       }
     }
   }

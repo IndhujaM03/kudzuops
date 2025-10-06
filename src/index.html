@@ -3,10 +3,18 @@
   <head>
     <title>Kudzu</title>
     <link rel="icon" type="image/png" href="assets/kudzulogo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
 
     <meta charset="UTF-8" />
     <base href="/">
+    <script>
+      window.__env__apiBase = window.__env__apiBase || '';
+      window.__env__authBase = window.__env__authBase || (window.__env__apiBase ? window.__env__apiBase + '/auth' : '');
+      window.__env__superAdminBase = window.__env__superAdminBase || (window.__env__apiBase ? window.__env__apiBase + '/superadmin' : '');
+    </script>
   </head>
   <body>
     <app-root>Loading...</app-root>

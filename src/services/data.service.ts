@@ -1,8 +1,9 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { forkJoin, Observable, map } from 'rxjs';
+import { forkJoin, Observable, map, of } from 'rxjs';
 import * as d3 from 'd3-dsv';
 import { RecruiterPerformanceData } from '../components/recruiter-performance-tracker/recruiter-performance-tracker.component';
+import { environment } from '../environments/environment';
 
 export interface SubmissionData {
   sno: number;
@@ -48,9 +49,8 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
   constructor(private http: HttpClient) {}
 
   getProtectedDashboard(): Observable<any> {
-    const token = localStorage.getItem('access_token');
-    const headers = token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : undefined;
-    return this.http.get('http://localhost:8000/dashboard', { headers });
+    // Mocked dashboard response
+    return of({ status: 'ok' });
   }
 
   getDashboardData(): Observable<DashboardData> {
