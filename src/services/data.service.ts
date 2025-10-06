@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { forkJoin, Observable, map } from 'rxjs';
 import * as d3 from 'd3-dsv';
 import { RecruiterPerformanceData } from '../components/recruiter-performance-tracker/recruiter-performance-tracker.component';
@@ -46,6 +46,12 @@ private DEMAND_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7
 
 private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7Pm_7pTn04ONGLY_xA69cq2ZHP9wf7Hb5VlFBJLFdGjL9ocdgnHo5fxeA6Dtjq5dPzGDs7/pub?gid=364112528&single=true&output=csv';
   constructor(private http: HttpClient) {}
+
+  getProtectedDashboard(): Observable<any> {
+    const token = localStorage.getItem('access_token');
+    const headers = token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : undefined;
+    return this.http.get('http://localhost:8000/dashboard', { headers });
+  }
 
   getDashboardData(): Observable<DashboardData> {
     return forkJoin({

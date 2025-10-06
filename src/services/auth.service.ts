@@ -1,39 +1,83 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
+import { Injectable, inject } from '@angular/core';
+import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 
-@Injectable({
-  providedIn: 'root'
-})
+export interface AuthResponse {
+  access_token?: string;
+  token_type: string;
+  expires_at?: string;
+  message?: string;
+  verification_required?: boolean;
+}
+
+@Injectable({ providedIn: 'root' })
 export class AuthService {
-  private isLoggedIn = new BehaviorSubject<boolean>(false);
-  public isLoggedIn$ = this.isLoggedIn.asObservable();
+  private http = inject(HttpClient);
+  private api = 'http://localhost:8000';
 
-  private readonly VALID_USERNAME = 'Kudzu';
-  private readonly VALID_PASSWORD = 'Kudzu123';
+  private isLoggedInSubject = new BehaviorSubject<boolean>(!!localStorage.getItem('access_token'));
+  public isLoggedIn$ = this.isLoggedInSubject.asObservable();
 
-  constructor() {
-    // Check if user was previously logged in
-    const savedLoginState = localStorage.getItem('isLoggedIn');
-    if (savedLoginState === 'true') {
-      this.isLoggedIn.next(true);
-    }
+  login(email: string, password: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.api}/auth/login`, { email, password }).pipe(
+      tap(r => this.storeAuth(r))
+    );
   }
 
-  login(username: string, password: string): boolean {
-    if (username === this.VALID_USERNAME && password === this.VALID_PASSWORD) {
-      this.isLoggedIn.next(true);
-      localStorage.setItem('isLoggedIn', 'true');
-      return true;
-    }
-    return false;
+  signup(email: string, password: string, confirm: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.api}/auth/register`, { email, password, confirm_password: confirm });
+  }
+
+  verify(email: string, code: string, google = false): Observable<AuthResponse> {
+    const endpoint = google ? 'verify-google' : 'verify';
+    return this.http.post<AuthResponse>(`${this.api}/auth/${endpoint}`, { email, code }).pipe(
+      tap(r => this.storeAuth(r))
+    );
+  }
+
+  resendVerification(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.api}/auth/resend`, { email });
+  }
+
+  requestPasswordReset(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.api}/auth/request-reset`, { email });
+  }
+
+  verifyReset(email: string, code: string, newPassword: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.api}/auth/verify-reset`, { email, code, new_password: newPassword });
+  }
+
+  sso(provider: 'google' | 'corp', ssoToken: string): Observable<AuthResponse> {
+    return this.http.post<AuthResponse>(`${this.api}/auth/sso`, { provider, sso_token: ssoToken }).pipe(
+      tap(r => this.storeAuth(r))
+    );
   }
 
   logout(): void {
-    this.isLoggedIn.next(false);
-    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    localStorage.removeItem('expires_at');
+    this.isLoggedInSubject.next(false);
   }
 
-  isAuthenticated(): boolean {
-    return this.isLoggedIn.value;
+  private storeAuth(r: AuthResponse) {
+    if (!r || !r.access_token) {
+      return;
+    }
+    localStorage.setItem('access_token', r.access_token);
+    localStorage.setItem('token_type', r.token_type || 'bearer');
+    if (r.expires_at) {
+      localStorage.setItem('expires_at', r.expires_at);
+    }
+    this.isLoggedInSubject.next(true);
+  }
+
+  isAuthenticated(): boolean { 
+    const token = localStorage.getItem('access_token');
+    return !!token && this.isLoggedInSubject.value;
+  }
+
+  getToken(): string | null {
+    return localStorage.getItem('access_token');
   }
 }
