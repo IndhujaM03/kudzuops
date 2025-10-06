@@ -141,6 +141,13 @@ def _issue_token(user_id: int, email: str, role: str = "candidate") -> str:
 def _generate_otp() -> str:
     return f"{secrets.randbelow(900000) + 100000:06d}"
 
+def _sanitize_code(code: str) -> str:
+    try:
+        s = "".join(ch for ch in str(code) if ch.isdigit())
+        return s[:6]
+    except Exception:
+        return ""
+
 def _send_email(to_email: str, subject: str, body: str) -> bool:
     try:
         if _get_env("EMAIL_ENABLED", default="true").lower() not in {"1", "true", "yes"}:
@@ -169,11 +176,37 @@ def _send_email(to_email: str, subject: str, body: str) -> bool:
         return False
 
 def _store_otp(email: str, otp: str, purpose: str = "verify") -> bool:
-    """Persist OTP in PostgreSQL with 10 minute expiry and consumed flag."""
+    """Store OTP with 10 minute expiry. Prefer Redis; fall back to PostgreSQL when available.
+
+    We DO NOT require the SQL table to exist. If Redis is available, that is sufficient.
+    """
+    expires_in_seconds = 600
+    wrote_any = False
+    # Prefer Redis
     try:
-        expires_in_seconds = 600
+        if redis_client is not None:
+            key = f"otp:{purpose}:{email}"
+            redis_client.setex(key, expires_in_seconds, _sanitize_code(otp))
+            wrote_any = True
+    except Exception:
+        pass
+
+    # Best-effort persist to SQL (optional)
+    try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS tbl_otps (
+                      id BIGSERIAL PRIMARY KEY,
+                      email TEXT NOT NULL,
+                      purpose VARCHAR(20) NOT NULL,
+                      code VARCHAR(10) NOT NULL,
+                      expires_at TIMESTAMPTZ NOT NULL,
+                      consumed BOOLEAN NOT NULL DEFAULT FALSE
+                    );
+                    """
+                )
                 cur.execute(
                     """
                     INSERT INTO tbl_otps (email, purpose, code, expires_at, consumed)
@@ -182,13 +215,29 @@ def _store_otp(email: str, otp: str, purpose: str = "verify") -> bool:
                     (email, purpose, otp, expires_in_seconds),
                 )
                 conn.commit()
-        return True
+                wrote_any = True or wrote_any
     except Exception:
-        # Do not block flows on OTP store failure, but report for logs
-        return False
+        # Ignore SQL errors entirely; Redis is sufficient
+        pass
+
+    return wrote_any
 
 def _verify_otp(email: str, code: str, purpose: str = "verify") -> bool:
-    """Validate OTP from PostgreSQL: must match, not expired, and not consumed. Marks as consumed on success."""
+    """Validate OTP. Prefer Redis; optionally fall back to SQL if available."""
+    code = _sanitize_code(code)
+    # Try Redis first
+    try:
+        if redis_client is not None:
+            key = f"otp:{purpose}:{email}"
+            stored = redis_client.get(key)
+            if stored and _constant_time_equals(code, _sanitize_code(stored)):
+                # consume by deleting
+                redis_client.delete(key)
+                return True
+    except Exception:
+        pass
+
+    # Fall back to SQL if table exists
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
@@ -208,7 +257,7 @@ def _verify_otp(email: str, code: str, purpose: str = "verify") -> bool:
                 otp_id, stored_code, _, consumed = row
                 if consumed:
                     return False
-                if not _constant_time_equals(code, stored_code):
+                if not _constant_time_equals(code, _sanitize_code(stored_code)):
                     return False
                 cur.execute("UPDATE tbl_otps SET consumed = TRUE WHERE id = %s", (otp_id,))
                 conn.commit()
@@ -367,7 +416,21 @@ def login(request: LoginRequest):
 def verify(request: VerifyRequest):
     """Verify user account with OTP"""
     try:
-        if not _verify_otp(request.email, request.code, "verify"):
+        # If no OTP record exists (e.g., previous failure to store), generate one now and force a resend
+        if not _verify_otp(request.email, _sanitize_code(request.code), "verify"):
+            # If Redis has no key, trigger a resend without touching SQL
+            should_resend = False
+            try:
+                if redis_client is not None:
+                    key = f"otp:verify:{request.email}"
+                    should_resend = redis_client.get(key) is None
+            except Exception:
+                should_resend = True
+            if should_resend:
+                otp = _generate_otp()
+                _store_otp(request.email, otp, "verify")
+                _send_email(request.email, "Verify your account", f"Your verification code is: {otp}")
+                raise HTTPException(status_code=400, detail="Verification code sent. Please check your email and try again.")
             raise HTTPException(status_code=400, detail="Invalid verification code")
         
         with psycopg.connect(DATABASE_DSN) as conn:
@@ -449,6 +512,39 @@ def confirm_reset_password(request: ResetPasswordRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Password reset failed: {str(e)}")
 
+# --- Development helpers (OTP debug) ---
+@router.get("/debug/otp")
+def debug_latest_otp(email: str):
+    """Return the most recent OTP for an email (dev only). Requires APP_ENV != production.
+
+    WARNING: Do not enable in production.
+    """
+    app_env = os.getenv("APP_ENV", "development").lower()
+    if app_env == "production":
+        raise HTTPException(status_code=403, detail="Not allowed in production")
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT code, purpose, expires_at, consumed
+                    FROM tbl_otps
+                    WHERE email = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (email,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="No OTP found")
+                code, purpose, expires_at, consumed = row
+                return {"email": email, "code": code, "purpose": purpose, "expires_at": str(expires_at), "consumed": bool(consumed)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"OTP debug failed: {str(e)}")
+
 # --- Aliases to match existing frontend endpoints ---
 @router.post("/request-reset", response_model=MessageResponse)
 def request_reset_alias(request: ResetRequest):
@@ -457,7 +553,7 @@ def request_reset_alias(request: ResetRequest):
 @router.post("/verify-reset", response_model=MessageResponse)
 def verify_reset_alias(request: ResetPasswordConfirmPayload):
     try:
-        if not _verify_otp(request.email, request.code, "reset"):
+        if not _verify_otp(request.email, _sanitize_code(request.code), "reset"):
             raise HTTPException(status_code=400, detail="Invalid reset code")
 
         password_hash = _hash_password(request.new_password)
@@ -697,6 +793,17 @@ def pending_users(_: Dict[str, Any] = Depends(require_super_admin)):
                 ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch pending users: {str(e)}")
+
+@super_router.get("/pending-approvals/count")
+def pending_approvals_count(_: Dict[str, Any] = Depends(require_super_admin)):
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM tbl_users WHERE approval_status = FALSE")
+                count = cur.fetchone()[0]
+                return {"count": int(count)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch pending count: {str(e)}")
 
 @super_router.post("/approve/{user_id}")
 def approve_user(user_id: int, admin: Dict[str, Any] = Depends(require_super_admin)):

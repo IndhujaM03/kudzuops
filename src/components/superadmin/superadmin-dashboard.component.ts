@@ -9,106 +9,59 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive],
   template: `
-    <div class="superadmin-dashboard">
-      <!-- Sidebar -->
-      <div class="superadmin-sidebar">
-        <div class="superadmin-sidebar-header">
-          <div class="superadmin-sidebar-logo">Super Admin</div>
-          <div class="superadmin-sidebar-subtitle">Management Dashboard</div>
-        </div>
-        <nav class="superadmin-sidebar-nav">
-          <a routerLink="/superadmin/dashboard" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5a2 2 0 012-2h4a2 2 0 012 2v1H8V5z" />
-            </svg>
-            Dashboard
+    <div>
+      <div class="superadmin-card" style="margin-bottom: 24px; padding: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <h2 class="superadmin-section-title" style="margin-bottom: 6px;">Demand Sheet</h2>
+            <p style="color:#4a5568; margin:0;">Create and track client demands</p>
+          </div>
+          <a routerLink="/superadmin/demand-sheet" class="superadmin-btn" style="background:#667eea; color:white;">
+            ✏️ Create Demand
           </a>
-          <a routerLink="/superadmin/pending-users" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-            </svg>
-            Pending Users
-            <span *ngIf="pendingCount() > 0" class="superadmin-nav-badge">
-              {{ pendingCount() }}
-            </span>
-          </a>
-          <a routerLink="/superadmin/all-users" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-            All Users
-          </a>
-          <a routerLink="/superadmin/roles" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            Roles
-          </a>
-        </nav>
-        <div class="superadmin-sidebar-footer">
-          <button (click)="logout()" class="superadmin-logout-button">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Logout
-          </button>
         </div>
       </div>
-
-      <!-- Main Content -->
-      <div class="superadmin-main-content">
-        <header class="superadmin-header">
-          <h1 class="superadmin-header-title">Dashboard</h1>
-        </header>
-        <main class="superadmin-content">
-          <h2 class="superadmin-section-title">Pending Approvals</h2>
-          <div class="superadmin-card">
-            <div *ngIf="pendingUsers().length === 0" class="superadmin-empty-state">
-              <div class="superadmin-empty-icon">✅</div>
-              <h3 class="superadmin-empty-title">No pending users</h3>
-              <p class="superadmin-empty-description">All users have been processed.</p>
-            </div>
-            <table *ngIf="pendingUsers().length > 0" class="superadmin-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let user of pendingUsers()">
-                  <td>{{ user.email.split('@')[0] }}</td>
-                  <td>{{ user.email }}</td>
-                  <td>
-                    <select [(ngModel)]="user.role" (change)="setRole(user.id, $event)" class="superadmin-role-select">
-                      <option value="candidate">Candidate</option>
-                      <option value="recruiter">Recruiter</option>
-                      <option value="manager">Manager</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
-                  </td>
-                  <td>
-                    <span class="superadmin-status-badge pending">Pending</span>
-                  </td>
-                  <td>
-                    <div class="superadmin-action-buttons">
-                      <button (click)="approveUser(user.id)" class="superadmin-btn superadmin-btn-approve">
-                        ✅ Approve
-                      </button>
-                      <button (click)="rejectUser(user.id)" class="superadmin-btn superadmin-btn-reject">
-                        ❌ Reject
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </main>
+      <h2 class="superadmin-section-title">Pending Approvals</h2>
+      <div class="superadmin-card superadmin-card-elevated">
+        <div *ngIf="pendingUsers().length === 0" class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">✅</div>
+          <h3 class="superadmin-empty-title">No pending users</h3>
+          <p class="superadmin-empty-description">All users have been processed.</p>
+        </div>
+        <table *ngIf="pendingUsers().length > 0" class="superadmin-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let user of pendingUsers()">
+              <td>{{ user.email.split('@')[0] }}</td>
+              <td>{{ user.email }}</td>
+              <td>
+                <select [(ngModel)]="user.role" (change)="setRole(user.id, $event)" class="superadmin-role-select">
+                  <option value="candidate">Candidate</option>
+                  <option value="recruiter">Recruiter</option>
+                  <option value="manager">Manager</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
+              </td>
+              <td>
+                <span class="superadmin-status-badge pending">Pending</span>
+              </td>
+              <td>
+                <div class="superadmin-action-buttons">
+                  <button (click)="approveUser(user.id)" class="superadmin-btn superadmin-btn-approve superadmin-btn-pill">Approve</button>
+                  <button (click)="rejectUser(user.id)" class="superadmin-btn superadmin-btn-reject superadmin-btn-pill">Reject</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   `,
@@ -257,6 +210,7 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
       border: 1px solid #e2e8f0;
       overflow: hidden;
     }
+    .superadmin-card-elevated { box-shadow: 0 10px 18px rgba(0,0,0,0.06); border-color:#e6eef8; }
 
     .superadmin-table {
       width: 100%;
@@ -342,6 +296,7 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
       background: #e53e3e;
       transform: translateY(-1px);
     }
+    .superadmin-btn-pill { border-radius: 9999px; padding: 8px 18px; }
 
     .superadmin-role-select {
       padding: 6px 12px;

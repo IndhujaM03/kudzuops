@@ -242,9 +242,12 @@
 }
 
 .superadmin-main-content {
-  margin-left: 280px;
+  margin-left: 0;
   min-height: 100vh;
   background: #f7fafc;
+}
+@media (min-width: 1024px) {
+  .superadmin-main-content { margin-left: 280px; }
 }
 
 .superadmin-header {

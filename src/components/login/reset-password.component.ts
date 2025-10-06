@@ -11,26 +11,21 @@ import { environment } from '../../environments/environment';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink],
   template: `
-    <div class="login-container">
-      <div class="login-background"></div>
-      
-      <div class="login-card">
-        <div class="login-header">
-          <div class="login-logo">
-            <img src="assets/kudzulogo.png" alt="Kudzu Logo" class="logo-image">
-          </div>
-          <h1 class="login-title">Reset Password</h1>
-          <p class="login-subtitle">Enter your email to receive a reset code</p>
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;padding:20px;">
+      <div style="width:100%;max-width:380px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.06);padding:28px;">
+        <div style="text-align:center;margin-bottom:18px;">
+          <img src="assets/kudzulogo.png" alt="Kudzu Logo" style="width:56px;height:56px;border-radius:8px;" />
+          <h1 style="margin:10px 0 4px;font-size:22px;font-weight:700;color:#111827;">Reset Password</h1>
+          <p style="margin:0;color:#6b7280;font-size:14px;">Enter your email to receive a reset code</p>
         </div>
 
-        <form [formGroup]="form" (ngSubmit)="submit()" class="login-form">
-          <div class="form-group">
-            <label class="form-label">Email</label>
-            <input type="email" formControlName="email" class="form-input" 
-                   placeholder="you@example.com"
-                   [class.error]="submitted && form.controls['email'].invalid">
-            <div class="error-message" *ngIf="submitted && form.controls['email'].invalid">
-              <span class="error-icon">⚠</span>
+        <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+          <div style="margin-bottom:14px;">
+            <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Email</label>
+            <input type="email" formControlName="email" placeholder="you@example.com"
+                   [class.error]="submitted && form.controls['email'].invalid"
+                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" />
+            <div *ngIf="submitted && form.controls['email'].invalid" style="color:#b91c1c;font-size:12px;margin-top:6px;">
               Valid email required
             </div>
           </div>
@@ -43,27 +38,17 @@ import { environment } from '../../environments/environment';
             </span>
           </button>
 
-          <div class="error-message" *ngIf="error">
-            <span class="error-icon">⚠</span>
+          <div *ngIf="error" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:10px 12px;border-radius:8px;margin-top:8px;font-size:14px;">
             {{ error }}
           </div>
-          <div class="success-message" *ngIf="success">
-            <span class="error-icon">✓</span>
+          <div *ngIf="success" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;padding:10px 12px;border-radius:8px;margin-top:8px;font-size:14px;">
             {{ success }}
           </div>
 
-          <div class="text-center mt-4">
-            <a routerLink="/signin" class="auth-link">Back to sign in</a>
+          <div style="display:flex;justify-content:center;margin:14px 0 0;">
+            <a routerLink="/signin" style="font-size:13px;color:#2563eb;text-decoration:none;">Back to sign in</a>
           </div>
         </form>
-
-        <div class="login-footer">
-          <p class="footer-text">
-            <a href="#" class="auth-link">Conditions of Use</a> • 
-            <a href="#" class="auth-link">Privacy Notice</a> • 
-            <a href="#" class="auth-link">Help</a>
-          </p>
-        </div>
       </div>
     </div>
   `

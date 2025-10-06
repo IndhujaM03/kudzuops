@@ -12,6 +12,8 @@ import { ResetPasswordComponent } from './components/login/reset-password.compon
 import { VerifyResetComponent } from './components/login/verify-reset.component';
 import { SuperAdminLoginComponent } from './components/superadmin/superadmin-login.component';
 import { SuperAdminDashboardComponent } from './components/superadmin/superadmin-dashboard.component';
+import { SuperAdminLayoutComponent } from './components/superadmin/superadmin-layout.component';
+import { demandRoutes } from './app/demand/demand.routes';
 
 // Simple protected Dashboard (same UI style)
 @Component({
@@ -87,10 +89,23 @@ const routes: Routes = [
   { path: 'reset-password', component: ResetPasswordComponent },
   { path: 'verify-reset', component: VerifyResetComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  { path: '', children: demandRoutes, canActivate: [authGuard] },
   { path: 'superadmin/login', component: SuperAdminLoginComponent },
-  { path: 'superadmin/dashboard', component: SuperAdminDashboardComponent, canActivate: [superAdminGuard] },
+  {
+    path: 'superadmin',
+    component: SuperAdminLayoutComponent,
+    canActivate: [superAdminGuard],
+    children: [
+      { path: 'dashboard', component: SuperAdminDashboardComponent },
+      { path: 'demand-sheet', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent) },
+      { path: 'pending-approvals', loadComponent: () => import('./components/superadmin/superadmin-dashboard.component').then(m => m.SuperAdminDashboardComponent) },
+      // Backward compatibility: support older link path
+      { path: 'pending-users', redirectTo: 'pending-approvals', pathMatch: 'full' },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+    ]
+  },
   { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
-  { path: '**', redirectTo: 'dashboard' }
+  { path: '**', redirectTo: '/signin' }
 ];
 
 bootstrapApplication(AppRoot, {

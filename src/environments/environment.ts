@@ -1,6 +1,7 @@
 export const environment = {
   production: false,
-  apiBase: (window as any)["__env__apiBase"] || (typeof import.meta !== 'undefined' ? (import.meta as any).env?.NG_APP_API_BASE : undefined) || '',
+  // Point Angular to FastAPI (kudzuops DB is configured server-side)
+  apiBase: (window as any)["__env__apiBase"] || (typeof import.meta !== 'undefined' ? (import.meta as any).env?.NG_APP_API_BASE : undefined) || 'http://localhost:8000',
   authBase: (window as any)["__env__authBase"] || undefined,
   superAdminBase: (window as any)["__env__superAdminBase"] || undefined,
 };

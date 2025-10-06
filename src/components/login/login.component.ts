@@ -2,7 +2,7 @@ import { Component, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractControl } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Router, RouterModule } from '@angular/router';
+import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 interface LoginResponse {
@@ -94,6 +94,26 @@ class NotificationService {
           </svg>
           Sign in with Google
         </button>
+
+        <!-- Pending Approval Modal -->
+        <div *ngIf="showApprovalModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;">
+          <div style="background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:100%;max-width:460px;padding:22px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <div style="width:36px;height:36px;border-radius:9999px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;color:#D97706;font-weight:700;">!
+              </div>
+              <h3 style="margin:0;font-size:18px;font-weight:700;color:#111827;">Awaiting approval</h3>
+            </div>
+            <p style="margin:0 0 12px;color:#374151;">Your email is verified. A super admin must approve your account before you can sign in.</p>
+            <ul style="margin:0 0 16px 16px;color:#4B5563;">
+              <li>We’ll notify you by email once approved</li>
+              <li>You can close this window and try later</li>
+            </ul>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button (click)="showApprovalModal=false" style="background:#fff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:8px;">Close</button>
+              <button (click)="onGoogleSignIn()" style="background:#2563EB;color:#fff;border:0;padding:8px 12px;border-radius:8px;">Contact Admin</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `
@@ -102,6 +122,7 @@ export class LoginComponent {
   private fb = inject(FormBuilder);
   private http = inject(HttpClient);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private auth = inject(AuthService);
   private notify = new NotificationService();
 
@@ -110,11 +131,21 @@ export class LoginComponent {
   submitted = false;
   alertMessage = '';
   showPassword = signal(false);
+  showApprovalModal = false;
 
   form: FormGroup = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8), this.passwordStrengthValidator]]
   });
+
+  constructor() {
+    // Show a notice after successful email verification
+    const verified = this.route.snapshot.queryParamMap.get('verified');
+    const email = this.route.snapshot.queryParamMap.get('email') || '';
+    if (verified === '1' && email) {
+      this.alertMessage = `Email verified for ${email}. You can sign in now.`;
+    }
+  }
 
   passwordStrengthValidator(control: AbstractControl) {
     const value = String(control.value || '');
@@ -145,8 +176,12 @@ export class LoginComponent {
         this.router.navigate([path]).catch(() => {});
       },
       error: (err: HttpErrorResponse) => {
-        const msg = err.error?.detail || 'Invalid credentials';
-        this.alertMessage = msg;
+        if (err.status === 403 && (err.error?.detail || '').toLowerCase().includes('awaiting approval')) {
+          this.showApprovalModal = true;
+        } else {
+          const msg = err.error?.detail || 'Invalid credentials';
+          this.alertMessage = msg;
+        }
         this.loading.set(false);
       }
     });
