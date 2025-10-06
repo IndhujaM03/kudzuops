@@ -5,9 +5,9 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 export interface AuthResponse {
   access_token?: string;
   token_type: string;
-  expires_at?: string;
   message?: string;
   verification_required?: boolean;
+  redirect_url?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -36,7 +36,7 @@ export class AuthService {
   }
 
   resendVerification(email: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.api}/auth/resend`, { email });
+    return this.http.post<{ message: string }>(`${this.api}/auth/verify/resend`, { email });
   }
 
   requestPasswordReset(email: string): Observable<{ message: string }> {
@@ -66,18 +66,8 @@ export class AuthService {
     }
     localStorage.setItem('access_token', r.access_token);
     localStorage.setItem('token_type', r.token_type || 'bearer');
-    if (r.expires_at) {
-      localStorage.setItem('expires_at', r.expires_at);
-    }
     this.isLoggedInSubject.next(true);
   }
 
-  isAuthenticated(): boolean { 
-    const token = localStorage.getItem('access_token');
-    return !!token && this.isLoggedInSubject.value;
-  }
-
-  getToken(): string | null {
-    return localStorage.getItem('access_token');
-  }
+  isAuthenticated(): boolean { return this.isLoggedInSubject.value; }
 }
