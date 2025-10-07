@@ -23,18 +23,21 @@ import { environment } from '../../environments/environment';
             </svg>
             Dashboard
           </a>
-          <a routerLink="/superadmin/client-settings" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6a2 2 0 012-2h8m-6 0V5a2 2 0 10-4 0v4m10 0a2 2 0 012 2v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-6a2 2 0 012-2h2" />
-            </svg>
-            Client Settings
-          </a>
-          <a routerLink="/superadmin/demand-sheet" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zm0-6C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" />
-            </svg>
-            Demand Sheet
-          </a>
+          <div class="superadmin-nav-item" style="flex-direction:column; align-items:stretch; padding:0;">
+            <button (click)="clientSettingsOpen = !clientSettingsOpen" style="display:flex; align-items:center; padding:12px 24px; color:#e2e8f0; background:transparent; border:0; width:100%; text-align:left; cursor:pointer;">
+              <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6a2 2 0 012-2h8m-6 0V5a2 2 0 10-4 0v4m10 0a2 2 0 012 2v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-6a2 2 0 012-2h2" />
+              </svg>
+              <span>Client Settings</span>
+              <svg style="margin-left:auto; width:16px; height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" [attr.d]="clientSettingsOpen ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'" />
+              </svg>
+            </button>
+            <nav *ngIf="clientSettingsOpen" style="display:flex; flex-direction:column;">
+              <a routerLink="/superadmin/client-settings/client" routerLinkActive="active" class="superadmin-nav-item" style="padding-left:48px;">Client</a>
+              <a routerLink="/superadmin/client-settings/spoc" routerLinkActive="active" class="superadmin-nav-item" style="padding-left:48px;">SPOCs</a>
+            </nav>
+          </div>
           <a routerLink="/superadmin/pending-approvals" routerLinkActive="active" class="superadmin-nav-item">
             <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
@@ -80,6 +83,7 @@ import { environment } from '../../environments/environment';
     .superadmin-nav-item:hover { background: rgba(102, 126, 234, 0.1); color:#667eea; }
     .superadmin-nav-item.active { background: rgba(102, 126, 234, 0.2); color:#667eea; border-right:3px solid #667eea; }
     .superadmin-nav-icon { width:20px; height:20px; margin-right:12px; flex-shrink:0; }
+    .superadmin-nav-item a { color: inherit; text-decoration: none; }
     .superadmin-nav-badge { margin-left:auto; background:#e53e3e; color:#fff; font-size:12px; font-weight:600; padding:4px 8px; border-radius:12px; min-width:20px; text-align:center; }
     .superadmin-sidebar-footer { padding:20px 24px; border-top:1px solid #4a5568; }
     .superadmin-logout-button { width:100%; display:flex; align-items:center; padding:12px 16px; background:transparent; color:#e2e8f0; border:1px solid #4a5568; border-radius:8px; cursor:pointer; transition:all .2s ease; font-size:14px; }
@@ -105,6 +109,7 @@ export class SuperAdminLayoutComponent implements OnInit {
   private router = inject(Router);
   pendingCount = 0;
   private superAdminBase = environment.superAdminBase || (environment.apiBase ? `${environment.apiBase}/superadmin` : '/superadmin');
+  clientSettingsOpen = false;
 
   ngOnInit(): void {
     this.loadPendingCount();

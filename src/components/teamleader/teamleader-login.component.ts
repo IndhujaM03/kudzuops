@@ -79,16 +79,9 @@ export class TeamLeaderLoginComponent {
     const { email, password } = this.form.value;
     this.tl.login(email, password).subscribe({
       next: (res) => {
-        const redirect = (res as any)?.redirect_url || '';
-        // Only allow TL login to proceed if backend indicates teamleader route
-        if (redirect.startsWith('/teamleader')) {
-          this.tl.storeAuth(res);
-          this.router.navigate([redirect]);
-          return;
-        }
-        // Otherwise, show an error and do not store token
-        this.error = 'This account is not a Team Leader. Please use the correct portal.';
-        this.loading.set(false);
+        // Store token and navigate to TL home regardless of redirect_url
+        this.tl.storeAuth(res);
+        this.router.navigate(['/teamleader']).catch(() => {});
       },
       error: (err) => {
         this.error = err?.error?.detail || 'Login failed';

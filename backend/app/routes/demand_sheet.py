@@ -183,3 +183,101 @@ def add_client_and_spoc(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to add client/spoc: {e}")
 
 
+# New listing endpoints for TL tabs
+@router.get("/demand/unassigned")
+def list_unassigned() -> List[Dict[str, Any]]:
+    """Demand sheets without any recruiter assigned in tbl_recruiter_activity."""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    (
+                        "SELECT d.* FROM tbl_demand_sheet d "
+                        "LEFT JOIN tbl_recruiter_activity r ON r.demand_id = d.id "
+                        "WHERE r.recruiter_id IS NULL OR r.demand_id IS NULL "
+                        "ORDER BY d.id DESC"
+                    )
+                )
+                rows = cur.fetchall()
+                columns = [desc[0] for desc in cur.description]
+                return _rows_to_dicts(columns, rows)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch unassigned demands: {e}")
+
+
+@router.get("/demand/assigned")
+def list_assigned(recruiter_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Demand sheets that are assigned; optional filter by recruiter_id."""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                if recruiter_id:
+                    cur.execute(
+                        (
+                            "SELECT d.*, r.recruiter_id FROM tbl_demand_sheet d "
+                            "JOIN tbl_recruiter_activity r ON r.demand_id = d.id "
+                            "WHERE r.recruiter_id = %s ORDER BY d.id DESC"
+                        ),
+                        (recruiter_id,),
+                    )
+                else:
+                    cur.execute(
+                        (
+                            "SELECT d.*, r.recruiter_id FROM tbl_demand_sheet d "
+                            "JOIN tbl_recruiter_activity r ON r.demand_id = d.id "
+                            "ORDER BY d.id DESC"
+                        )
+                    )
+                rows = cur.fetchall()
+                columns = [desc[0] for desc in cur.description]
+                return _rows_to_dicts(columns, rows)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch assigned demands: {e}")
+
+
+@router.get("/demand/submitted")
+def list_submitted() -> List[Dict[str, Any]]:
+    """Submitted demand sheets. We treat status 'closed' as submitted in absence of a dedicated status."""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # If enum has 'closed', treat that as submitted; adjust as needed
+                cur.execute(
+                    (
+                        "SELECT * FROM tbl_demand_sheet WHERE status = 'closed' ORDER BY id DESC"
+                    )
+                )
+                rows = cur.fetchall()
+                columns = [desc[0] for desc in cur.description]
+                return _rows_to_dicts(columns, rows)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submitted demands: {e}")
+
+
+@router.post("/demand/assign")
+def assign_recruiter(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Assign a recruiter to a demand by upserting into tbl_recruiter_activity."""
+    demand_id = payload.get("demand_id")
+    recruiter_id = payload.get("recruiter_id")
+    if not demand_id or not recruiter_id:
+        raise HTTPException(status_code=400, detail="demand_id and recruiter_id are required")
+
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Try update first
+                cur.execute(
+                    "UPDATE tbl_recruiter_activity SET recruiter_id=%s, assigned_at=NOW() WHERE demand_id=%s",
+                    (recruiter_id, demand_id),
+                )
+                if cur.rowcount == 0:
+                    # Insert if not exists
+                    cur.execute(
+                        "INSERT INTO tbl_recruiter_activity (demand_id, recruiter_id, assigned_at) VALUES (%s, %s, NOW())",
+                        (demand_id, recruiter_id),
+                    )
+                conn.commit()
+                return {"message": "Recruiter assigned"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign recruiter: {e}")
+

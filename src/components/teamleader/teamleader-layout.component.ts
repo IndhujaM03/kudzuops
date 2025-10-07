@@ -14,11 +14,11 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
           <div class="tl-sidebar-subtitle">Operations</div>
         </div>
         <nav class="tl-sidebar-nav">
-          <a routerLink="/teamleader/dashboard" routerLinkActive="active" class="tl-nav-item">
+          <a routerLink="/teamleader/demand-sheet" routerLinkActive="active" class="tl-nav-item">
             <svg class="tl-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8M8 12h8M8 17h8" />
             </svg>
-            Dashboard
+            Demand Sheet
           </a>
         </nav>
         <div class="tl-sidebar-footer">

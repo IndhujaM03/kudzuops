@@ -1,4 +1,6 @@
 import { Component, inject, signal, computed } from '@angular/core';
+import { Router } from '@angular/router';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
@@ -23,12 +25,14 @@ interface SpocDto {
 @Component({
   selector: 'app-client-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, RouterLink, RouterLinkActive, RouterOutlet],
   template: `
-    <div style="min-height:100vh;display:flex;align-items:flex-start;justify-content:center;background:#fff;padding:24px;">
-      <div style="width:100%;max-width:980px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div class="demand-sheet-page" style="min-height:100vh;background:#f7fafc;padding:24px 16px;">
+      <div style="width:100%;max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
+        
+        <div style="width:100%;display:grid;grid-template-columns:1fr;gap:20px;">
         <!-- Client Form Card -->
-        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.06);padding:20px;">
+        <div *ngIf="isClientView()" class="demand-card" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.05);padding:20px;">
           <h2 style="margin:0 0 12px;font-size:18px;font-weight:700;color:#111827;">Create Client</h2>
           <form [formGroup]="clientForm" (ngSubmit)="submitClient()" novalidate>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;">
@@ -71,7 +75,7 @@ interface SpocDto {
         </div>
 
         <!-- SPOC Form Card -->
-        <div style="background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.06);padding:20px;">
+        <div *ngIf="isSpocView()" class="demand-card" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.05);padding:20px;">
           <h2 style="margin:0 0 12px;font-size:18px;font-weight:700;color:#111827;">Create SPOC</h2>
           <form [formGroup]="spocForm" (ngSubmit)="submitSpoc()" novalidate>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;">
@@ -127,7 +131,7 @@ interface SpocDto {
         </div>
 
         <!-- Right column: simple lists -->
-        <div style="grid-column: 1 / span 2;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.06);padding:16px;">
+        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.05);padding:16px;">
           <h3 style="margin:0 0 10px;font-size:16px;font-weight:700;color:#111827;">Existing Clients</h3>
           <div *ngIf="clientsLoading" style="color:#6b7280;font-size:14px;">Loading…</div>
           <ul *ngIf="!clientsLoading && clients().length" style="margin:0;padding-left:18px;">
@@ -137,6 +141,7 @@ interface SpocDto {
           </ul>
           <div *ngIf="!clientsLoading && !clients().length" style="color:#6b7280;font-size:14px;">No clients yet</div>
         </div>
+        
       </div>
     </div>
   `
@@ -144,6 +149,7 @@ interface SpocDto {
 export class ClientSettingsComponent {
   private fb = inject(FormBuilder);
   private http = inject(HttpClient);
+  private router = inject(Router);
 
   apiBase = 'http://localhost:8000/clientsettings';
 
@@ -180,6 +186,16 @@ export class ClientSettingsComponent {
 
   constructor() {
     this.refreshClients();
+  }
+
+  isClientView() {
+    const url = this.router.url || '';
+    return url.includes('/superadmin/client-settings/client');
+  }
+
+  isSpocView() {
+    const url = this.router.url || '';
+    return url.includes('/superadmin/client-settings/spoc');
   }
 
   private authHeaders() {

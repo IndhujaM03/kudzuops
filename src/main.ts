@@ -88,7 +88,7 @@ const superAdminGuard: CanActivateFn = () => {
 const teamLeaderGuard: CanActivateFn = () => {
   const router = inject(Router);
   const token = localStorage.getItem('teamleader_token');
-  return token ? true : (router.parseUrl('/signin') as UrlTree);
+  return token ? true : (router.parseUrl('/teamleader/login') as UrlTree);
 };
 
 const routes: Routes = [
@@ -107,9 +107,11 @@ const routes: Routes = [
     canActivate: [superAdminGuard],
     children: [
       { path: 'dashboard', component: SuperAdminDashboardComponent },
-      { path: 'demand-sheet', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent) },
+      // Demand sheet moved to Team Leader page; remove from Super Admin
       { path: 'pending-approvals', loadComponent: () => import('./components/superadmin/superadmin-dashboard.component').then(m => m.SuperAdminDashboardComponent) },
-      { path: 'client-settings', loadComponent: () => import('./components/clientsettings').then(m => m.ClientSettingsComponent) },
+      { path: 'client-settings/client', loadComponent: () => import('./components/clientsettings').then(m => m.ClientSettingsComponent) },
+      { path: 'client-settings/spoc', loadComponent: () => import('./components/clientsettings').then(m => m.ClientSettingsComponent) },
+      { path: 'client-settings', redirectTo: 'client-settings/client', pathMatch: 'full' },
       // Backward compatibility: support older link path
       { path: 'pending-users', redirectTo: 'pending-approvals', pathMatch: 'full' },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
@@ -120,8 +122,8 @@ const routes: Routes = [
     component: TeamLeaderLayoutComponent,
     canActivate: [teamLeaderGuard],
     children: [
-      { path: 'dashboard', component: TeamLeaderDashboardComponent },
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+      { path: 'demand-sheet', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent) },
+      { path: '', redirectTo: 'demand-sheet', pathMatch: 'full' }
     ]
   },
   { path: '', pathMatch: 'full', redirectTo: 'dashboard' },

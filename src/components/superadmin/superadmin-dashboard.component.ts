@@ -1,27 +1,15 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { Router } from '@angular/router';
 import { SuperAdminService, PendingUser } from '../../services/superadmin.service';
 
 @Component({
   selector: 'app-superadmin-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, FormsModule],
   template: `
-    <div>
-      <div class="superadmin-card" style="margin-bottom: 24px; padding: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <div>
-            <h2 class="superadmin-section-title" style="margin-bottom: 6px;">Demand Sheet</h2>
-            <p style="color:#4a5568; margin:0;">Create and track client demands</p>
-          </div>
-          <a routerLink="/superadmin/demand-sheet" class="superadmin-btn" style="background:#667eea; color:white;">
-            ✏️ Create Demand
-          </a>
-        </div>
-      </div>
-      <h2 class="superadmin-section-title">Pending Approvals</h2>
+    <h2 class="superadmin-section-title">Pending Approvals</h2>
       <div class="superadmin-card superadmin-card-elevated">
         <div *ngIf="pendingUsers().length === 0" class="superadmin-empty-state">
           <div class="superadmin-empty-icon">✅</div>
@@ -64,7 +52,6 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
           </tbody>
         </table>
       </div>
-    </div>
   `,
   styles: [`
     /* Super Admin Dashboard Styles */

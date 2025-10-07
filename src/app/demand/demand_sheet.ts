@@ -46,12 +46,23 @@ export class DemandSheetComponent implements OnInit {
     job_description_url: '' as string,
     remarks: '' as string,
     status: 'Open' as string,
+    assigned_to: '' as number | string,
   });
 
   apiBase = environment.apiBase || '';
+  showForm = false;
+
+  // Tabs state
+  activeTab: 'unassigned' | 'assigned' | 'submitted' = 'unassigned';
+  unassigned = signal<any[]>([]);
+  assigned = signal<any[]>([]);
+  submitted = signal<any[]>([]);
+  assignedSearch: number | null = null;
+  assignInput: Record<number, number> = {};
 
   ngOnInit(): void {
     this.fetchClients();
+    this.loadUnassigned();
   }
 
   fetchClients(): void {
@@ -98,6 +109,7 @@ export class DemandSheetComponent implements OnInit {
       job_description_url: '',
       remarks: '',
       status: 'Open',
+      assigned_to: '',
     });
     this.spocs.set([]);
   }
@@ -130,15 +142,66 @@ export class DemandSheetComponent implements OnInit {
     this.http.post<{ message: string; id: number }>(`${this.apiBase}/demand/create`, payload)
       .subscribe({
         next: (res) => {
+          const newId = res?.id;
           this.successMsg.set(res?.message || 'Demand Sheet Created Successfully');
-          this.resetForm();
           this.submitting.set(false);
+          this.showForm = false; // auto-close form
+          this.resetForm();
+          // If Assigned To provided, assign recruiter
+          const recruiterId = Number(this.form().assigned_to || 0);
+          if (newId && recruiterId) {
+            this.assignRecruiter(newId, recruiterId, true);
+          } else {
+            this.loadUnassigned();
+          }
         },
         error: (err) => {
           this.errorMsg.set(err?.error?.detail || 'Failed to create demand');
           this.submitting.set(false);
         }
       });
+  }
+
+  setTab(tab: 'unassigned' | 'assigned' | 'submitted') {
+    this.activeTab = tab;
+    if (tab === 'unassigned') this.loadUnassigned();
+    if (tab === 'assigned') this.loadAssigned();
+    if (tab === 'submitted') this.loadSubmitted();
+  }
+
+  loadUnassigned(): void {
+    this.http.get<any[]>(`${this.apiBase}/demand/unassigned`).subscribe({
+      next: (rows) => this.unassigned.set(rows || []),
+      error: () => this.unassigned.set([]),
+    });
+  }
+
+  loadAssigned(): void {
+    const params = this.assignedSearch ? `?recruiter_id=${this.assignedSearch}` : '';
+    this.http.get<any[]>(`${this.apiBase}/demand/assigned${params}`).subscribe({
+      next: (rows) => this.assigned.set(rows || []),
+      error: () => this.assigned.set([]),
+    });
+  }
+
+  loadSubmitted(): void {
+    this.http.get<any[]>(`${this.apiBase}/demand/submitted`).subscribe({
+      next: (rows) => this.submitted.set(rows || []),
+      error: () => this.submitted.set([]),
+    });
+  }
+
+  assignRecruiter(demandId: number, recruiterId?: number, silent?: boolean): void {
+    const rid = recruiterId ?? Number(this.assignInput[demandId] || 0);
+    if (!rid) { if (!silent) this.errorMsg.set('Enter a Recruiter ID'); return; }
+    this.http.post<{ message: string }>(`${this.apiBase}/demand/assign`, { demand_id: demandId, recruiter_id: rid }).subscribe({
+      next: () => {
+        if (!silent) this.successMsg.set('Assigned successfully');
+        this.loadUnassigned();
+        this.loadAssigned();
+      },
+      error: (err) => { if (!silent) this.errorMsg.set(err?.error?.detail || 'Failed to assign'); }
+    });
   }
 }
 
