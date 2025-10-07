@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from .login import router as auth_router, super_router, get_current_user
 from .routes.demand_sheet import router as demand_router
+from .clientsettings import router as clientsettings_router
 
 # -----------------------------
 # Load .env from backend folder
@@ -32,10 +33,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Include authentication, superadmin, and demand routes
+    # Include authentication, superadmin, demand, and client settings routes
     app.include_router(auth_router)
     app.include_router(super_router)
     app.include_router(demand_router)
+    app.include_router(clientsettings_router)
 
     # Health check
     @app.get("/health")

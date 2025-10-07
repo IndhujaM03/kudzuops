@@ -14,6 +14,9 @@ import { SuperAdminLoginComponent } from './components/superadmin/superadmin-log
 import { SuperAdminDashboardComponent } from './components/superadmin/superadmin-dashboard.component';
 import { SuperAdminLayoutComponent } from './components/superadmin/superadmin-layout.component';
 import { demandRoutes } from './app/demand/demand.routes';
+import { TeamLeaderLayoutComponent } from './components/teamleader/teamleader-layout.component';
+import { TeamLeaderDashboardComponent } from './components/teamleader/teamleader-dashboard.component';
+import { TeamLeaderLoginComponent } from './components/teamleader/teamleader-login.component';
 
 // Simple protected Dashboard (same UI style)
 @Component({
@@ -82,6 +85,12 @@ const superAdminGuard: CanActivateFn = () => {
   return token ? true : (router.parseUrl('/superadmin/login') as UrlTree);
 };
 
+const teamLeaderGuard: CanActivateFn = () => {
+  const router = inject(Router);
+  const token = localStorage.getItem('teamleader_token');
+  return token ? true : (router.parseUrl('/signin') as UrlTree);
+};
+
 const routes: Routes = [
   { path: 'signin', component: LoginComponent },
   { path: 'signup', component: SignupComponent },
@@ -91,6 +100,7 @@ const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: '', children: demandRoutes, canActivate: [authGuard] },
   { path: 'superadmin/login', component: SuperAdminLoginComponent },
+  { path: 'teamleader/login', component: TeamLeaderLoginComponent },
   {
     path: 'superadmin',
     component: SuperAdminLayoutComponent,
@@ -99,8 +109,18 @@ const routes: Routes = [
       { path: 'dashboard', component: SuperAdminDashboardComponent },
       { path: 'demand-sheet', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent) },
       { path: 'pending-approvals', loadComponent: () => import('./components/superadmin/superadmin-dashboard.component').then(m => m.SuperAdminDashboardComponent) },
+      { path: 'client-settings', loadComponent: () => import('./components/clientsettings').then(m => m.ClientSettingsComponent) },
       // Backward compatibility: support older link path
       { path: 'pending-users', redirectTo: 'pending-approvals', pathMatch: 'full' },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+    ]
+  },
+  {
+    path: 'teamleader',
+    component: TeamLeaderLayoutComponent,
+    canActivate: [teamLeaderGuard],
+    children: [
+      { path: 'dashboard', component: TeamLeaderDashboardComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

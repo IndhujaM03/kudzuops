@@ -405,7 +405,13 @@ def login(request: LoginRequest):
                     raise HTTPException(status_code=403, detail="Your account is awaiting approval")
 
                 token = _issue_token(user_id, request.email, role)
-                redirect_url = "/superadmin/dashboard" if role == "super_admin" else "/dashboard"
+                role_norm = (role or "").lower().replace(" ", "_")
+                if role_norm == "super_admin":
+                    redirect_url = "/superadmin/dashboard"
+                elif role_norm in ("team_leader", "teamleader", "team_leadr"):
+                    redirect_url = "/teamleader/dashboard"
+                else:
+                    redirect_url = "/dashboard"
                 return AuthResponse(access_token=token, message="Login successful", redirect_url=redirect_url)
     except HTTPException:
         raise

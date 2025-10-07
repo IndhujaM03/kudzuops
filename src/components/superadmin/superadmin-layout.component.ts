@@ -23,6 +23,12 @@ import { environment } from '../../environments/environment';
             </svg>
             Dashboard
           </a>
+          <a routerLink="/superadmin/client-settings" routerLinkActive="active" class="superadmin-nav-item">
+            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6a2 2 0 012-2h8m-6 0V5a2 2 0 10-4 0v4m10 0a2 2 0 012 2v6a2 2 0 01-2 2H7a2 2 0 01-2-2v-6a2 2 0 012-2h2" />
+            </svg>
+            Client Settings
+          </a>
           <a routerLink="/superadmin/demand-sheet" routerLinkActive="active" class="superadmin-nav-item">
             <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zm0-6C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" />

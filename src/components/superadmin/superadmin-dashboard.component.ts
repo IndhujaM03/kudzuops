@@ -46,6 +46,7 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
                 <select [(ngModel)]="user.role" (change)="setRole(user.id, $event)" class="superadmin-role-select">
                   <option value="candidate">Candidate</option>
                   <option value="recruiter">Recruiter</option>
+                  <option value="team_leader">Team Leader</option>
                   <option value="manager">Manager</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
