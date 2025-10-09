@@ -52,6 +52,14 @@ export class DemandSheetComponent implements OnInit {
   apiBase = environment.apiBase || '';
   showForm = false;
 
+  // Assign modal state
+  showAssign = false;
+  assignTarget: any = null;
+  teamLeaders: any[] = [];
+  recruiters: any[] = [];
+  selectedTeamLeaderId: number | '' = '';
+  selectedRecruiterIds: Set<number> = new Set<number>();
+
   // Tabs state
   activeTab: 'unassigned' | 'assigned' | 'submitted' = 'unassigned';
   unassigned = signal<any[]>([]);
@@ -63,6 +71,7 @@ export class DemandSheetComponent implements OnInit {
   ngOnInit(): void {
     this.fetchClients();
     this.loadUnassigned();
+    this.fetchTeamLeads();
   }
 
   fetchClients(): void {
@@ -73,7 +82,7 @@ export class DemandSheetComponent implements OnInit {
         this.loading.set(false);
       },
       error: (err) => {
-        this.errorMsg.set(err?.error?.detail || 'Failed to load clients');
+        this.errorMsg.set(err?.error?.detail || '');
         this.loading.set(false);
       }
     });
@@ -202,6 +211,82 @@ export class DemandSheetComponent implements OnInit {
       },
       error: (err) => { if (!silent) this.errorMsg.set(err?.error?.detail || 'Failed to assign'); }
     });
+  }
+
+  // Modal helpers
+  openCreateModal(): void { this.showForm = true; }
+  closeCreateModal(): void { this.showForm = false; }
+
+  openAssignModal(row: any): void {
+    this.assignTarget = row;
+    this.showAssign = true;
+    this.selectedTeamLeaderId = '';
+    this.selectedRecruiterIds.clear();
+    this.recruiters = [];
+  }
+  closeAssignModal(): void { this.showAssign = false; this.assignTarget = null; }
+
+  // TL/Recruiter filters
+  fetchTeamLeads(): void {
+    this.http.get<any[]>(`${this.apiBase}/teamleaders`).subscribe({
+      next: (rows) => this.teamLeaders = rows || [],
+      error: () => this.teamLeaders = [],
+    });
+  }
+
+  onTeamLeaderChange(): void {
+    const tlId = Number(this.selectedTeamLeaderId || 0);
+    this.selectedRecruiterIds.clear();
+    if (!tlId) { this.recruiters = []; return; }
+    this.http.get<any[]>(`${this.apiBase}/teamleaders/${tlId}/recruiters`).subscribe({
+      next: (rows) => this.recruiters = rows || [],
+      error: () => this.recruiters = [],
+    });
+  }
+
+  toggleRecruiter(recruiterId: number, ev: Event): void {
+    const checked = (ev.target as HTMLInputElement).checked;
+    if (checked) this.selectedRecruiterIds.add(recruiterId);
+    else this.selectedRecruiterIds.delete(recruiterId);
+  }
+
+  assignSelected(): void {
+    if (!this.assignTarget || this.selectedRecruiterIds.size === 0) { this.errorMsg.set('Select at least one recruiter'); return; }
+    const demandId = this.assignTarget.id;
+    const ids = Array.from(this.selectedRecruiterIds);
+    // Backend expects jsonb[] assigned_to; send array of recruiter JSON or IDs as backend expects
+    // Here, we send { demand_id, recruiters: ids } to a bulk-assign endpoint if available; fallback loop
+    this.http.post<{ message: string }>(`${this.apiBase}/demand/assign/bulk`, { demand_id: demandId, recruiters: ids }).subscribe({
+      next: () => {
+        this.successMsg.set('Assigned successfully');
+        this.closeAssignModal();
+        this.loadUnassigned();
+        this.loadAssigned();
+      },
+      error: () => {
+        // Fallback: assign one-by-one
+        let completed = 0;
+        ids.forEach((rid) => {
+          this.http.post(`${this.apiBase}/demand/assign`, { demand_id: demandId, recruiter_id: rid }).subscribe({
+            next: () => { completed++; if (completed === ids.length) { this.successMsg.set('Assigned successfully'); this.closeAssignModal(); this.loadUnassigned(); this.loadAssigned(); } },
+            error: () => { completed++; if (completed === ids.length) { this.closeAssignModal(); this.loadUnassigned(); this.loadAssigned(); } }
+          });
+        });
+      }
+    });
+  }
+
+  formatAssignees(arr: any[]): string {
+    try {
+      // arr may be jsonb[] of objects or primitive IDs
+      const names = arr.map((v: any) => {
+        if (v && typeof v === 'object') return v.name || v.email || v.id || String(v);
+        return String(v);
+      });
+      return names.join(', ');
+    } catch {
+      return Array.isArray(arr) ? arr.join(', ') : String(arr || '');
+    }
   }
 }
 

@@ -1,15 +1,22 @@
 <div class="min-h-screen bg-gray-50 py-2 demand-sheet-page">
   <div class="max-w-6xl mx-auto px-4">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-bold text-gray-900">Demand Sheet</h2>
-      <button *ngIf="!showForm" (click)="showForm = true" class="glassy-cta px-4 py-2 rounded-lg">Create Demand</button>
+    <div class="flex items-center mb-6 gap-3">
+      <button *ngIf="!showForm" (click)="openCreateModal()" class="glassy-cta px-4 py-2 rounded-lg">Create Demand</button>
     </div>
 
     <div *ngIf="errorMsg()" class="mb-4 p-3 rounded border border-red-200 bg-red-50 text-red-700">{{ errorMsg() }}</div>
     <div *ngIf="successMsg()" class="mb-4 p-3 rounded border border-green-200 bg-green-50 text-green-700">{{ successMsg() }}</div>
 
-    <div *ngIf="showForm" class="demand-card p-6">
-      <form (ngSubmit)="submit()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Create Demand Modal -->
+    <div *ngIf="showForm" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title">Create Demand</div>
+          <button class="modal-close" (click)="closeCreateModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="demand-card p-6">
+          <form (ngSubmit)="submit()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Client -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Client <span class="text-red-600">*</span></label>
@@ -64,12 +71,12 @@
         </div>
 
         <!-- Assigned To -->
-        <div>
+        <!-- <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Assigned To (Recruiter ID)</label>
           <input [(ngModel)]="form().assigned_to" name="assigned_to" type="number" min="0"
                  placeholder="Enter recruiter ID"
                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500" />
-        </div>
+        </div> -->
 
         <!-- Remarks -->
         <div class="md:col-span-2">
@@ -84,31 +91,30 @@
           <input [value]="form().status" disabled class="mt-1 block w-full bg-gray-100 rounded-md border-gray-300" />
         </div>
 
-        <!-- Actions -->
-        <div class="md:col-span-2 flex items-center gap-3 pt-2">
-          <button type="submit" [disabled]="submitting() || !isValid()"
-                  class="inline-flex items-center px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
-            <svg *ngIf="submitting()" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-            </svg>
-            Submit
-          </button>
-          <button type="button" (click)="resetForm()"
-                  class="px-4 py-2 rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50">
-            Reset
-          </button>
+            <!-- Actions -->
+            <div class="md:col-span-2 flex items-center gap-3 pt-2">
+              <button type="submit" [disabled]="submitting() || !isValid()"
+                      class="inline-flex items-center px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
+                <svg *ngIf="submitting()" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                Submit
+              </button>
+              <button type="button" (click)="resetForm()"
+                      class="px-4 py-2 rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50">
+                Reset
+              </button>
+            </div>
+          </form>
+          </div>
         </div>
-      </form>
+      </div>
     </div>
 
     <!-- Tabs for listing -->
     <div class="mt-6">
-      <div class="demand-tabs" [ngClass]="{
-        'unassigned-theme': activeTab==='unassigned',
-        'assigned-theme': activeTab==='assigned',
-        'submitted-theme': activeTab==='submitted'
-      }">
+      <div class="demand-tabs">
         <button class="demand-tab" [class.active]="activeTab==='unassigned'" (click)="setTab('unassigned')">Unassigned</button>
         <button class="demand-tab" [class.active]="activeTab==='assigned'" (click)="setTab('assigned')">Assigned</button>
         <button class="demand-tab" [class.active]="activeTab==='submitted'" (click)="setTab('submitted')">Submitted</button>
@@ -120,25 +126,92 @@
         <button class="search-btn" (click)="loadAssigned()">Search</button>
       </div>
 
-      <div class="mt-4 demand-card p-4" *ngIf="activeTab==='unassigned'">
-        <div *ngIf="unassigned().length===0" class="text-gray-600">No unassigned demands</div>
-        <div *ngFor="let d of unassigned()" class="demand-row">
-          <div>
-            <div class="demand-title">#{{ d.id }} • {{ d.skill || d.skills }}</div>
-            <div class="demand-sub">Client: {{ d.client_id }} • SPOC: {{ d.spoc_id }}</div>
-          </div>
-          <div class="flex items-center gap-2">
-            <input [(ngModel)]="assignInput[d.id]" [name]="'assign_'+d.id" placeholder="Recruiter ID" type="number" class="demand-input" />
-            <button class="demand-btn" (click)="assignRecruiter(d.id, assignInput[d.id])">Assign</button>
-          </div>
+      <div class="mt-4 demand-card p-4 unassigned-panel" *ngIf="activeTab==='unassigned'">
+        <div class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Project</th>
+                <th>Client</th>
+                <th>SPOC</th>
+                <th>Skills</th>
+                <th>Resource Count</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>JD URL</th>
+                <th>Remarks</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngIf="unassigned().length===0">
+                <td colspan="11" class="text-gray-600">No unassigned demands</td>
+              </tr>
+              <tr *ngFor="let d of unassigned()">
+                <td>#{{ d.id }}</td>
+                <td>{{ d.project_name || '-' }}</td>
+                <td>{{ d.client_name || d.client_id }}</td>
+                <td>{{ d.spoc_name || d.spoc_id }}</td>
+                <td>{{ d.skills || d.skill }}</td>
+                <td>{{ d.no_of_positions || d.positions || '-' }}</td>
+                <td>{{ d.priority || '-' }}</td>
+                <td>{{ d.status || 'Open' }}</td>
+                <td>
+                  <a *ngIf="d.job_description_url" [href]="d.job_description_url" target="_blank">JD</a>
+                  <span *ngIf="!d.job_description_url">-</span>
+                </td>
+                <td>{{ d.remarks || '-' }}</td>
+                <td class="action-cell">
+                  <button class="icon-btn" (click)="openAssignModal(d)"> ⋮ </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div class="mt-4 demand-card p-4" *ngIf="activeTab==='assigned'">
         <div *ngIf="assigned().length===0" class="text-gray-600">No assigned demands</div>
-        <div *ngFor="let d of assigned()" class="demand-row">
-          <div class="demand-title">#{{ d.id }} • {{ d.skill || d.skills }}</div>
-          <div class="demand-sub">Recruiter: {{ d.recruiter_id }}</div>
+        <div *ngIf="assigned().length>0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Project</th>
+                <th>Client</th>
+                <th>SPOC</th>
+                <th>Skills</th>
+                <th>Resource Count</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>JD URL</th>
+                <th>Remarks</th>
+                <th>Assigned To</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let d of assigned()">
+                <td>#{{ d.id }}</td>
+                <td>{{ d.project_name || '-' }}</td>
+                <td>{{ d.client_name || d.client_id }}</td>
+                <td>{{ d.spoc_name || d.spoc_id }}</td>
+                <td>{{ d.skills || d.skill }}</td>
+                <td>{{ d.no_of_positions || d.positions || '-' }}</td>
+                <td>{{ d.priority || '-' }}</td>
+                <td>{{ d.status || 'Assigned' }}</td>
+                <td>
+                  <a *ngIf="d.job_description_url" [href]="d.job_description_url" target="_blank">JD</a>
+                  <span *ngIf="!d.job_description_url">-</span>
+                </td>
+                <td>{{ d.remarks || '-' }}</td>
+                <td>
+                  <span *ngIf="d.assigned_to && d.assigned_to.length">{{ formatAssignees(d.assigned_to) }}</span>
+                  <span *ngIf="!d.assigned_to || !d.assigned_to.length">-</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -152,4 +225,39 @@
   </div>
 </div>
 
+<!-- Assign Modal -->
+<div *ngIf="showAssign" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">Assign Recruiters</div>
+      <button class="modal-close" (click)="closeAssignModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Team Leader</label>
+          <select [(ngModel)]="selectedTeamLeaderId" name="tl_select" (change)="onTeamLeaderChange()"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
+            <option value="">Select Team Leader</option>
+            <option *ngFor="let tl of teamLeaders" [value]="tl.id">{{ tl.name || tl.email || ('TL #' + tl.id) }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Recruiters</label>
+          <div class="recruiter-list">
+            <div *ngIf="recruiters.length===0" class="text-gray-500">Select a Team Leader</div>
+            <label class="recruiter-item" *ngFor="let r of recruiters">
+              <input type="checkbox" [checked]="selectedRecruiterIds.has(r.id)" (change)="toggleRecruiter(r.id, $event)" />
+              <span>{{ r.name || r.email || ('Recruiter #' + r.id) }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 mt-6">
+        <button class="px-4 py-2 rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" (click)="closeAssignModal()">Cancel</button>
+        <button class="glassy-cta px-4 py-2 rounded-lg" (click)="assignSelected()">Assign</button>
+      </div>
+    </div>
+  </div>
+  </div>
 
