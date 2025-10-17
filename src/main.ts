@@ -10,13 +10,10 @@ import { SignupComponent } from './components/login/signup.component';
 import { VerifyComponent } from './components/login/verify.component';
 import { ResetPasswordComponent } from './components/login/reset-password.component';
 import { VerifyResetComponent } from './components/login/verify-reset.component';
-import { SuperAdminLoginComponent } from './components/superadmin/superadmin-login.component';
 import { SuperAdminDashboardComponent } from './components/superadmin/superadmin-dashboard.component';
 import { SuperAdminLayoutComponent } from './components/superadmin/superadmin-layout.component';
-import { demandRoutes } from './app/demand/demand.routes';
 import { TeamLeaderLayoutComponent } from './components/teamleader/teamleader-layout.component';
 import { TeamLeaderDashboardComponent } from './components/teamleader/teamleader-dashboard.component';
-import { TeamLeaderLoginComponent } from './components/teamleader/teamleader-login.component';
 
 // Simple protected Dashboard (same UI style)
 @Component({
@@ -76,19 +73,134 @@ class AppRoot {}
 const authGuard: CanActivateFn = () => {
   const router = inject(Router);
   const token = localStorage.getItem('access_token');
-  return token ? true : (router.parseUrl('/signin') as UrlTree);
+  
+  if (!token) {
+    return router.parseUrl('/signin') as UrlTree;
+  }
+  
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    
+    // Check if token is expired
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token_type');
+      localStorage.removeItem('expires_at');
+      return router.parseUrl('/signin') as UrlTree;
+    }
+    
+    return true;
+  } catch (error) {
+    // If token is invalid, clear it and redirect to login
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    localStorage.removeItem('expires_at');
+    return router.parseUrl('/signin') as UrlTree;
+  }
 };
 
-const superAdminGuard: CanActivateFn = () => {
+const roleGuard = (requiredRole: string): CanActivateFn => () => {
   const router = inject(Router);
-  const token = localStorage.getItem('superadmin_token');
-  return token ? true : (router.parseUrl('/superadmin/login') as UrlTree);
+  const token = localStorage.getItem('access_token');
+  
+  console.log(`🔒 Role guard checking for role: ${requiredRole}`);
+  console.log('🔑 Token exists:', !!token);
+  
+  if (!token) {
+    console.log('❌ No token found, redirecting to signin');
+    return router.parseUrl('/signin') as UrlTree;
+  }
+  
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const userRole = payload.role?.toLowerCase();
+    
+    console.log('👤 User role from token:', userRole);
+    console.log('🎯 Required role:', requiredRole);
+    console.log('📄 Full token payload:', payload);
+    
+    // Check if token is expired
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      console.log('⏰ Token expired, clearing and redirecting to signin');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token_type');
+      localStorage.removeItem('expires_at');
+      return router.parseUrl('/signin') as UrlTree;
+    }
+    
+    const roleMapping: { [key: string]: string[] } = {
+      'super_admin': ['super_admin'],
+      'team_leader': ['team_leader', 'teamleader', 'team_leadr']
+    };
+    
+    const allowedRoles = roleMapping[requiredRole] || [requiredRole];
+    const hasAccess = allowedRoles.includes(userRole);
+    
+    console.log('✅ Allowed roles:', allowedRoles);
+    console.log('🔓 Has access:', hasAccess);
+    
+    if (!hasAccess) {
+      console.log('🚫 Access denied, redirecting to appropriate dashboard');
+      // Redirect to appropriate dashboard based on user's actual role
+      if (userRole === 'super_admin') {
+        console.log('🔄 Redirecting super admin to dashboard');
+        return router.parseUrl('/superadmin/dashboard') as UrlTree;
+      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+        console.log('🔄 Redirecting team leader to demand sheet');
+        return router.parseUrl('/teamleader/demand-sheet') as UrlTree;
+      } else {
+        console.log('🔄 Redirecting to default dashboard');
+        return router.parseUrl('/dashboard') as UrlTree;
+      }
+    }
+    
+    console.log('✅ Access granted for', requiredRole);
+    return true;
+  } catch (error) {
+    console.error('💥 Token parsing error in role guard:', error);
+    // If token is invalid, clear it and redirect to login
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    localStorage.removeItem('expires_at');
+    return router.parseUrl('/signin') as UrlTree;
+  }
 };
 
-const teamLeaderGuard: CanActivateFn = () => {
+// Root redirect guard to handle role-based initial navigation
+const rootRedirectGuard: CanActivateFn = () => {
   const router = inject(Router);
-  const token = localStorage.getItem('teamleader_token');
-  return token ? true : (router.parseUrl('/teamleader/login') as UrlTree);
+  const token = localStorage.getItem('access_token');
+  
+  if (!token) {
+    return router.parseUrl('/signin') as UrlTree;
+  }
+  
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const userRole = payload.role?.toLowerCase();
+    
+    // Check if token is expired
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token_type');
+      localStorage.removeItem('expires_at');
+      return router.parseUrl('/signin') as UrlTree;
+    }
+    
+    // Redirect based on role
+    if (userRole === 'super_admin') {
+      return router.parseUrl('/superadmin/dashboard') as UrlTree;
+    } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+      return router.parseUrl('/teamleader/demand-sheet') as UrlTree;
+    } else {
+      return router.parseUrl('/dashboard') as UrlTree;
+    }
+  } catch (error) {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    localStorage.removeItem('expires_at');
+    return router.parseUrl('/signin') as UrlTree;
+  }
 };
 
 const routes: Routes = [
@@ -98,21 +210,17 @@ const routes: Routes = [
   { path: 'reset-password', component: ResetPasswordComponent },
   { path: 'verify-reset', component: VerifyResetComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
-  { path: '', children: demandRoutes, canActivate: [authGuard] },
-  { path: 'superadmin/login', component: SuperAdminLoginComponent },
-  { path: 'teamleader/login', component: TeamLeaderLoginComponent },
+  { path: 'demand/create', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent), canActivate: [authGuard] },
   {
     path: 'superadmin',
     component: SuperAdminLayoutComponent,
-    canActivate: [superAdminGuard],
+    canActivate: [roleGuard('super_admin')],
     children: [
       { path: 'dashboard', component: SuperAdminDashboardComponent },
-      // Demand sheet moved to Team Leader page; remove from Super Admin
-      { path: 'pending-approvals', loadComponent: () => import('./components/superadmin/superadmin-dashboard.component').then(m => m.SuperAdminDashboardComponent) },
+      { path: 'pending-approvals', component: SuperAdminDashboardComponent },
       { path: 'client-settings/client', loadComponent: () => import('./components/clientsettings').then(m => m.ClientSettingsComponent) },
       { path: 'client-settings/spoc', loadComponent: () => import('./components/clientsettings').then(m => m.ClientSettingsComponent) },
       { path: 'client-settings', redirectTo: 'client-settings/client', pathMatch: 'full' },
-      // Backward compatibility: support older link path
       { path: 'pending-users', redirectTo: 'pending-approvals', pathMatch: 'full' },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
@@ -120,13 +228,13 @@ const routes: Routes = [
   {
     path: 'teamleader',
     component: TeamLeaderLayoutComponent,
-    canActivate: [teamLeaderGuard],
+    canActivate: [roleGuard('team_leader')],
     children: [
       { path: 'demand-sheet', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent) },
       { path: '', redirectTo: 'demand-sheet', pathMatch: 'full' }
     ]
   },
-  { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+  { path: '', pathMatch: 'full', canActivate: [rootRedirectGuard], children: [] },
   { path: '**', redirectTo: '/signin' }
 ];
 

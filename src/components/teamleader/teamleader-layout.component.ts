@@ -62,8 +62,12 @@ export class TeamLeaderLayoutComponent implements OnInit {
   private router = inject(Router);
   ngOnInit(): void {}
   logout(): void {
-    try { localStorage.removeItem('teamleader_token'); } catch {}
-    this.router.navigate(['/teamleader/login']).catch(() => {});
+    try { 
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token_type');
+      localStorage.removeItem('expires_at');
+    } catch {}
+    this.router.navigate(['/signin']).catch(() => {});
   }
 }
 

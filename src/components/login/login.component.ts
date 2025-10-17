@@ -45,6 +45,7 @@ class NotificationService {
           {{ alertMessage }}
         </div>
 
+
         <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
           <div style="margin-bottom:14px;">
             <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Email</label>
@@ -172,8 +173,27 @@ export class LoginComponent {
           this.router.navigate(['/verify'], { queryParams: { email } }).catch(() => {});
           return;
         }
-        const path = r?.redirect_url || '/dashboard';
-        this.router.navigate([path]).catch(() => {});
+        
+        // Use redirect_url from backend if available, otherwise parse token
+        if (r?.redirect_url) {
+          this.router.navigate([r.redirect_url]).then((success) => {
+            // Force a location reload to ensure URL updates properly
+            if (this.router.url === '/signin' && r.redirect_url) {
+              window.location.href = r.redirect_url;
+            }
+          }).catch((err) => {
+            console.error('Navigation failed:', err);
+            // Fallback to role-based navigation
+            setTimeout(() => {
+              this.handleRoleBasedNavigation(r);
+            }, 100);
+          });
+        } else {
+          // Wait a moment for token to be stored, then navigate
+          setTimeout(() => {
+            this.handleRoleBasedNavigation(r);
+          }, 100);
+        }
       },
       error: (err: HttpErrorResponse) => {
         if (err.status === 403 && (err.error?.detail || '').toLowerCase().includes('awaiting approval')) {
@@ -185,6 +205,38 @@ export class LoginComponent {
         this.loading.set(false);
       }
     });
+  }
+
+  private handleRoleBasedNavigation(response: any) {
+    const token = localStorage.getItem('access_token');
+    
+    if (!token) {
+      this.router.navigate(['/dashboard']).catch((err) => console.error('Navigation error:', err));
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const userRole = payload.role?.toLowerCase();
+      
+      // Navigate based on role
+      if (userRole === 'super_admin') {
+        this.router.navigate(['/superadmin/dashboard']).catch((err) => {
+          console.error('Navigation to superadmin failed:', err);
+        });
+      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+        this.router.navigate(['/teamleader/demand-sheet']).catch((err) => {
+          console.error('Navigation to teamleader failed:', err);
+        });
+      } else {
+        this.router.navigate(['/dashboard']).catch((err) => {
+          console.error('Navigation to dashboard failed:', err);
+        });
+      }
+    } catch (error) {
+      console.error('Token parsing error:', error);
+      this.router.navigate(['/dashboard']).catch((err) => console.error('Navigation error:', err));
+    }
   }
 
   onGoogleSignIn() {
@@ -200,7 +252,7 @@ export class LoginComponent {
         const token = localStorage.getItem('access_token');
         if (token) {
           this.notify.showSuccess('Google sign-in successful');
-          this.router.navigate(['/dashboard']).catch(() => {});
+          this.handleRoleBasedNavigation({});
         }
       }
     }, 1000);

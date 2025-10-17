@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { SuperAdminService, PendingUser } from '../../services/superadmin.service';
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-superadmin-dashboard',
@@ -22,29 +24,43 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Reporting To</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let user of pendingUsers()">
-              <td>{{ user.email.split('@')[0] }}</td>
+              <td>{{ (user.first_name + ' ' + user.last_name).trim() || user.email.split('@')[0] }}</td>
               <td>{{ user.email }}</td>
               <td>
-                <select [(ngModel)]="user.role" (change)="setRole(user.id, $event)" class="superadmin-role-select">
+                <select [(ngModel)]="user.role" (change)="onRoleChange(user)" class="superadmin-role-select">
                   <option value="candidate">Candidate</option>
                   <option value="recruiter">Recruiter</option>
                   <option value="team_leader">Team Leader</option>
                   <option value="manager">Manager</option>
+                  <option value="business_head">Business Head</option>
+                  <option value="cluster_manager">Cluster Manager</option>
                   <option value="super_admin">Super Admin</option>
                 </select>
+              </td>
+              <td *ngIf="needsReportingPerson(user.role)">
+                <select [(ngModel)]="user.reporting_to" class="superadmin-reporting-select">
+                  <option value="">Select Reporting Person</option>
+                  <option *ngFor="let person of getReportingPersons(user.role)" [value]="person.id">
+                    {{ person.email }} ({{ person.role }})
+                  </option>
+                </select>
+              </td>
+              <td *ngIf="!needsReportingPerson(user.role)">
+                <span class="superadmin-no-reporting">N/A</span>
               </td>
               <td>
                 <span class="superadmin-status-badge pending">Pending</span>
               </td>
               <td>
                 <div class="superadmin-action-buttons">
-                  <button (click)="approveUser(user.id)" class="superadmin-btn superadmin-btn-approve superadmin-btn-pill">Approve</button>
+                  <button (click)="approveUser(user)" class="superadmin-btn superadmin-btn-approve superadmin-btn-pill">Approve</button>
                   <button (click)="rejectUser(user.id)" class="superadmin-btn superadmin-btn-reject superadmin-btn-pill">Reject</button>
                 </div>
               </td>
@@ -303,6 +319,30 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
+    .superadmin-reporting-select {
+      padding: 6px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+      color: #2d3748;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+      min-width: 200px;
+    }
+
+    .superadmin-reporting-select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .superadmin-no-reporting {
+      color: #6b7280;
+      font-style: italic;
+      font-size: 14px;
+    }
+
     .superadmin-empty-state {
       text-align: center;
       padding: 60px 20px;
@@ -360,12 +400,24 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
 export class SuperAdminDashboardComponent implements OnInit {
   private superAdminService = inject(SuperAdminService);
   private router = inject(Router);
+  private http = inject(HttpClient);
 
   pendingUsers = signal<PendingUser[]>([]);
   pendingCount = signal(0);
+  
+  // Reporting persons data
+  teamLeaders = signal<any[]>([]);
+  managers = signal<any[]>([]);
+  businessHeads = signal<any[]>([]);
+  clusterManagers = signal<any[]>([]);
+  superAdmins = signal<any[]>([]);
+  
+  apiBase = environment.apiBase || 'http://localhost:8000';
 
   ngOnInit(): void {
+    console.log('📊 SuperAdminDashboardComponent initialized');
     this.loadPendingUsers();
+    this.loadReportingPersons();
   }
 
   loadPendingUsers(): void {
@@ -383,8 +435,14 @@ export class SuperAdminDashboardComponent implements OnInit {
     });
   }
 
-  approveUser(userId: number): void {
-    this.superAdminService.approveUser(userId).subscribe({
+  approveUser(user: any): void {
+    // Check if reporting person is required and selected
+    if (this.needsReportingPerson(user.role) && !user.reporting_to) {
+      alert('Please select a reporting person for this role.');
+      return;
+    }
+
+    this.superAdminService.approveUser(user.id, user.reporting_to).subscribe({
       next: (res) => {
         console.log('User approved:', res.message);
         this.loadPendingUsers(); // Refresh the list
@@ -419,6 +477,78 @@ export class SuperAdminDashboardComponent implements OnInit {
         console.error('Role update failed:', err);
       }
     });
+  }
+
+  // Load all reporting persons
+  loadReportingPersons(): void {
+    this.loadTeamLeaders();
+    this.loadManagers();
+    this.loadBusinessHeads();
+    this.loadClusterManagers();
+    this.loadSuperAdmins();
+  }
+
+  loadTeamLeaders(): void {
+    this.http.get<any[]>(`${this.apiBase}/teamleaders`).subscribe({
+      next: (data) => this.teamLeaders.set(data || []),
+      error: (err) => console.error('Failed to load team leaders:', err)
+    });
+  }
+
+  loadManagers(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=manager`).subscribe({
+      next: (data) => this.managers.set(data || []),
+      error: (err) => console.error('Failed to load managers:', err)
+    });
+  }
+
+  loadBusinessHeads(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=business_head`).subscribe({
+      next: (data) => this.businessHeads.set(data || []),
+      error: (err) => console.error('Failed to load business heads:', err)
+    });
+  }
+
+  loadClusterManagers(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=cluster_manager`).subscribe({
+      next: (data) => this.clusterManagers.set(data || []),
+      error: (err) => console.error('Failed to load cluster managers:', err)
+    });
+  }
+
+  loadSuperAdmins(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=super_admin`).subscribe({
+      next: (data) => this.superAdmins.set(data || []),
+      error: (err) => console.error('Failed to load super admins:', err)
+    });
+  }
+
+  // Check if a role needs a reporting person
+  needsReportingPerson(role: string): boolean {
+    return ['recruiter', 'team_leader', 'business_head', 'cluster_manager'].includes(role);
+  }
+
+  // Get reporting persons based on role
+  getReportingPersons(role: string): any[] {
+    switch (role) {
+      case 'recruiter':
+        return this.teamLeaders();
+      case 'team_leader':
+        return this.managers();
+      case 'business_head':
+        return this.clusterManagers();
+      case 'cluster_manager':
+        return this.superAdmins();
+      default:
+        return [];
+    }
+  }
+
+  // Handle role change
+  onRoleChange(user: any): void {
+    // Clear reporting_to when role changes
+    user.reporting_to = '';
+    this.setRole(user.id, { target: { value: user.role } } as any);
   }
 
   logout(): void {

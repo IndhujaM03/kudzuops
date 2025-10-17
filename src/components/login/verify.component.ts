@@ -95,7 +95,39 @@ export class VerifyComponent implements OnInit {
     const endpoint = source === 'google' ? '/verify-google' : '/verify';
     
     this.auth.verify(this.email, this.form.value.code!, source === 'google').subscribe({
-      next: _ => { this.loading = false; this.success = 'Verified! Redirecting...'; this.router.navigate(['/dashboard']); },
+      next: (response) => { 
+        this.loading = false; 
+        this.success = 'Verified! Redirecting...'; 
+        // Store the token if provided in response
+        if (response.access_token) {
+          localStorage.setItem('access_token', response.access_token);
+          localStorage.setItem('token_type', response.token_type || 'bearer');
+          if (response.expires_at) {
+            localStorage.setItem('expires_at', response.expires_at);
+          }
+        }
+        // Redirect based on role or default dashboard
+        setTimeout(() => {
+          const token = localStorage.getItem('access_token');
+          if (token) {
+            try {
+              const payload = JSON.parse(atob(token.split('.')[1]));
+              const userRole = payload.role?.toLowerCase();
+              if (userRole === 'super_admin') {
+                this.router.navigate(['/superadmin/dashboard']);
+              } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+                this.router.navigate(['/teamleader/demand-sheet']);
+              } else {
+                this.router.navigate(['/dashboard']);
+              }
+            } catch (error) {
+              this.router.navigate(['/dashboard']);
+            }
+          } else {
+            this.router.navigate(['/dashboard']);
+          }
+        }, 1000);
+      },
       error: (e: HttpErrorResponse) => { this.error = e.error?.detail || 'Verification failed'; this.loading = false; }
     });
   }

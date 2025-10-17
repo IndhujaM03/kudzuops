@@ -112,6 +112,7 @@ export class SuperAdminLayoutComponent implements OnInit {
   clientSettingsOpen = false;
 
   ngOnInit(): void {
+    console.log('🏢 SuperAdminLayoutComponent initialized');
     this.loadPendingCount();
   }
 
@@ -123,8 +124,12 @@ export class SuperAdminLayoutComponent implements OnInit {
   }
 
   logout(): void {
-    try { localStorage.removeItem('superadmin_token'); } catch {}
-    this.router.navigate(['/superadmin/login']).catch(() => {});
+    try { 
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token_type');
+      localStorage.removeItem('expires_at');
+    } catch {}
+    this.router.navigate(['/signin']).catch(() => {});
   }
 }
 

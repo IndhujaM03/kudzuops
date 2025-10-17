@@ -14,8 +14,8 @@ export class TeamLeaderService {
   private api = 'http://localhost:8000';
 
   private getAuthHeaders(): HttpHeaders {
-    const token = localStorage.getItem('teamleader_token') || '';
-    const type = localStorage.getItem('teamleader_token_type') || 'bearer';
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const type = localStorage.getItem('token_type') || localStorage.getItem('teamleader_token_type') || 'bearer';
     return new HttpHeaders({ 'Authorization': `${type} ${token}` });
   }
 
@@ -36,6 +36,25 @@ export class TeamLeaderService {
 
   isLoggedIn(): boolean {
     return !!localStorage.getItem('teamleader_token');
+  }
+
+  // CV Management methods
+  getCvReceived(): Observable<any[]> {
+    console.log('🌐 Making API call to:', `${this.api}/cv-received`);
+    console.log('🔑 Auth headers:', this.getAuthHeaders());
+    return this.http.get<any[]>(`${this.api}/cv-received`, { headers: this.getAuthHeaders() });
+  }
+
+  getCvSubmitted(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.api}/cv-submitted`, { headers: this.getAuthHeaders() });
+  }
+
+  approveCv(activityId: number, cvIndex: number): Observable<any> {
+    return this.http.post<any>(`${this.api}/cv-approve/${activityId}?cv_index=${cvIndex}`, {}, { headers: this.getAuthHeaders() });
+  }
+
+  rejectCv(activityId: number, cvIndex: number): Observable<any> {
+    return this.http.post<any>(`${this.api}/cv-reject/${activityId}?cv_index=${cvIndex}`, {}, { headers: this.getAuthHeaders() });
   }
 }
 

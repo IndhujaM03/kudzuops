@@ -27,6 +27,26 @@ import { AuthService } from '../../services/auth.service';
 
         <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
           <div style="margin-bottom:14px;">
+            <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">First Name</label>
+            <input type="text" formControlName="first_name" placeholder="Enter your first name"
+                   [class.error]="submitted && form.controls['first_name'].invalid"
+                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" />
+            <div *ngIf="submitted && form.controls['first_name'].invalid" style="color:#b91c1c;font-size:12px;margin-top:6px;">
+              First name is required
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Last Name</label>
+            <input type="text" formControlName="last_name" placeholder="Enter your last name"
+                   [class.error]="submitted && form.controls['last_name'].invalid"
+                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" />
+            <div *ngIf="submitted && form.controls['last_name'].invalid" style="color:#b91c1c;font-size:12px;margin-top:6px;">
+              Last name is required
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px;">
             <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Email</label>
             <input type="email" formControlName="email" placeholder="you@example.com"
                    [class.error]="submitted && form.controls['email'].invalid"
@@ -85,6 +105,8 @@ export class SignupComponent {
 
   constructor() {
     this.form = this.fb.group({
+      first_name: ['', [Validators.required, Validators.minLength(2)]],
+      last_name: ['', [Validators.required, Validators.minLength(2)]],
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required, Validators.minLength(8), this.strength]],
       confirm: ['', [Validators.required]],
@@ -104,8 +126,8 @@ export class SignupComponent {
     this.submitted = true;
     if (this.form.invalid) return;
     this.loading = true; this.error = ''; this.success = '';
-    const { email, password, confirm } = this.form.value;
-    this.auth.signup(email, password, confirm)
+    const { first_name, last_name, email, password, confirm } = this.form.value;
+    this.auth.signup(first_name, last_name, email, password, confirm)
       .subscribe({
         next: r => { this.success = r.message; this.loading = false; this.router.navigate(['/verify'], { queryParams: { email } }); },
         error: (e: HttpErrorResponse) => { this.error = e.error?.detail || 'Registration failed'; this.loading = false; }

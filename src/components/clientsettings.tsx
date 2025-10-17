@@ -1,6 +1,5 @@
 import { Component, inject, signal, computed } from '@angular/core';
 import { Router } from '@angular/router';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
@@ -25,7 +24,7 @@ interface SpocDto {
 @Component({
   selector: 'app-client-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [CommonModule, ReactiveFormsModule],
   template: `
     <div class="demand-sheet-page" style="min-height:100vh;background:#f7fafc;padding:24px 16px;">
       <div style="width:100%;max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
@@ -130,17 +129,6 @@ interface SpocDto {
           </form>
         </div>
 
-        <!-- Right column: simple lists -->
-        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.05);padding:16px;">
-          <h3 style="margin:0 0 10px;font-size:16px;font-weight:700;color:#111827;">Existing Clients</h3>
-          <div *ngIf="clientsLoading" style="color:#6b7280;font-size:14px;">Loading…</div>
-          <ul *ngIf="!clientsLoading && clients().length" style="margin:0;padding-left:18px;">
-            <li *ngFor="let c of clients()" style="margin-bottom:6px;color:#374151;">
-              {{ c.client_name }} • {{ c.industry || '—' }} • {{ c.location || '—' }} • {{ c.is_active ? 'Active' : 'Inactive' }}
-            </li>
-          </ul>
-          <div *ngIf="!clientsLoading && !clients().length" style="color:#6b7280;font-size:14px;">No clients yet</div>
-        </div>
         
       </div>
     </div>
@@ -199,8 +187,10 @@ export class ClientSettingsComponent {
   }
 
   private authHeaders() {
-    const token = localStorage.getItem('superadmin_token') || localStorage.getItem('access_token') || '';
-    return token ? { Authorization: `Bearer ${token}` } : {} as any;
+    const token = localStorage.getItem('access_token') || '';
+    const tokenType = localStorage.getItem('token_type') || 'bearer';
+    console.log('🔑 Client Settings API using token:', !!token, 'Type:', tokenType);
+    return token ? { Authorization: `${tokenType} ${token}` } : {} as any;
   }
 
   refreshClients() {
@@ -221,12 +211,19 @@ export class ClientSettingsComponent {
     if (this.clientForm.invalid || this.clientLoading) return;
     this.clientLoading = true; this.clientError = ''; this.clientSuccess = '';
     const payload = this.clientForm.value;
+    
+    console.log('📝 Creating client with payload:', payload);
+    console.log('🔑 Using auth headers:', this.authHeaders());
+    
     this.http.post<ClientDto>(`${this.apiBase}/clients`, payload, { headers: this.authHeaders() }).subscribe({
       next: (c) => {
+        console.log('✅ Client created successfully:', c);
         this.clientLoading = false; this.clientSuccess = 'Client created';
         this.resetClient(); this.refreshClients();
       },
       error: (e: HttpErrorResponse) => {
+        console.error('❌ Client creation failed:', e);
+        console.error('Error details:', e.error);
         this.clientLoading = false; this.clientError = e.error?.detail || 'Failed to create client';
       }
     });

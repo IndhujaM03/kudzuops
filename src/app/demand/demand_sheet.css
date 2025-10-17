@@ -55,8 +55,10 @@
 /* Angular template-driven validation states */
 .demand-card .ng-invalid.ng-touched,
 .demand-card .ng-invalid.ng-dirty {
-  border-color: #ef4444; /* red-500 */
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+  /* border-color: #ef4444; */
+   /* red-500 */
+  /* box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12); */
+  border-color: #10b981;
 }
 
 .demand-card .ng-valid.ng-touched {
@@ -176,13 +178,52 @@
 .demand-sheet-page .p-6 { padding: 24px; }
 
 
-/* Tabs - glassy styling aligned with Super Admin */
+/* Chrome-style tabs */
+.chrome-tabs {
+  display: flex;
+  background: #f1f3f4;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-top: 20px;
+}
 
-/* Tabs - neutral styling (colors removed) */
-.demand-tabs { display:flex;justify-content: flex-start; gap:8px; padding:8px; background: rgba(255, 255, 255, 0.7); border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 10px 18px rgba(0,0,0,0.06); backdrop-filter: saturate(180%) blur(8px); }
-.demand-tab { appearance:none; border:1px solid transparent; background:transparent; color:#374151; padding:10px 14px; border-radius:8px; cursor:pointer; transition: border-color .2s ease, background-color .2s ease; }
-.demand-tab:hover { background: rgba(0,0,0,0.04); color:#111827; }
-.demand-tab.active { background: rgba(0,0,0,0.06); color:#111827; border-color:#e5e7eb; }
+.chrome-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  position: relative;
+}
+
+.chrome-tab:hover {
+  background: rgba(0,0,0,0.05);
+  color: #202124;
+}
+
+.chrome-tab.active {
+  background: #ffffff;
+  color: #16a34a;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.chrome-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: #16a34a;
+  border-radius: 2px;
+}
 
 /* Remove thematic colors per tab */
 .demand-tabs.unassigned-theme,
@@ -228,8 +269,2031 @@
 .icon-btn { appearance:none; border:0; background: transparent; font-size: 20px; line-height: 1; cursor:pointer; color:#334155; padding: 6px; border-radius: 8px; }
 .icon-btn:hover { background: rgba(0,0,0,0.06); }
 
-/* Recruiter checklist */
+/* Enhanced Assign Modal */
+.assign-modal-card {
+  max-width: 600px;
+  width: 100%;
+}
+
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-title-icon {
+  width: 20px;
+  height: 20px;
+  color: #16a34a;
+}
+
+/* Demand Info Card */
+.demand-info-card {
+  background: linear-gradient(135deg, rgba(22, 163, 74, 0.05), rgba(22, 163, 74, 0.02));
+  border: 1px solid rgba(22, 163, 74, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.demand-info-title {
+  font-weight: 600;
+  color: #16a34a;
+  margin-bottom: 12px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.demand-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.demand-info-grid-aligned {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+
+.demand-info-item-full {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(22, 163, 74, 0.1);
+}
+
+.demand-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.demand-info-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.demand-info-value {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 500;
+}
+
+/* Assignment Form */
+.assignment-form {
+  margin-bottom: 24px;
+}
+
+.form-row {
+  margin-bottom: 20px;
+}
+
+.form-row-aligned {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+.form-group-half {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-group-full {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.dropdown-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+/* Unified Dropdown */
+.unified-dropdown {
+  position: relative;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: visible;
+}
+
+/* Minimal variant: remove card-like look */
+.unified-dropdown.minimal {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  width: 100%;
+}
+
+/* Search Section */
+.search-section {
+  position: relative;
+  padding: 12px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #f9fafb;
+}
+
+/* Align minimal dropdown input to look like native selects (e.g., Priority) */
+.unified-dropdown.minimal .search-section { padding: 0; border-bottom: none; }
+.unified-dropdown.minimal .search-input { 
+  width: 100%; 
+  padding: 10px 36px 10px 12px; 
+  border: 1px solid #d1d5db; 
+  border-radius: 6px; 
+  background: #ffffff; 
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+/* Green focus styling for minimal dropdown to match other form elements */
+.unified-dropdown.minimal .search-input:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+}
+
+/* Green focus styling for dropdown arrow when input is focused */
+.unified-dropdown.minimal .search-input:focus + .dropdown-arrow-icon,
+.unified-dropdown.minimal .search-input:focus ~ .dropdown-arrow-icon {
+  color: #10b981;
+}
+
+/* Green focus styling for dropdown arrow button */
+.unified-dropdown.minimal .search-input:focus ~ button .dropdown-arrow-icon {
+  color: #10b981;
+}
+
+.search-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+/* Selected Section */
+.selected-section {
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border-bottom: 1px solid #e0f2fe;
+}
+.unified-dropdown.minimal .selected-section {
+  background: transparent;
+  border-bottom: none;
+  padding: 6px 0;
+}
+
+
+.selected-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.selected-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e40af;
+  background: #dbeafe;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #93c5fd;
+}
+
+.more-items {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Dropdown Toggle Button */
+.dropdown-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.dropdown-toggle:hover {
+  background: #e5e7eb;
+}
+
+.dropdown-arrow {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+  transition: transform 0.2s ease;
+}
+
+.dropdown-arrow.rotated {
+  transform: rotate(180deg);
+}
+
+/* Dropdown List */
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  display: none;
+  margin-top: 4px;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+}
+
+.dropdown-list.show {
+  display: block;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  position: relative;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.dropdown-item:hover {
+  background: #f8fafc;
+}
+
+.item-checkbox,
+.item-radio {
+  width: 16px;
+  height: 16px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+  margin: 0;
+  margin-right: 8px; /* consistent gap between checkbox and name */
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.item-name {
+  flex: 1;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.4;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+/* Assigned To minimal dropdown: ensure tight, clean row and hide extra status icon */
+.unified-dropdown.minimal .dropdown-item { 
+  padding: 8px 12px; 
+  gap: 12px; 
+  flex-wrap: nowrap; 
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+.unified-dropdown.minimal .item-status { 
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.unified-dropdown.minimal .item-checkbox { 
+  margin-right: 0; 
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.unified-dropdown.minimal .item-name { 
+  line-height: 1.4; 
+  flex: 1; 
+  white-space: nowrap; 
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+/* Remove green focus glow on checkboxes/radios inside dropdown lists */
+.unified-dropdown.minimal .dropdown-list input[type="checkbox"]:focus,
+.unified-dropdown.minimal .dropdown-list input[type="radio"]:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: #d1d5db; /* keep neutral */
+}
+
+/* Responsive design for Priority and Assigned To row */
+@media (max-width: 768px) {
+  .grid.grid-cols-1.md\\:grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .unified-dropdown.minimal .dropdown-item {
+    padding: 10px 12px;
+  }
+  
+  .unified-dropdown.minimal .item-name {
+    white-space: normal;
+    line-height: 1.3;
+  }
+}
+
+.item-status {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.item-status.selected {
+  background: #3b82f6;
+  color: white;
+}
+
+.check-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+/* Glassy Dropdown Styles */
+.glassy-dropdown {
+  position: relative;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  overflow: visible;
+  transition: all 0.3s ease;
+}
+
+.glassy-dropdown:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1);
+}
+
+/* Glassy Search Section */
+.glassy-search-section {
+  position: relative;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.glassy-search-input {
+  width: 100%;
+  padding: 10px 12px 10px 40px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #374151;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(5px);
+}
+
+.glassy-search-input:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.glassy-search-input::placeholder {
+  color: rgba(107, 114, 128, 0.7);
+}
+
+.glassy-search-icon {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: rgba(107, 114, 128, 0.8);
+  pointer-events: none;
+}
+
+/* Glassy Selected Section */
+.glassy-selected-section {
+  padding: 10px 12px;
+  background: rgba(59, 130, 246, 0.1);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+  backdrop-filter: blur(5px);
+}
+
+.glassy-selected-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.glassy-selected-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e40af;
+  background: rgba(59, 130, 246, 0.2);
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  backdrop-filter: blur(5px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.glassy-more-items {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(107, 114, 128, 0.8);
+}
+
+/* Glassy Dropdown Toggle Button */
+.glassy-dropdown-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.glassy-dropdown-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.glassy-dropdown-arrow {
+  width: 18px;
+  height: 18px;
+  color: rgba(107, 114, 128, 0.8);
+  transition: all 0.3s ease;
+}
+
+.glassy-dropdown-arrow.rotated {
+  transform: rotate(180deg);
+  color: rgba(59, 130, 246, 0.8);
+}
+
+/* Glassy Dropdown List */
+.glassy-dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  max-height: 250px;
+  overflow-y: auto;
+  display: none;
+  margin-top: 2px;
+  border-top: none;
+}
+
+.glassy-dropdown-list.show {
+  display: block;
+}
+
+.glassy-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.glassy-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.glassy-dropdown-item:hover {
+  background: rgba(59, 130, 246, 0.05);
+  backdrop-filter: blur(5px);
+}
+
+.glassy-item-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+  margin: 0;
+  border-radius: 4px;
+}
+
+.glassy-item-name {
+  flex: 1;
+  font-size: 14px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.glassy-item-status {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.glassy-item-status.selected {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.glassy-check-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.glassy-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: rgba(107, 114, 128, 0.8);
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Assigned To Dropdown Icon Fix */
+.relative svg {
+  max-width: 16px;
+  max-height: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+/* Dropdown Arrow Icon Styling */
+.dropdown-arrow-icon {
+  font-size: 14px;
+  color: #6b7280;
+  transition: transform 0.2s ease;
+}
+
+.dropdown-arrow-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 14px;
+}
+
+.form-label-icon {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+}
+
+.form-select {
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  color: #111827;
+  transition: all 0.2s ease;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #6b7280 50%),
+    linear-gradient(135deg, #6b7280 50%, transparent 50%),
+    linear-gradient(to right, transparent, transparent);
+  background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px), calc(100% - 2.25rem) 0.5rem;
+  background-size: 6px 6px, 6px 6px, 1px 2.25rem;
+  background-repeat: no-repeat;
+}
+
+.form-select:focus {
+  outline: none;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.1);
+}
+
+/* Enhanced Recruiter List */
+.recruiter-list-enhanced {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.recruiter-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.recruiter-empty-icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.recruiter-item-enhanced {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.recruiter-item-enhanced:last-child {
+  border-bottom: none;
+}
+
+.recruiter-item-enhanced:hover {
+  background: rgba(22, 163, 74, 0.05);
+}
+
+.recruiter-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.recruiter-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recruiter-name {
+  font-weight: 500;
+  color: #111827;
+  font-size: 14px;
+}
+
+.recruiter-email {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.recruiter-status {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.recruiter-status.selected {
+  background: #16a34a;
+  color: white;
+}
+
+.check-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #374151;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #15803d, #166534);
+  box-shadow: 0 4px 8px rgba(22, 163, 74, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Assign button specific styling for modal */
+.modal-actions .btn-primary {
+  min-width: 80px;
+  width: auto;
+  padding: 10px 20px;
+}
+
+.btn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Toast Notification */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  min-width: 300px;
+  max-width: 400px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  animation: slideInRight 0.3s ease-out;
+}
+
+.toast-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.toast-success {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(22, 163, 74, 0.95));
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: white;
+}
+
+.toast-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: white;
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toast-icon-svg {
+  width: 20px;
+  height: 20px;
+}
+
+.toast-message {
+  flex: 1;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.toast-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.toast-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.toast-close-icon {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Assigned To Cell Styling */
+.assigned-to-cell {
+  min-width: 200px;
+}
+
+.assigned-to-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.assigned-to-email {
+  font-weight: 500;
+  color: #111827;
+  font-size: 14px;
+}
+
+.assigned-to-role {
+  font-size: 12px;
+  color: #6b7280;
+  background: rgba(22, 163, 74, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* Clean Search Bar Styling */
+.search-container {
+  margin-bottom: 20px;
+}
+
+.search-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.search-input-container:focus-within {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.1);
+}
+
+.search-icon {
+  width: 16px;
+  height: 16px;
+  color: #6b7280;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #111827;
+  padding: 4px 0;
+}
+
+.search-input::placeholder {
+  color: #9ca3af;
+}
+
+.clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.clear-btn:hover {
+  background: #e5e7eb;
+}
+
+.clear-icon {
+  width: 12px;
+  height: 12px;
+  color: #6b7280;
+}
+
+.search-info {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.results-text {
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* No Results Styling */
+.search-no-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  margin: 16px 0;
+}
+
+.no-results-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+
+.no-results-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.no-results-message {
+  font-size: 13px;
+  color: #6b7280;
+  max-width: 300px;
+  line-height: 1.4;
+}
+
+/* Recruiter checklist (legacy) */
 .recruiter-list { max-height: 260px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; background: rgba(255,255,255,0.8); }
 .recruiter-item { display:flex; align-items:center; gap:10px; padding:8px 6px; border-bottom: 1px solid #eef2f7; }
 .recruiter-item:last-child { border-bottom: 0; }
+
+/* TL Action styling */
+.tl-action { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tl-action-radio { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.tl-action-radio input[type="radio"] { margin: 0; }
+.submit-action-btn { 
+  padding: 4px 8px; 
+  background: #1a73e8; 
+  color: white; 
+  border: none; 
+  border-radius: 4px; 
+  font-size: 11px; 
+  cursor: pointer; 
+}
+.submit-action-btn:disabled { 
+  background: #ccc; 
+  cursor: not-allowed; 
+}
+.submit-action-btn:hover:not(:disabled) { 
+  background: #1557b0; 
+}
+
+/* Glassy Accept/Reject buttons in modal */
+.tl-action.glassy { display:flex; align-items:center; gap:10px; flex-wrap:nowrap; }
+.glassy-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.35);
+  backdrop-filter: blur(8px) saturate(140%);
+  box-shadow: 0 6px 18px rgba(15,23,42,0.12);
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.glassy-btn:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow: 0 10px 24px rgba(15,23,42,0.18); }
+.glassy-btn:active { transform: translateY(0); }
+.glassy-btn.accept { background: linear-gradient(135deg, rgba(16,185,129,.85), rgba(5,150,105,.85)); color:#fff; }
+.glassy-btn.reject { background: linear-gradient(135deg, rgba(239,68,68,.9), rgba(220,38,38,.9)); color:#fff; }
+
+/* View Profile button */
+.view-profile-btn {
+  padding: 4px 8px;
+  background: #f8f9fa;
+  color: #1a73e8;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.view-profile-btn:hover {
+  background: #e8f0fe;
+  border-color: #1a73e8;
+}
+
+/* Enhanced Assign Demand Modal */
+.assign-demand-modal {
+  max-width: 800px;
+  width: 90vw;
+}
+
+/* Team Leader Filter Styles */
+.tl-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.tl-filter-btn:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.tl-filter-box {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  margin-top: 4px;
+}
+
+.tl-filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  font-weight: 600;
+  color: #374151;
+}
+
+.close-filter {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 16px;
+  padding: 4px;
+}
+
+.close-filter:hover {
+  color: #374151;
+}
+
+.tl-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tl-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.tl-item:hover {
+  background: #f8fafc;
+}
+
+.tl-item:last-child {
+  border-bottom: none;
+}
+
+.tl-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+/* Recruiter Search Styles */
+.recruiter-search-container {
+  margin-bottom: 12px;
+}
+
+.recruiter-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.recruiter-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.recruiter-search-input::placeholder {
+  color: #9ca3af;
+}
+
+/* Team Leader Search Styles */
+.teamleader-search-container {
+  margin-bottom: 12px;
+}
+
+.teamleader-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.teamleader-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.teamleader-search-input::placeholder {
+  color: #9ca3af;
+}
+
+/* Enhanced Team Leader List */
+.teamleader-list-enhanced {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.teamleader-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.teamleader-empty-icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.teamleader-item-enhanced {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.teamleader-item-enhanced:last-child {
+  border-bottom: none;
+}
+
+.teamleader-item-enhanced:hover {
+  background: rgba(22, 163, 74, 0.05);
+}
+
+.teamleader-radio {
+  width: 18px;
+  height: 18px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.teamleader-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.teamleader-name {
+  font-weight: 500;
+  color: #111827;
+  font-size: 14px;
+}
+
+.teamleader-status {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.teamleader-status.selected {
+  background: #16a34a;
+  color: white;
+}
+
+/* Assigned To Field Styles */
+.assigned-to-dropdown {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.assigned-to-search-container {
+  margin-bottom: 12px;
+}
+
+.assigned-to-search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s ease;
+}
+
+.assigned-to-search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.assigned-to-search-input::placeholder {
+  color: #9ca3af;
+}
+
+.assigned-to-list {
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.assigned-to-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #9ca3af;
+  text-align: center;
+  font-size: 14px;
+}
+
+.assigned-to-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.assigned-to-item:last-child {
+  border-bottom: none;
+}
+
+.assigned-to-item:hover {
+  background: rgba(22, 163, 74, 0.05);
+}
+
+.assigned-to-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.assigned-to-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assigned-to-name {
+  font-weight: 500;
+  color: #111827;
+  font-size: 14px;
+}
+
+.assigned-to-status {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.assigned-to-status.selected {
+  background: #16a34a;
+  color: white;
+}
+
+/* JD View Button Styles */
+.jd-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #6b7280;
+}
+
+.jd-view-btn:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #374151;
+}
+
+.info-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* CV Received Tab Styles */
+.cv-received-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cv-received-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0;
+}
+
+.cv-received-count {
+  display: flex;
+  align-items: center;
+}
+
+.count-badge {
+  background: #3b82f6;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tab-badge {
+  background: #ef4444;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+/* Submitted Tab Styles */
+.submitted-header {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.submitted-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 4px 0;
+}
+
+.submitted-description {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Assigned To Cell Styling */
+.assigned-to-cell {
+  text-align: left;
+}
+
+.assigned-to-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.recruiter-name-tag {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+}
+
+.recruiter-name-tag:hover {
+  background: #e5e7eb;
+}
+
+/* JD Modal Styles */
+.jd-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.jd-modal {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  max-width: 600px;
+  width: 90vw;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
+.jd-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.jd-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.jd-modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.jd-modal-close:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.jd-modal-content {
+  padding: 24px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.jd-content {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.jd-text {
+  margin: 0;
+  color: #374151;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* CV Link Button Styles */
+.cv-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #3b82f6;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #eff6ff;
+  transition: all 0.2s ease;
+  border: 1px solid #dbeafe;
+  font-weight: 500;
+}
+
+.cv-link-btn:hover {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
+}
+
+.cv-link-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.no-link {
+  color: #9ca3af;
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* Responsive Design for Enhanced Modal */
+@media (max-width: 768px) {
+  .assign-demand-modal {
+    width: calc(100vw - 40px);
+    max-width: none;
+  }
+  
+  .form-row-aligned {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .form-group-half {
+    flex: none;
+  }
+  
+  .tl-filter-box {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90vw;
+    max-width: 400px;
+    max-height: 60vh;
+  }
+}
+
+/* Individual CV Record Styles */
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-0 {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-1 {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-2 {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* CV Link Button */
+.cv-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #3b82f6;
+  color: white;
+  text-decoration: none;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cv-link-btn:hover {
+  background: #2563eb;
+  color: white;
+  text-decoration: none;
+}
+
+.cv-link-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.no-link {
+  color: #6b7280;
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* TL Action Buttons */
+.tl-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.glass-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.glass-btn.accept {
+  background: #10b981;
+  color: white;
+}
+
+.glass-btn.accept:hover {
+  background: #059669;
+}
+
+.glass-btn.reject {
+  background: #ef4444;
+  color: white;
+}
+
+.glass-btn.reject:hover {
+  background: #dc2626;
+}
+
+/* Individual CV Record Styles */
+.cv-record-row {
+  transition: all 0.2s;
+}
+
+.cv-record-row:hover {
+  background: #f8fafc;
+}
+
+.cv-record-cell {
+  padding: 12px 8px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.cv-record-cell:first-child {
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Responsive adjustments for individual CV records */
+@media (max-width: 1200px) {
+  .glassy-table {
+    font-size: 12px;
+  }
+  
+  .cv-link-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  
+  .glass-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  
+  .status-badge {
+    padding: 2px 6px;
+    font-size: 9px;
+  }
+}
+
+/* CV Modal Styles */
+.cv-modal {
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 1000px;
+  height: 700px;
+}
+
+.cv-modal .modal-header {
+  position: relative;
+}
+
+.cv-modal-body {
+  padding: 0;
+  height: calc(100% - 60px);
+  overflow: hidden;
+}
+
+.cv-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0 0 12px 12px;
+}
+
+.cv-close-top {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 2px solid #000000 !important;
+  border-radius: 8px !important;
+  padding: 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  min-width: 40px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cv-close-top:hover {
+  background: rgba(255, 255, 255, 1) !important;
+  border-color: #000000 !important;
+  transform: scale(1.05);
+}
+
+.cv-close-top svg {
+  width: 20px;
+  height: 20px;
+  stroke: #000000 !important;
+}
+
+.cv-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #6b7280;
+  gap: 16px;
+}
+
+.cv-error p {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.cv-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #3b82f6;
+  gap: 16px;
+}
+
+.cv-loading p {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* CV Count Badge */
+.cv-count-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 50px;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+}
+
+/* CV Container */
+.cv-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.cv-fallback {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cv-direct-link {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.cv-direct-link:hover {
+  text-decoration: underline;
+}
 

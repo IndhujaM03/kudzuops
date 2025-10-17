@@ -19,7 +19,7 @@ except Exception:
 import requests
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Body
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, validator
@@ -277,6 +277,8 @@ class SuperAdminLoginRequest(BaseModel):
     password: str
 
 class RegisterRequest(BaseModel):
+    first_name: str
+    last_name: str
     email: EmailStr
     password: str
     confirm_password: str
@@ -337,7 +339,7 @@ def register(request: RegisterRequest):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Check if user already exists
+                # Check if user already exists by email
                 cur.execute("SELECT id FROM tbl_users WHERE email=%s", (request.email,))
                 if cur.fetchone():
                     raise HTTPException(status_code=400, detail="User already exists")
@@ -345,8 +347,8 @@ def register(request: RegisterRequest):
                 # Hash password and create user
                 password_hash = _hash_password(request.password)
                 cur.execute(
-                    "INSERT INTO tbl_users (email, password_hash, is_verified, user_type, approval_status, role) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-                    (request.email, password_hash, False, "candidate", False, "candidate")
+                    "INSERT INTO tbl_users (first_name, last_name, email, password_hash, is_verified, user_type, approval_status, role) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (request.first_name, request.last_name, request.email, password_hash, False, "candidate", False, "candidate")
                 )
                 user_id = cur.fetchone()[0]
                 conn.commit()
@@ -409,7 +411,7 @@ def login(request: LoginRequest):
                 if role_norm == "super_admin":
                     redirect_url = "/superadmin/dashboard"
                 elif role_norm in ("team_leader", "teamleader", "team_leadr"):
-                    redirect_url = "/teamleader/dashboard"
+                    redirect_url = "/teamleader/demand-sheet"
                 else:
                     redirect_url = "/dashboard"
                 return AuthResponse(access_token=token, message="Login successful", redirect_url=redirect_url)
@@ -791,10 +793,10 @@ def pending_users(_: Dict[str, Any] = Depends(require_super_admin)):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, email, role, approval_status FROM tbl_users WHERE approval_status = FALSE")
+                cur.execute("SELECT id, first_name, last_name, email, role, approval_status FROM tbl_users WHERE approval_status = FALSE")
                 rows = cur.fetchall()
                 return [
-                    {"id": r[0], "email": r[1], "role": r[2], "approval_status": r[3]}
+                    {"id": r[0], "first_name": r[1], "last_name": r[2], "email": r[3], "role": r[4], "approval_status": r[5]}
                     for r in rows
                 ]
     except Exception as e:
@@ -812,11 +814,19 @@ def pending_approvals_count(_: Dict[str, Any] = Depends(require_super_admin)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch pending count: {str(e)}")
 
 @super_router.post("/approve/{user_id}")
-def approve_user(user_id: int, admin: Dict[str, Any] = Depends(require_super_admin)):
+def approve_user(user_id: int, request: dict = Body(None), admin: Dict[str, Any] = Depends(require_super_admin)):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute("UPDATE tbl_users SET approval_status=TRUE, approved_by=%s WHERE id=%s", (admin.get("uid"), user_id))
+                # Get reporting_to from request body if provided
+                reporting_to = request.get("reporting_to") if request else None
+                
+                if reporting_to:
+                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, approved_by=%s, reporting_to=%s WHERE id=%s", 
+                               (admin.get("uid"), reporting_to, user_id))
+                else:
+                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, approved_by=%s WHERE id=%s", 
+                               (admin.get("uid"), user_id))
                 conn.commit()
         return {"message": "User approved"}
     except Exception as e:
