@@ -130,7 +130,8 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
     
     const roleMapping: { [key: string]: string[] } = {
       'super_admin': ['super_admin'],
-      'team_leader': ['team_leader', 'teamleader', 'team_leadr']
+      'team_leader': ['team_leader', 'teamleader', 'team_leadr'],
+      'recruiter': ['recruiter']
     };
     
     const allowedRoles = roleMapping[requiredRole] || [requiredRole];
@@ -148,6 +149,9 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
       } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
         console.log('🔄 Redirecting team leader to demand sheet');
         return router.parseUrl('/teamleader/demand-sheet') as UrlTree;
+      } else if (userRole === 'recruiter') {
+        console.log('🔄 Redirecting recruiter to dashboard');
+        return router.parseUrl('/recruiter/dashboard') as UrlTree;
       } else {
         console.log('🔄 Redirecting to default dashboard');
         return router.parseUrl('/dashboard') as UrlTree;
@@ -192,8 +196,11 @@ const rootRedirectGuard: CanActivateFn = () => {
       return router.parseUrl('/superadmin/dashboard') as UrlTree;
     } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
       return router.parseUrl('/teamleader/demand-sheet') as UrlTree;
+    } else if (userRole === 'recruiter') {
+      return router.parseUrl('/recruiter/dashboard') as UrlTree;
     } else {
-      return router.parseUrl('/dashboard') as UrlTree;
+      // For unknown roles, show a generic dashboard or redirect to signin
+      return router.parseUrl('/signin') as UrlTree;
     }
   } catch (error) {
     localStorage.removeItem('access_token');
@@ -209,7 +216,7 @@ const routes: Routes = [
   { path: 'verify', component: VerifyComponent },
   { path: 'reset-password', component: ResetPasswordComponent },
   { path: 'verify-reset', component: VerifyResetComponent },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [rootRedirectGuard] },
   { path: 'demand/create', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent), canActivate: [authGuard] },
   {
     path: 'superadmin',
@@ -232,6 +239,44 @@ const routes: Routes = [
     children: [
       { path: 'demand-sheet', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent) },
       { path: '', redirectTo: 'demand-sheet', pathMatch: 'full' }
+    ]
+  },
+  {
+    path: 'recruiter',
+    loadComponent: () => import('./components/recruiter/recruiter.component').then(m => m.RecruiterComponent),
+    canActivate: [roleGuard('recruiter')],
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
+      {
+        path: 'dashboard',
+        loadComponent: () => import('./components/recruiter/dashboard/dashboard.component').then(m => m.DashboardComponent)
+      },
+      {
+        path: 'demands',
+        loadComponent: () => import('./components/recruiter/demand-management/demand-management.component').then(m => m.DemandManagementComponent)
+      },
+      {
+        path: 'activity/:demandId',
+        loadComponent: () => import('./components/recruiter/recruiter-activity.component').then(m => m.RecruiterActivityComponent),
+        data: { hideSidebar: true }
+      },
+      {
+        path: 'activity/:recruiterId/:demandId',
+        loadComponent: () => import('./components/recruiter/recruiter-activity.component').then(m => m.RecruiterActivityComponent),
+        data: { hideSidebar: true }
+      },
+      {
+        path: 'submitted',
+        loadComponent: () => import('./components/recruiter/submitted/submitted.component').then(m => m.SubmittedComponent)
+      },
+      {
+        path: 'settings',
+        loadComponent: () => import('./components/recruiter/settings/settings.component').then(m => m.SettingsComponent)
+      },
+      {
+        path: 'interview-schedule',
+        loadComponent: () => import('./components/recruiter/interview-schedule/interview-schedule.component').then(m => m.InterviewScheduleComponent)
+      }
     ]
   },
   { path: '', pathMatch: 'full', canActivate: [rootRedirectGuard], children: [] },

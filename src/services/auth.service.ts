@@ -81,4 +81,45 @@ export class AuthService {
   }
 
   isAuthenticated(): boolean { return this.isLoggedInSubject.value; }
+
+  getCurrentUserId(): number | null {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) return null;
+      
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      // Backend encodes user id as `uid` (see _issue_token)
+      return payload.uid || payload.user_id || payload.id || null;
+    } catch (error) {
+      console.error('Error parsing token for user ID:', error);
+      return null;
+    }
+  }
+
+  getCurrentUser(): Observable<any> {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        return new Observable(observer => observer.error('No token found'));
+      }
+      
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const user = {
+        id: payload.uid || payload.user_id || payload.id,
+        email: payload.email,
+        role: payload.role,
+        display_name: payload.display_name || payload.name || payload.email,
+        first_name: payload.first_name,
+        last_name: payload.last_name
+      };
+      
+      return new Observable(observer => {
+        observer.next(user);
+        observer.complete();
+      });
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      return new Observable(observer => observer.error(error));
+    }
+  }
 }

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, switchMap } from 'rxjs';
 
 export interface TeamLeaderAuthResponse {
   access_token: string;
@@ -54,7 +54,34 @@ export class TeamLeaderService {
   }
 
   rejectCv(activityId: number, cvIndex: number): Observable<any> {
-    return this.http.post<any>(`${this.api}/cv-reject/${activityId}?cv_index=${cvIndex}`, {}, { headers: this.getAuthHeaders() });
+    // First reject the CV using the existing endpoint
+    return this.http.post<any>(`${this.api}/cv-reject/${activityId}?cv_index=${cvIndex}`, {}, { headers: this.getAuthHeaders() }).pipe(
+      switchMap((rejectResponse) => {
+        // Then update CV count and check for status changes
+        return this.http.post<any>(`${this.api}/recruiter/update-cv-count-and-check`, {
+          demand_id: rejectResponse.demand_id,
+          recruiter_id: rejectResponse.recruiter_id,
+          increment: -1
+        }, { headers: this.getAuthHeaders() });
+      })
+    );
+  }
+
+  // Demand management methods
+  getUnassignedDemands(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.api}/demand/unassigned`, { headers: this.getAuthHeaders() });
+  }
+
+  getAssignedDemands(): Observable<any[]> {
+    const timestamp = new Date().getTime();
+    return this.http.get<any[]>(`${this.api}/demand/assigned?t=${timestamp}`, { headers: this.getAuthHeaders() });
+  }
+
+  assignDemandToRecruiters(demandId: number, recruiterIds: number[]): Observable<any> {
+    return this.http.post<any>(`${this.api}/demand/assign`, {
+      demand_id: demandId,
+      recruiter_ids: recruiterIds
+    }, { headers: this.getAuthHeaders() });
   }
 }
 

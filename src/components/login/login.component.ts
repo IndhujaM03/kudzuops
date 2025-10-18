@@ -228,6 +228,10 @@ export class LoginComponent {
         this.router.navigate(['/teamleader/demand-sheet']).catch((err) => {
           console.error('Navigation to teamleader failed:', err);
         });
+      } else if (userRole === 'recruiter') {
+        this.router.navigate(['/recruiter/dashboard']).catch((err) => {
+          console.error('Navigation to recruiter failed:', err);
+        });
       } else {
         this.router.navigate(['/dashboard']).catch((err) => {
           console.error('Navigation to dashboard failed:', err);

@@ -39,11 +39,22 @@ interface DemandItem {
       </div>
 
       <div class="tl-tab-panel" *ngIf="activeTab() === 'assigned'">
+        <div class="tl-refresh-section">
+          <button (click)="loadAssignedDemands()" class="tl-refresh-btn">🔄 Refresh</button>
+        </div>
         <ng-container *ngIf="assigned().length; else emptyAssigned">
           <div class="tl-list">
             <div class="tl-item" *ngFor="let d of assigned()">
               <div class="tl-item-title">{{ d.title }}</div>
               <div class="tl-item-sub">{{ d.client || '—' }} • {{ d.createdAt || '' }}</div>
+              <div class="tl-item-cv-count">
+                <span class="cv-count-label">CV Progress:</span>
+                <span class="cv-count-value">{{ d.cvCount || '0/0' }}</span>
+              </div>
+              <div class="tl-item-recruiters" *ngIf="d.assignedRecruiters && d.assignedRecruiters.length > 0">
+                <span class="recruiter-label">Assigned to:</span>
+                <span class="recruiter-names">{{ d.assignedRecruiters.join(', ') }}</span>
+              </div>
             </div>
           </div>
         </ng-container>
@@ -84,9 +95,9 @@ interface DemandItem {
                       <td class="demand-id">{{ cvData.demand_id || 'N/A' }}</td>
                       <td class="cv-progress">
                         <div class="progress-container">
-                          <span class="progress-text">{{ cvData.uploaded_cv_count || 0 }}/{{ cvData.required_cv_count || 0 }}</span>
+                          <span class="progress-text">{{ cvData.total_uploaded_cv_count || cvData.uploaded_cv_count || 0 }}/{{ cvData.required_cv_count || 0 }}</span>
                           <div class="progress-bar">
-                            <div class="progress-fill" [style.width.%]="getProgressPercentage(cvData.uploaded_cv_count, cvData.required_cv_count)"></div>
+                            <div class="progress-fill" [style.width.%]="getProgressPercentage(cvData.total_uploaded_cv_count || cvData.uploaded_cv_count || 0, cvData.required_cv_count || 0)"></div>
                           </div>
                         </div>
                       </td>
@@ -175,9 +186,9 @@ interface DemandItem {
                       <td class="demand-id">{{ cvData.demand_id || 'N/A' }}</td>
                       <td class="cv-progress">
                         <div class="progress-container">
-                          <span class="progress-text">{{ cvData.uploaded_cv_count || 0 }}/{{ cvData.required_cv_count || 0 }}</span>
+                          <span class="progress-text">{{ cvData.total_uploaded_cv_count || cvData.uploaded_cv_count || 0 }}/{{ cvData.required_cv_count || 0 }}</span>
                           <div class="progress-bar">
-                            <div class="progress-fill" [style.width.%]="getProgressPercentage(cvData.uploaded_cv_count, cvData.required_cv_count)"></div>
+                            <div class="progress-fill" [style.width.%]="getProgressPercentage(cvData.total_uploaded_cv_count || cvData.uploaded_cv_count || 0, cvData.required_cv_count || 0)"></div>
                           </div>
                         </div>
                       </td>
@@ -231,7 +242,16 @@ interface DemandItem {
     .tl-item { padding:12px; border:1px solid #f1f5f9; border-radius:8px; background:#fafafa; }
     .tl-item-title { font-weight:600; color:#111827; margin-bottom:4px; }
     .tl-item-sub { font-size:12px; color:#6b7280; }
+    .tl-item-cv-count { margin-top:4px; font-size:11px; color:#3b82f6; }
+    .cv-count-label { font-weight:600; }
+    .cv-count-value { margin-left:4px; font-weight:700; }
+    .tl-item-recruiters { margin-top:4px; font-size:11px; color:#059669; }
+    .recruiter-label { font-weight:600; }
+    .recruiter-names { margin-left:4px; }
     .tl-empty { padding:16px; color:#6b7280; font-size:14px; }
+    .tl-refresh-section { margin-bottom:12px; }
+    .tl-refresh-btn { background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:14px; }
+    .tl-refresh-btn:hover { background:#2563eb; }
     
     /* CV Table Styles */
     .cv-table-container { overflow-x: auto; margin-top: 16px; }
@@ -284,7 +304,13 @@ export class TeamLeaderDemandSheetComponent {
 
   setTab(tab: 'unassigned' | 'assigned' | 'cv-received' | 'submitted') {
     this.activeTab.set(tab);
-    if (tab === 'cv-received') {
+    if (tab === 'unassigned') {
+      console.log('🎯 Unassigned tab clicked');
+      this.loadUnassignedDemands();
+    } else if (tab === 'assigned') {
+      console.log('🎯 Assigned tab clicked');
+      this.loadAssignedDemands();
+    } else if (tab === 'cv-received') {
       console.log('🎯 CV Received tab clicked');
       this.loadCvReceived();
     } else if (tab === 'submitted') {
@@ -315,6 +341,65 @@ export class TeamLeaderDemandSheetComponent {
       return new Date(dateString).toLocaleDateString();
     } catch {
       return 'N/A';
+    }
+  }
+
+  async loadUnassignedDemands() {
+    console.log('🔄 Loading unassigned demands...');
+    try {
+      this.teamLeaderService.getUnassignedDemands().subscribe({
+        next: (data) => {
+          console.log('📊 Unassigned demands data:', data);
+          const demands = data.map((item: any) => ({
+            id: item.id,
+            title: item.skill || item.job_title || `Demand #${item.id}`,
+            client: item.client_name || 'Unknown Client',
+            createdAt: item.created_at || item.updated_at
+          }));
+          this.unassigned.set(demands);
+        },
+        error: (error) => {
+          console.error('❌ Error loading unassigned demands:', error);
+          this.unassigned.set([]);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to load unassigned demands:', error);
+      this.unassigned.set([]);
+    }
+  }
+
+  async loadAssignedDemands() {
+    console.log('🔄 Loading assigned demands...');
+    try {
+      // Force refresh by adding timestamp
+      const timestamp = new Date().getTime();
+      this.teamLeaderService.getAssignedDemands().subscribe({
+        next: (data) => {
+          console.log('📊 Assigned demands data:', data);
+          const demands = data.map((item: any) => {
+            const cvCount = `${item.total_uploaded_cv_count || 0}/${item.required_cv_count || 0}`;
+            console.log(`📊 Demand ${item.id} - Raw Data:`, item);
+            console.log(`📊 Demand ${item.id} - CV Count: ${cvCount} (uploaded: ${item.total_uploaded_cv_count}, required: ${item.required_cv_count})`);
+            return {
+              id: item.id,
+              title: item.skill || item.job_title || `Demand #${item.id}`,
+              client: item.client_name || 'Unknown Client',
+              createdAt: item.created_at || item.updated_at,
+              assignedRecruiters: item.assigned_recruiter_names || [],
+              cvCount: cvCount
+            };
+          });
+          this.assigned.set(demands);
+        },
+        error: (error) => {
+          console.error('❌ Error loading assigned demands:', error);
+          this.assigned.set([]);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Failed to load assigned demands:', error);
+      this.assigned.set([]);
     }
   }
 
@@ -478,8 +563,28 @@ export class TeamLeaderDemandSheetComponent {
     try {
       this.teamLeaderService.rejectCv(activityId, cvIndex).subscribe({
         next: (response) => {
-          alert('❌ CV rejected successfully! The uploaded CV count has been decreased and the recruiter can upload a new CV.');
-          this.loadCvReceived(); // Refresh the data
+          console.log('✅ CV rejection response:', response);
+          
+          // Enhanced feedback based on the response
+          let message = '❌ CV rejected successfully!';
+          
+          if (response.uploaded_count !== undefined && response.required_count !== undefined) {
+            message += `\n\n📊 Current Progress: ${response.uploaded_count}/${response.required_count}`;
+            
+            if (response.reopened) {
+              message += '\n\n🔄 Activity and demand reopened due to CV count decrease!';
+            } else if (response.uploaded_count === response.required_count) {
+              message += '\n\n🎯 Required CV count reached! Activity status updated to Hold.';
+            } else {
+              message += '\n\n📝 Activity remains open for more CVs.';
+            }
+          }
+          
+          alert(message);
+          
+          // Refresh all relevant data
+          this.loadCvReceived(); // Refresh CV received data
+          this.loadAssignedDemands(); // Refresh assigned demands to show updated counts
         },
         error: (error) => {
           console.error('Failed to reject CV:', error);

@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import psycopg
@@ -22,6 +23,74 @@ router = APIRouter(tags=["demand"])
 
 def _rows_to_dicts(columns: List[str], rows: List[tuple]) -> List[Dict[str, Any]]:
     return [dict(zip(columns, row)) for row in rows]
+
+
+def _check_and_update_demand_status(demand_id: int, cur) -> None:
+    """Check if demand should be closed or opened based on CV count and update status accordingly"""
+    try:
+        # Get total uploaded CV count across all recruiters for this demand
+        # Only count CVs that are not rejected (status != 2)
+        cur.execute("""
+            SELECT COALESCE(SUM(
+                (SELECT COUNT(*) 
+                 FROM jsonb_array_elements(ra.cv_list) AS cv 
+                 WHERE (cv->>'status')::int != 2)
+            ), 0) as total_cv_count
+            FROM tbl_recruiter_activity ra
+            WHERE ra.demand_id = %s
+            AND ra.cv_list IS NOT NULL
+            AND jsonb_array_length(ra.cv_list) > 0
+        """, (demand_id,))
+        
+        result = cur.fetchone()
+        total_uploaded = result[0] if result else 0
+        
+        # Get required CV count for this demand
+        cur.execute("""
+            SELECT required_cv_count FROM tbl_demand_sheet WHERE id = %s
+        """, (demand_id,))
+        
+        result = cur.fetchone()
+        required_count = result[0] if result else 0
+        
+        # Update all recruiter activities with the same count
+        cur.execute("""
+            UPDATE tbl_recruiter_activity 
+            SET uploaded_cv_count = %s, updated_at = NOW()
+            WHERE demand_id = %s
+        """, (total_uploaded, demand_id))
+        
+        # Determine if demand should be closed or opened
+        if total_uploaded >= required_count and required_count > 0:
+            # Close all activities and demand
+            cur.execute("""
+                UPDATE tbl_recruiter_activity 
+                SET activity_status = 'closed', updated_at = NOW()
+                WHERE demand_id = %s
+            """, (demand_id,))
+            
+            cur.execute("""
+                UPDATE tbl_demand_sheet 
+                SET status = 'closed', updated_at = NOW()
+                WHERE id = %s
+            """, (demand_id,))
+        else:
+            # Open all activities and demand
+            cur.execute("""
+                UPDATE tbl_recruiter_activity 
+                SET activity_status = 'processing', updated_at = NOW()
+                WHERE demand_id = %s
+            """, (demand_id,))
+            
+            cur.execute("""
+                UPDATE tbl_demand_sheet 
+                SET status = 'open', updated_at = NOW()
+                WHERE id = %s
+            """, (demand_id,))
+            
+    except Exception as e:
+        print(f"Error checking demand status for demand {demand_id}: {e}")
+        pass
 
 
 @router.get("/clients")
@@ -72,20 +141,31 @@ def create_demand(payload: Dict[str, Any]) -> Dict[str, Any]:
     priority: Optional[str] = payload.get("priority")
     job_description_url: Optional[str] = payload.get("job_description_url")
     remarks: Optional[str] = payload.get("remarks")
+    
     # Normalize to supported enum values
     status: Optional[str] = (payload.get("status") or "open").strip().lower()
     if status not in {"open", "in_progress", "closed", "on_hold"}:
         status = "open"
+    
+    # Handle assigned_to field
+    assigned_to = payload.get("assigned_to")
+    if assigned_to is None:
+        assigned_to = "[]"  # Default to empty JSON array
+    elif isinstance(assigned_to, (list, dict)):
+        assigned_to = json.dumps(assigned_to)
+    # If it's already a string, use as is
 
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    (
-                        "INSERT INTO tbl_demand_sheet (demand_date, client_id, spoc_id, skill, no_of_positions, "
-                        "required_cv_count, priority, job_description_url, remarks, status, created_at) "
-                        "VALUES (CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s::demand_status_enum, 'open'::demand_status_enum), NOW()) RETURNING id"
-                    ),
+                    """
+                    INSERT INTO tbl_demand_sheet 
+                    (demand_date, client_id, spoc_id, skill, no_of_positions, 
+                     required_cv_count, priority, job_description_url, remarks, status, assigned_to, created_at)
+                    VALUES (CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, NOW())
+                    RETURNING id
+                    """,
                     (
                         client_id,
                         spoc_id,
@@ -95,22 +175,17 @@ def create_demand(payload: Dict[str, Any]) -> Dict[str, Any]:
                         (priority or None).lower() if priority else None,
                         job_description_url,
                         remarks,
-                        (status or None),
+                        status,
+                        assigned_to,
                     ),
                 )
                 new_id = cur.fetchone()[0]
-                
-                # Create initial recruiter activity record with required_cv_count
-                # This ensures the required_cv_count is stored in both tables as specified
-                cur.execute(
-                    "INSERT INTO tbl_recruiter_activity (recruiter_id, analysis_date, required_cv_count, demand_id, created_at) VALUES (%s, CURRENT_DATE, %s, %s, NOW())",
-                    (None, required_cv_count, new_id)  # recruiter_id will be set when demand is assigned
-                )
-                
                 conn.commit()
+
                 return {"message": "Demand Sheet Created Successfully", "id": new_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create demand: {e}")
+
 
 
 @router.post("/demand/seed-demo")
@@ -198,18 +273,22 @@ def add_client_and_spoc(payload: Dict[str, Any]) -> Dict[str, Any]:
 # New listing endpoints for TL tabs
 @router.get("/demand/unassigned")
 def list_unassigned() -> List[Dict[str, Any]]:
-    """Demand sheets where assigned_to IS NULL or empty array."""
+    """Demand sheets where assigned_to IS NULL or empty JSON array."""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    (
-                        "SELECT d.*, c.client_name, s.spoc_name FROM tbl_demand_sheet d "
-                        "LEFT JOIN tbl_clients c ON c.id = d.client_id "
-                        "LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id "
-                        "WHERE d.assigned_to IS NULL OR array_length(d.assigned_to, 1) IS NULL "
-                        "ORDER BY d.id DESC"
-                    )
+                    """
+                    SELECT d.*, c.client_name, s.spoc_name 
+                    FROM tbl_demand_sheet d 
+                    LEFT JOIN tbl_clients c ON c.id = d.client_id 
+                    LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id 
+                    WHERE d.assigned_to IS NULL 
+                       OR d.assigned_to = '[]'::jsonb 
+                       OR d.assigned_to = 'null'::jsonb
+                       OR jsonb_array_length(COALESCE(d.assigned_to, '[]'::jsonb)) = 0
+                    ORDER BY d.id DESC
+                    """
                 )
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
@@ -220,31 +299,42 @@ def list_unassigned() -> List[Dict[str, Any]]:
 
 @router.get("/demand/assigned")
 def list_assigned(recruiter_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Demand sheets where assigned_to IS NOT NULL with recruiter name."""
+    """Demand sheets where assigned_to contains recruiter assignments."""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 if recruiter_id:
-                    cur.execute(
-                        (
-                            "SELECT d.*, c.client_name, s.spoc_name, u.first_name as recruiter_first_name, u.last_name as recruiter_last_name, u.email as recruiter_email, u.role as recruiter_role "
-                            "FROM tbl_demand_sheet d "
-                            "LEFT JOIN tbl_clients c ON c.id = d.client_id "
-                            "LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id "
-                            "LEFT JOIN tbl_users u ON u.id = d.recruiter_id "
-                            "WHERE d.recruiter_id = %s AND d.assigned_to IS NOT NULL "
-                            "ORDER BY d.id DESC"
-                        ),
-                        (recruiter_id,),
-                    )
-                else:
+                    # Get demands assigned to specific recruiter
                     cur.execute(
                         """
                         SELECT d.*, c.client_name, s.spoc_name
                         FROM tbl_demand_sheet d 
                         LEFT JOIN tbl_clients c ON c.id = d.client_id 
                         LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id 
-                        WHERE d.assigned_to IS NOT NULL AND array_length(d.assigned_to, 1) > 0 
+                        WHERE d.assigned_to::text LIKE %s
+                        ORDER BY d.id DESC
+                        """,
+                        (f"%{recruiter_id}%",)
+                    )
+                else:
+                    # Get all assigned demands with aggregated CV counts
+                    cur.execute(
+                        """
+                        SELECT 
+                            d.*, 
+                            c.client_name, 
+                            s.spoc_name,
+                            COALESCE(SUM(ra.uploaded_cv_count), 0) as total_uploaded_cv_count,
+                            COALESCE(MAX(ra.required_cv_count), 0) as required_cv_count
+                        FROM tbl_demand_sheet d 
+                        LEFT JOIN tbl_clients c ON c.id = d.client_id 
+                        LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id 
+                        LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = d.id
+                        WHERE d.assigned_to IS NOT NULL 
+                           AND d.assigned_to != '[]'::jsonb 
+                           AND d.assigned_to != 'null'::jsonb
+                           AND jsonb_array_length(COALESCE(d.assigned_to, '[]'::jsonb)) > 0
+                        GROUP BY d.id, d.demand_date, d.client_id, d.spoc_id, d.skill, d.no_of_positions, d.status, d.priority, d.job_description_url, d.remarks, d.created_at, d.updated_at, d.required_cv_count, d.assigned_to, c.client_name, s.spoc_name
                         ORDER BY d.id DESC
                         """
                     )
@@ -252,22 +342,112 @@ def list_assigned(recruiter_id: Optional[int] = None) -> List[Dict[str, Any]]:
                 columns = [desc[0] for desc in cur.description]
                 result = _rows_to_dicts(columns, rows)
                 
-                # For each demand, fetch the assigned recruiter names
+                # Log CV count values for each demand
+                print(f"[INFO] Found {len(result)} assigned demands")
+                for demand in result:
+                    demand_id = demand.get('id')
+                    uploaded_count = demand.get('total_uploaded_cv_count', 0)
+                    required_count = demand.get('required_cv_count', 0)
+                    print(f"[CV_COUNT] Demand ID {demand_id}: {uploaded_count}/{required_count}")
+                
+                # For each demand, fetch the assigned recruiter names from JSON
                 for demand in result:
                     if demand.get('assigned_to'):
-                        # Fetch recruiter names for this demand
-                        cur.execute(
-                            "SELECT first_name FROM tbl_users WHERE id = ANY(%s) ORDER BY first_name",
-                            (demand['assigned_to'],)
-                        )
-                        recruiter_names = [row[0] for row in cur.fetchall()]
-                        demand['assigned_recruiter_names'] = recruiter_names
+                        try:
+                            assigned_data = demand['assigned_to']
+                            if isinstance(assigned_data, str):
+                                import json
+                                assigned_data = json.loads(assigned_data)
+                            
+                            if isinstance(assigned_data, list):
+                                recruiter_ids = []
+                                for item in assigned_data:
+                                    if isinstance(item, dict) and 'recruiter_id' in item:
+                                        recruiter_ids.append(item['recruiter_id'])
+                                    elif isinstance(item, int):
+                                        recruiter_ids.append(item)
+                                
+                                if recruiter_ids:
+                                    # Fetch recruiter names
+                                    placeholders = ','.join(['%s'] * len(recruiter_ids))
+                                    cur.execute(
+                                        f"SELECT id, first_name, last_name FROM tbl_users WHERE id IN ({placeholders}) ORDER BY first_name",
+                                        recruiter_ids
+                                    )
+                                    recruiter_info = cur.fetchall()
+                                    demand['assigned_recruiter_names'] = [f"{row[1]} {row[2]}" for row in recruiter_info]
+                                else:
+                                    demand['assigned_recruiter_names'] = []
+                            else:
+                                demand['assigned_recruiter_names'] = []
+                        except Exception as e:
+                            print(f"Error parsing assigned_to for demand {demand.get('id')}: {e}")
+                            demand['assigned_recruiter_names'] = []
                     else:
                         demand['assigned_recruiter_names'] = []
                 
                 return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch assigned demands: {e}")
+
+
+@router.post("/demand/assign")
+def assign_demand_to_recruiter(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Assign a demand to one or more recruiters."""
+    try:
+        demand_id = payload.get('demand_id')
+        recruiter_ids = payload.get('recruiter_ids', [])
+        
+        if not demand_id:
+            raise HTTPException(status_code=400, detail="demand_id is required")
+        if not recruiter_ids or not isinstance(recruiter_ids, list):
+            raise HTTPException(status_code=400, detail="recruiter_ids must be a non-empty list")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Create assignment data in the format: [{"recruiter_id": 1, "assigned_date": "2025-01-01"}]
+                assignment_data = []
+                for recruiter_id in recruiter_ids:
+                    # Ensure recruiter_id is properly converted to int
+                    try:
+                        recruiter_id_int = int(recruiter_id)
+                        assignment_data.append({
+                            "recruiter_id": recruiter_id_int,
+                            "assigned_date": datetime.now().strftime("%Y-%m-%d")
+                        })
+                    except (ValueError, TypeError) as e:
+                        print(f"❌ Invalid recruiter_id: {recruiter_id}, error: {e}")
+                        continue
+                
+                if not assignment_data:
+                    raise HTTPException(status_code=400, detail="No valid recruiter IDs provided")
+                
+                # Debug: Print the JSON being sent
+                json_data = json.dumps(assignment_data)
+                print(f"🔍 JSON data being sent: {json_data}")
+                
+                # Update the assigned_to column with the new assignment data
+                cur.execute(
+                    """
+                    UPDATE tbl_demand_sheet 
+                    SET assigned_to = %s::jsonb, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (json_data, demand_id)
+                )
+                
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Demand not found")
+                
+                conn.commit()
+                
+                return {
+                    "success": True,
+                    "message": f"Demand {demand_id} assigned to {len(recruiter_ids)} recruiter(s)",
+                    "assigned_to": assignment_data
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign demand: {e}")
 
 
 @router.get("/demand/submitted")
@@ -350,10 +530,10 @@ def assign_recruiter(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Update tbl_demand_sheet with assigned_to and recruiter_id
+                # Update tbl_demand_sheet with assigned_to
                 cur.execute(
-                    "UPDATE tbl_demand_sheet SET assigned_to=%s, recruiter_id=%s WHERE id=%s",
-                    (recruiter_id, recruiter_id, demand_id),
+                    "UPDATE tbl_demand_sheet SET assigned_to=%s WHERE id=%s",
+                    (recruiter_id, demand_id),
                 )
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Demand not found")
@@ -373,19 +553,29 @@ def assign_recruiters_bulk(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Convert recruiter IDs to array format for assigned_to column
-                recruiter_array = f"{{{','.join(map(str, recruiters))}}}"
-                # For recruiter_id, use the first recruiter as primary
-                primary_recruiter_id = recruiters[0] if recruiters else None
+                # Create assignment data in JSON format for assigned_to column
+                assignment_data = []
+                for recruiter_id in recruiters:
+                    try:
+                        recruiter_id_int = int(recruiter_id)
+                        assignment_data.append({
+                            "recruiter_id": recruiter_id_int,
+                            "assigned_date": datetime.now().strftime("%Y-%m-%d")
+                        })
+                    except (ValueError, TypeError) as e:
+                        print(f"❌ Invalid recruiter_id: {recruiter_id}, error: {e}")
+                        continue
                 
-                if not primary_recruiter_id:
-                    raise HTTPException(status_code=400, detail="At least one recruiter is required")
+                if not assignment_data:
+                    raise HTTPException(status_code=400, detail="No valid recruiter IDs provided")
                 
-                print(f"🔍 Updating demand {demand_id} with assigned_to={recruiter_array}, recruiter_id={primary_recruiter_id}")
+                # Debug: Print the JSON being sent
+                json_data = json.dumps(assignment_data)
+                print(f"🔍 Updating demand {demand_id} with assigned_to JSON: {json_data}")
                 
                 cur.execute(
-                    "UPDATE tbl_demand_sheet SET assigned_to=%s, recruiter_id=%s WHERE id=%s",
-                    (recruiter_array, primary_recruiter_id, demand_id),
+                    "UPDATE tbl_demand_sheet SET assigned_to=%s::jsonb WHERE id=%s",
+                    (json_data, demand_id),
                 )
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Demand not found")
@@ -396,34 +586,51 @@ def assign_recruiters_bulk(payload: Dict[str, Any]) -> Dict[str, Any]:
         print(f"❌ Error assigning recruiters: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to assign recruiters: {e}")
 
+@router.get("/test-teamleaders")
+def test_team_leaders() -> Dict[str, Any]:
+    """Test endpoint for team leaders."""
+    return {"message": "Test endpoint working", "data": []}
+
 @router.get("/teamleaders")
 def list_team_leaders() -> List[Dict[str, Any]]:
     """Get all team leaders from tbl_users where role = team_leader."""
     try:
+        print(f"[INFO] Fetching team leaders from database")
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # First try to get users with role = 'team_leader'
+                # Get users with role = 'team_leader'
                 cur.execute(
                     "SELECT id, first_name, last_name, email, role FROM tbl_users WHERE role = 'team_leader' ORDER BY first_name"
                 )
                 rows = cur.fetchall()
-                print(f"🔍 Found {len(rows)} team leaders with role='team_leader'")
+                print(f"[INFO] Found {len(rows)} team leaders with role='team_leader'")
                 
                 # If no team leaders found, get all users (for testing)
                 if not rows:
-                    print("⚠️ No team leaders found, fetching all users")
+                    print("[WARN] No team leaders found, fetching all users")
                     cur.execute(
                         "SELECT id, first_name, last_name, email, role FROM tbl_users ORDER BY first_name"
                     )
                     rows = cur.fetchall()
-                    print(f"🔍 Found {len(rows)} total users")
+                    print(f"[INFO] Found {len(rows)} total users")
                 
-                columns = [desc[0] for desc in cur.description]
-                result = _rows_to_dicts(columns, rows)
-                print(f"✅ Returning {len(result)} team leaders/users")
+                # Convert rows to dictionaries manually
+                result = []
+                for row in rows:
+                    result.append({
+                        "id": row[0],
+                        "first_name": row[1],
+                        "last_name": row[2],
+                        "email": row[3],
+                        "role": row[4]
+                    })
+                
+                print(f"[INFO] Returning {len(result)} team leaders/users")
                 return result
     except Exception as e:
-        print(f"❌ Error fetching team leaders: {e}")
+        print(f"[ERROR] Error fetching team leaders: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch team leaders: {e}")
 
 @router.get("/teamleaders/{team_leader_id}/recruiters")
@@ -467,11 +674,11 @@ def list_users_by_role(role: str = None) -> List[Dict[str, Any]]:
 
 @router.get("/cv-received")
 async def get_cv_received():
-    """Get CVs waiting for approval (status = 0) from tbl_recruiter_activity"""
+    """Get CVs waiting for approval (status = 0) from tbl_recruiter_activity with aggregated CV counts"""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Query to get CVs with status = 0 (waiting for approval)
+                # Query to get CVs with status = 0 (waiting for approval) with aggregated CV counts
                 cur.execute("""
                     SELECT 
                         ra.id,
@@ -491,7 +698,14 @@ async def get_cv_received():
                         ds.priority,
                         ds.job_description_url AS job_description_url,
                         c.client_name,
-                        cs.spoc_name
+                        cs.spoc_name,
+                        (
+                            SELECT COALESCE(SUM(jsonb_array_length(ra_all.cv_list)), 0)
+                            FROM tbl_recruiter_activity ra_all
+                            WHERE ra_all.demand_id = ra.demand_id
+                            AND ra_all.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra_all.cv_list) > 0
+                        ) as total_uploaded_cv_count
                     FROM tbl_recruiter_activity ra
                     LEFT JOIN tbl_users u ON ra.recruiter_id = u.id
                     LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
@@ -616,46 +830,15 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
                         cv_dict['status'] = 1
                     updated_cv_list.append(cv_dict)
                 
-                # Update the cv_list and check if all CVs for this activity are approved
+                # Update the cv_list
                 cur.execute("""
                     UPDATE tbl_recruiter_activity 
                     SET cv_list = %s, updated_at = now()
                     WHERE id = %s AND recruiter_id = %s
                 """, (json.dumps(updated_cv_list), activity_id, recruiter_id))
                 
-                # Check if all CVs in this activity are approved
-                all_approved = all(cv.get('status') == 1 for cv in updated_cv_list)
-                if all_approved:
-                    cur.execute("""
-                        UPDATE tbl_recruiter_activity 
-                        SET activity_status = 'closed'
-                        WHERE id = %s AND recruiter_id = %s
-                    """, (activity_id, recruiter_id))
-                
-                # Check if uploaded_cv_count equals required_cv_count for this activity
-                cur.execute("""
-                    SELECT uploaded_cv_count, required_cv_count 
-                    FROM tbl_recruiter_activity 
-                    WHERE id = %s
-                """, (activity_id,))
-                activity_data = cur.fetchone()
-                if activity_data:
-                    uploaded_count, required_count = activity_data
-                    
-                    # If uploaded_cv_count equals required_cv_count, close the activity and demand
-                    if uploaded_count == required_count:
-                        cur.execute("""
-                            UPDATE tbl_recruiter_activity 
-                            SET activity_status = 'closed'
-                            WHERE id = %s
-                        """, (activity_id,))
-                        
-                        # Also close the demand
-                        cur.execute("""
-                            UPDATE tbl_demand_sheet 
-                            SET status = 'closed', updated_at = now() 
-                            WHERE id = %s
-                        """, (demand_id,))
+                # Check and update demand status based on total CV count
+                _check_and_update_demand_status(demand_id, cur)
                 
                 conn.commit()
                 return {"message": "CV approved successfully"}
@@ -668,7 +851,7 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
 
 @router.post("/cv-reject/{activity_id}")
 async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] = None, cv_id: Optional[str] = None):
-    """Reject a CV (change status from 0 to 2) and decrement uploaded_cv_count"""
+    """Reject a CV (change status from 0 to 2) and handle count/status updates based on requirements"""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
@@ -677,7 +860,7 @@ async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] 
                 
                 # Get current cv_list and activity data
                 cur.execute("""
-                    SELECT cv_list, demand_id, uploaded_cv_count, required_cv_count, recruiter_id
+                    SELECT cv_list, demand_id, uploaded_cv_count, required_cv_count, recruiter_id, activity_status
                     FROM tbl_recruiter_activity 
                     WHERE id = %s
                 """, (activity_id,))
@@ -686,7 +869,7 @@ async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] 
                 if not result:
                     raise HTTPException(status_code=404, detail="Activity not found")
                 
-                cv_list, demand_id, uploaded_cv_count, required_cv_count, recruiter_id = result
+                cv_list, demand_id, uploaded_cv_count, required_cv_count, recruiter_id, activity_status = result
                 # Normalize cv_list
                 if isinstance(cv_list, (bytes, bytearray)):
                     cv_list = cv_list.decode("utf-8")
@@ -730,47 +913,99 @@ async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] 
                         cv_dict['status'] = 2
                     updated_cv_list.append(cv_dict)
                 
-                # Update the cv_list for the current activity (do not change activity_status)
+                # Update the cv_list for the current activity
                 cur.execute("""
                     UPDATE tbl_recruiter_activity 
                     SET cv_list = %s, updated_at = now()
                     WHERE id = %s AND recruiter_id = %s
                 """, (json.dumps(updated_cv_list), activity_id, recruiter_id))
 
-                # Decrement uploaded_cv_count for ALL recruiters associated with this demand
+                # Get the current total uploaded CV count across all recruiters for this demand
+                # Only count CVs that are not rejected (status != 2)
                 cur.execute("""
-                    UPDATE tbl_recruiter_activity
-                    SET uploaded_cv_count = GREATEST(COALESCE(uploaded_cv_count, 0) - 1, 0),
-                        updated_at = now()
-                    WHERE demand_id = %s
+                    SELECT COALESCE(SUM(
+                        (SELECT COUNT(*) 
+                         FROM jsonb_array_elements(ra.cv_list) AS cv 
+                         WHERE (cv->>'status')::int != 2)
+                    ), 0) as total_cv_count
+                    FROM tbl_recruiter_activity ra
+                    WHERE ra.demand_id = %s
+                    AND ra.cv_list IS NOT NULL
+                    AND jsonb_array_length(ra.cv_list) > 0
                 """, (demand_id,))
                 
-                # Update demand sheet status back to open if it was closed
-                cur.execute(
-                    """
-                    UPDATE tbl_demand_sheet 
-                    SET 
-                        status = CASE WHEN status = 'closed' THEN 'open' ELSE status END,
-                        updated_at = now()
-                    WHERE id = %s
-                    """,
-                    (demand_id,),
-                )
-
-                # Recompute total uploaded across activities and update demand status accordingly
-                cur.execute("SELECT COALESCE(SUM(uploaded_cv_count),0) FROM tbl_recruiter_activity WHERE demand_id=%s", (demand_id,))
-                total_uploaded = cur.fetchone()[0] or 0
-                cur.execute("SELECT COALESCE(required_cv_count,0) FROM tbl_demand_sheet WHERE id=%s", (demand_id,))
-                req = cur.fetchone()[0] or 0
-                if req > 0 and total_uploaded >= req:
-                    cur.execute("UPDATE tbl_demand_sheet SET status='closed', updated_at=now() WHERE id=%s", (demand_id,))
+                result = cur.fetchone()
+                current_total_uploaded = result[0] if result else 0
+                
+                # Get required CV count for this demand
+                cur.execute("""
+                    SELECT required_cv_count FROM tbl_demand_sheet WHERE id = %s
+                """, (demand_id,))
+                
+                result = cur.fetchone()
+                required_count = result[0] if result else 0
+                
+                # Update uploaded_cv_count for all recruiters associated with the same demand_id
+                cur.execute("""
+                    UPDATE tbl_recruiter_activity 
+                    SET uploaded_cv_count = %s, updated_at = NOW()
+                    WHERE demand_id = %s
+                """, (current_total_uploaded, demand_id))
+                
+                # Check if activity_status is 'closed' and reopen it
+                if activity_status == 'closed':
+                    # Update activity_status to 'hold' for all recruiters of this demand
+                    cur.execute("""
+                        UPDATE tbl_recruiter_activity 
+                        SET activity_status = 'hold', updated_at = NOW()
+                        WHERE demand_id = %s
+                    """, (demand_id,))
+                    
+                    # Update demand status to 'open'
+                    cur.execute("""
+                        UPDATE tbl_demand_sheet 
+                        SET status = 'open', updated_at = NOW()
+                        WHERE id = %s
+                    """, (demand_id,))
+                    
+                    print(f"CV rejection: Activity was 'closed', reopened to 'hold' and demand to 'open' for demand_id {demand_id}")
                 else:
-                    cur.execute("UPDATE tbl_demand_sheet SET status='open', updated_at=now() WHERE id=%s", (demand_id,))
+                    # Check if uploaded_cv_count equals required_cv_count
+                    if current_total_uploaded == required_count and required_count > 0:
+                        # Update activity_status to 'hold' for all recruiters of this demand
+                        cur.execute("""
+                            UPDATE tbl_recruiter_activity 
+                            SET activity_status = 'hold', updated_at = NOW()
+                            WHERE demand_id = %s
+                        """, (demand_id,))
+                        
+                        # Update demand status to 'open'
+                        cur.execute("""
+                            UPDATE tbl_demand_sheet 
+                            SET status = 'open', updated_at = NOW()
+                            WHERE id = %s
+                        """, (demand_id,))
+                        
+                        print(f"CV rejection: Counts equal ({current_total_uploaded}/{required_count}). Updated activity_status to 'hold' and demand status to 'open' for demand_id {demand_id}")
+                    else:
+                        print(f"CV rejection: Counts not equal ({current_total_uploaded}/{required_count}). Only updated uploaded_cv_count for demand_id {demand_id}")
                 
                 conn.commit()
+                
+                # Determine what status changes occurred
+                status_changes = []
+                if activity_status == 'closed':
+                    status_changes.append("reopened_from_closed")
+                elif current_total_uploaded == required_count and required_count > 0:
+                    status_changes.append("counts_equal_reopened")
+                
                 return {
                     "message": "CV rejected successfully",
-                    "demand_status": "open"
+                    "uploaded_count": current_total_uploaded,
+                    "required_count": required_count,
+                    "demand_status": "open" if (activity_status == 'closed' or current_total_uploaded == required_count) else "unchanged",
+                    "status_changes": status_changes,
+                    "was_closed": activity_status == 'closed'
                 }
                 
     except Exception as e:
@@ -781,11 +1016,11 @@ async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] 
 
 @router.get("/cv-submitted")
 async def get_cv_submitted():
-    """Get approved CVs (status = 1) for the Submitted tab"""
+    """Get approved CVs (status = 1) for the Submitted tab with aggregated CV counts"""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Query to get approved CVs (status = 1)
+                # Query to get approved CVs (status = 1) with aggregated CV counts
                 cur.execute("""
                     SELECT 
                         ra.id,
@@ -805,7 +1040,14 @@ async def get_cv_submitted():
                         ds.priority,
                         ds.job_description_url AS job_description_url,
                         c.client_name,
-                        cs.spoc_name
+                        cs.spoc_name,
+                        (
+                            SELECT COALESCE(SUM(jsonb_array_length(ra_all.cv_list)), 0)
+                            FROM tbl_recruiter_activity ra_all
+                            WHERE ra_all.demand_id = ra.demand_id
+                            AND ra_all.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra_all.cv_list) > 0
+                        ) as total_uploaded_cv_count
                     FROM tbl_recruiter_activity ra
                     LEFT JOIN tbl_users u ON ra.recruiter_id = u.id
                     LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
@@ -871,38 +1113,52 @@ async def get_cv_file(recruiter_id: int, demand_id: int, filename: str):
     """Serve CV files with proper error handling"""
     try:
         # Construct the file path - fix the path construction
-        cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
+        # Go up from backend/app/routes to project root, then to src/assets/cv_uploads
+        cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "src", "assets", "cv_uploads")
+        
+        # Alternative path construction for better reliability
+        alt_cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
+        
+        # Use the path that actually exists
+        if os.path.exists(cv_uploads_path):
+            base_path = cv_uploads_path
+        elif os.path.exists(alt_cv_uploads_path):
+            base_path = alt_cv_uploads_path
+        else:
+            # Try absolute path construction
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            base_path = os.path.join(project_root, "src", "assets", "cv_uploads")
         
         # Check if filename already contains the full path
         if filename.startswith("src/assets/cv_uploads/"):
             # Extract just the filename from the full path
             filename = os.path.basename(filename)
         
-        file_path = os.path.join(cv_uploads_path, str(recruiter_id), str(demand_id), filename)
+        file_path = os.path.join(base_path, str(recruiter_id), str(demand_id), filename)
         
         # Debug: Print paths for troubleshooting
-        print(f"🔍 CV File Request Debug:")
+        print(f"[INFO] CV File Request Debug:")
         print(f"   Recruiter ID: {recruiter_id}")
         print(f"   Demand ID: {demand_id}")
         print(f"   Filename: {filename}")
-        print(f"   CV Uploads Path: {cv_uploads_path}")
+        print(f"   Base CV Uploads Path: {base_path}")
         print(f"   Full File Path: {file_path}")
-        print(f"   Path Exists: {os.path.exists(cv_uploads_path)}")
+        print(f"   Base Path Exists: {os.path.exists(base_path)}")
         print(f"   File Exists: {os.path.exists(file_path)}")
         
         # Check if CV uploads directory exists
-        if not os.path.exists(cv_uploads_path):
-            print(f"❌ CV uploads directory not found: {cv_uploads_path}")
-            raise HTTPException(status_code=404, detail=f"CV uploads directory not found: {cv_uploads_path}")
+        if not os.path.exists(base_path):
+            print(f"[ERROR] CV uploads directory not found: {base_path}")
+            raise HTTPException(status_code=404, detail=f"CV uploads directory not found: {base_path}")
         
         # Check if file exists
         if not os.path.exists(file_path):
-            print(f"❌ CV file not found: {file_path}")
+            print(f"[ERROR] CV file not found: {file_path}")
             raise HTTPException(status_code=404, detail=f"CV file not found: {file_path}")
         
         # Check if it's a file (not a directory)
         if not os.path.isfile(file_path):
-            print(f"❌ Path is not a file: {file_path}")
+            print(f"[ERROR] Path is not a file: {file_path}")
             raise HTTPException(status_code=404, detail="CV file not found")
         
         # Determine content type based on file extension
@@ -914,7 +1170,7 @@ async def get_cv_file(recruiter_id: int, demand_id: int, filename: str):
         else:
             media_type = "application/octet-stream"
         
-        print(f"✅ Serving CV file: {file_path}")
+        print(f"[INFO] Serving CV file: {file_path}")
         return FileResponse(
             path=file_path,
             media_type=media_type,
@@ -925,7 +1181,7 @@ async def get_cv_file(recruiter_id: int, demand_id: int, filename: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error serving CV file: {e}")
+        print(f"[ERROR] Error serving CV file: {e}")
         raise HTTPException(status_code=500, detail=f"Error serving CV file: {e}")
 
 
@@ -933,15 +1189,27 @@ async def get_cv_file(recruiter_id: int, demand_id: int, filename: str):
 async def list_cv_files():
     """List available CV files for debugging"""
     try:
-        cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
+        # Try multiple path constructions
+        cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "src", "assets", "cv_uploads")
+        alt_cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
         
-        if not os.path.exists(cv_uploads_path):
-            return {"error": f"CV uploads directory not found: {cv_uploads_path}"}
+        # Use the path that actually exists
+        if os.path.exists(cv_uploads_path):
+            base_path = cv_uploads_path
+        elif os.path.exists(alt_cv_uploads_path):
+            base_path = alt_cv_uploads_path
+        else:
+            # Try absolute path construction
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            base_path = os.path.join(project_root, "src", "assets", "cv_uploads")
+        
+        if not os.path.exists(base_path):
+            return {"error": f"CV uploads directory not found: {base_path}"}
         
         files_list = []
-        for root, dirs, files in os.walk(cv_uploads_path):
+        for root, dirs, files in os.walk(base_path):
             for file in files:
-                rel_path = os.path.relpath(os.path.join(root, file), cv_uploads_path)
+                rel_path = os.path.relpath(os.path.join(root, file), base_path)
                 files_list.append({
                     "path": rel_path,
                     "full_path": os.path.join(root, file),
@@ -949,7 +1217,7 @@ async def list_cv_files():
                 })
         
         return {
-            "cv_uploads_path": cv_uploads_path,
+            "cv_uploads_path": base_path,
             "files": files_list,
             "total_files": len(files_list)
         }
@@ -963,18 +1231,29 @@ async def check_cv_file_exists(recruiter_id: int, demand_id: int, filename: str)
     """Check if a CV file exists without serving it"""
     try:
         # Construct the file path - same logic as get_cv_file
-        cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
+        cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "src", "assets", "cv_uploads")
+        alt_cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
+        
+        # Use the path that actually exists
+        if os.path.exists(cv_uploads_path):
+            base_path = cv_uploads_path
+        elif os.path.exists(alt_cv_uploads_path):
+            base_path = alt_cv_uploads_path
+        else:
+            # Try absolute path construction
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            base_path = os.path.join(project_root, "src", "assets", "cv_uploads")
         
         # Check if filename already contains the full path
         if filename.startswith("src/assets/cv_uploads/"):
             # Extract just the filename from the full path
             filename = os.path.basename(filename)
         
-        file_path = os.path.join(cv_uploads_path, str(recruiter_id), str(demand_id), filename)
+        file_path = os.path.join(base_path, str(recruiter_id), str(demand_id), filename)
         
         # Check if CV uploads directory exists
-        if not os.path.exists(cv_uploads_path):
-            return {"exists": False, "error": f"CV uploads directory not found: {cv_uploads_path}"}
+        if not os.path.exists(base_path):
+            return {"exists": False, "error": f"CV uploads directory not found: {base_path}"}
         
         # Check if file exists and is a file
         file_exists = os.path.exists(file_path) and os.path.isfile(file_path)

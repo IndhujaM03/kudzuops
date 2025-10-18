@@ -26,7 +26,15 @@
             }
           },
           "options": {
-            "assets": ["src/assets", "src/favicon.ico"],
+            "assets": [
+              "src/assets",
+              {
+                "glob": "**/*",
+                "input": "backend/src/assets",
+                "output": "/assets"
+              },
+              "src/favicon.ico"
+            ],
             "index": "src/index.html",
             "browser": "src/main.ts",
             "outputPath": "dist/demo",

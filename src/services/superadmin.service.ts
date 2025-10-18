@@ -10,6 +10,7 @@ export interface PendingUser {
   role: string;
   approval_status: boolean;
   reporting_to?: number;
+  showRoleDropdown?: boolean;
 }
 
 export interface SuperAdminAuthResponse {
