@@ -98,7 +98,8 @@ import { environment } from '../../environments/environment';
     /* Super Admin Dashboard Styles */
     .superadmin-dashboard {
       min-height: 100vh;
-      background: #f7fafc;
+      background: #F8FAFC;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .superadmin-sidebar {
@@ -312,13 +313,33 @@ import { environment } from '../../environments/environment';
     }
 
     .superadmin-btn-approve {
-      background: #48bb78;
+      background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
       color: white;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+    }
+
+    .superadmin-btn-approve::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
     }
 
     .superadmin-btn-approve:hover {
-      background: #38a169;
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px rgba(24, 45, 23, 0.1);
+    }
+
+    .superadmin-btn-approve:hover::before {
+      left: 100%;
     }
 
     .superadmin-btn-reject {

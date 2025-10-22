@@ -224,7 +224,7 @@ export class LoginComponent {
         this.router.navigate(['/superadmin/dashboard']).catch((err) => {
           console.error('Navigation to superadmin failed:', err);
         });
-      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
         this.router.navigate(['/teamleader/demand-sheet']).catch((err) => {
           console.error('Navigation to teamleader failed:', err);
         });

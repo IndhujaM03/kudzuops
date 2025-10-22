@@ -4,6 +4,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
 import { HttpClient } from '@angular/common/http';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../../services/auth.service';
+import { ToastService } from '../../../services/toast.service';
 import { environment } from '../../../../environments/environment';
 
 interface DemandDetail {
@@ -685,6 +686,7 @@ export class DemandDetailComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private auth = inject(AuthService);
+  private toastService = inject(ToastService);
   private fb = inject(FormBuilder);
   private api = environment.apiUrl;
 
@@ -842,7 +844,7 @@ export class DemandDetailComponent implements OnInit {
 
       this.http.post<any>(`${this.api}/recruiter/upload-cv`, formData).subscribe({
         next: (response) => {
-          this.showToast(`CV "${file.name}" uploaded successfully`, 'success');
+          this.toastService.success(`✅ Profile uploaded successfully! (${file.name})`);
           this.loadCVs(); // Reload CVs list
         },
         error: (error) => {
@@ -896,17 +898,27 @@ export class DemandDetailComponent implements OnInit {
       next: (response) => {
         console.log('✅ Profile submission response:', response);
         
-        // Enhanced feedback based on the response
-        let message = '✅ Profile submitted successfully!';
+        // Update CV count after successful submission
+        const updatePayload = {
+          demand_id: this.demandId,
+          recruiter_id: this.auth.getCurrentUserId(),
+          increment: this.selectedCVs.length
+        };
         
-        // Check if the submission triggered status updates
-        if (response.message && response.message.includes('submitted successfully')) {
-          message += '\n\n📊 The system will check if CV counts match requirements and update status accordingly.';
-        }
-        
-        this.showToast(message, 'success');
-        this.submissionForm.reset();
-        this.selectedCVs = [];
+        this.http.post<any>(`${this.api}/recruiter/update-cv-count-and-check`, updatePayload).subscribe({
+          next: (countResponse) => {
+            console.log('✅ CV count updated:', countResponse);
+            this.toastService.success('✅ Profile submitted successfully!');
+            this.submissionForm.reset();
+            this.selectedCVs = [];
+          },
+          error: (countError) => {
+            console.error('Error updating CV count:', countError);
+            this.toastService.success('✅ Profile submitted successfully!');
+            this.submissionForm.reset();
+            this.selectedCVs = [];
+          }
+        });
         
         // Check if demand was closed and show popup
         if (response.demand_closed) {
@@ -928,7 +940,7 @@ export class DemandDetailComponent implements OnInit {
   copyJD(): void {
     if (this.demand?.job_description) {
       navigator.clipboard.writeText(this.demand.job_description);
-      this.showToast('Job description copied to clipboard!', 'success');
+      this.toastService.success('✅ Job description copied to clipboard!');
     }
   }
 
@@ -1039,8 +1051,26 @@ export class DemandDetailComponent implements OnInit {
         justify-content: flex-end;
       }
       .popup-footer .btn {
-        padding: 8px 16px;
-        font-size: 14px;
+        padding: 12px 24px !important;
+        border: none !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        min-width: 80px !important;
+        transition: all 0.2s ease !important;
+        background: #3b82f6 !important;
+        color: white !important;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3) !important;
+      }
+      .popup-footer .btn:hover {
+        background: #2563eb !important;
+        box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4) !important;
+        transform: translateY(-1px) !important;
+      }
+      .popup-footer .btn:active {
+        background: #1d4ed8 !important;
+        transform: translateY(0) !important;
       }
     `;
     

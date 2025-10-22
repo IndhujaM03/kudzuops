@@ -439,6 +439,41 @@ def assign_demand_to_recruiter(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Demand not found")
                 
+                # Fetch required_cv_count for the demand to seed activity rows
+                required_count: Optional[int] = None
+                try:
+                    cur.execute("SELECT required_cv_count FROM tbl_demand_sheet WHERE id=%s", (demand_id,))
+                    row = cur.fetchone()
+                    required_count = int(row[0]) if row and row[0] is not None else 0
+                except Exception:
+                    required_count = 0
+
+                # Auto-insert recruiter activity rows for each assigned recruiter (dedupe-safe)
+                for item in assignment_data:
+                    rid = int(item.get("recruiter_id"))
+                    # Skip if an activity already exists for this recruiter+demand
+                    cur.execute(
+                        """
+                        SELECT id FROM tbl_recruiter_activity 
+                        WHERE recruiter_id=%s AND demand_id=%s
+                        LIMIT 1
+                        """,
+                        (rid, demand_id)
+                    )
+                    exists = cur.fetchone()
+                    if exists:
+                        continue
+
+                    cur.execute(
+                        """
+                        INSERT INTO tbl_recruiter_activity 
+                            (recruiter_id, demand_id, activity_status, uploaded_cv_count, required_cv_count, cv_list, created_at)
+                        VALUES 
+                            (%s, %s, 'open', 0, %s, '[]'::jsonb, NOW())
+                        """,
+                        (rid, demand_id, required_count)
+                    )
+
                 conn.commit()
                 
                 return {
@@ -579,6 +614,39 @@ def assign_recruiters_bulk(payload: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Demand not found")
+                
+                # Fetch required_cv_count
+                required_count: Optional[int] = None
+                try:
+                    cur.execute("SELECT required_cv_count FROM tbl_demand_sheet WHERE id=%s", (demand_id,))
+                    row = cur.fetchone()
+                    required_count = int(row[0]) if row and row[0] is not None else 0
+                except Exception:
+                    required_count = 0
+
+                # Insert recruiter activity rows if missing
+                for item in assignment_data:
+                    rid = int(item.get("recruiter_id"))
+                    cur.execute(
+                        """
+                        SELECT id FROM tbl_recruiter_activity 
+                        WHERE recruiter_id=%s AND demand_id=%s
+                        LIMIT 1
+                        """,
+                        (rid, demand_id)
+                    )
+                    if cur.fetchone():
+                        continue
+                    cur.execute(
+                        """
+                        INSERT INTO tbl_recruiter_activity 
+                            (recruiter_id, demand_id, activity_status, uploaded_cv_count, required_cv_count, cv_list, created_at)
+                        VALUES 
+                            (%s, %s, 'open', 0, %s, '[]'::jsonb, NOW())
+                        """,
+                        (rid, demand_id, required_count)
+                    )
+
                 conn.commit()
                 print(f"✅ Successfully updated demand {demand_id}")
                 return {"message": "Recruiters assigned successfully"}
@@ -598,9 +666,9 @@ def list_team_leaders() -> List[Dict[str, Any]]:
         print(f"[INFO] Fetching team leaders from database")
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get users with role = 'team_leader'
+                # Get users with role = 'team_leader' or 'tl'
                 cur.execute(
-                    "SELECT id, first_name, last_name, email, role FROM tbl_users WHERE role = 'team_leader' ORDER BY first_name"
+                    "SELECT id, first_name, last_name, email, role FROM tbl_users WHERE role IN ('team_leader', 'tl') ORDER BY first_name"
                 )
                 rows = cur.fetchall()
                 print(f"[INFO] Found {len(rows)} team leaders with role='team_leader'")
@@ -768,7 +836,7 @@ async def get_cv_received():
 
 @router.post("/cv-approve/{activity_id}")
 async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int] = None, cv_id: Optional[str] = None):
-    """Approve a CV (change status from 0 to 1) and update demand status if needed"""
+    """Approve a CV (change status from 0 to 1) and implement enhanced Accept flow"""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
@@ -822,7 +890,7 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
                 if target_index is None or target_index < 0 or target_index >= len(cv_list):
                     raise HTTPException(status_code=404, detail="CV not found for update")
 
-                # Update CV status to approved (1) based on candidate_id
+                # Step 1: Update JSON Field (cv_list) - Update status to 1
                 updated_cv_list = []
                 for i, cv in enumerate(cv_list):
                     cv_dict = dict(cv)
@@ -830,18 +898,56 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
                         cv_dict['status'] = 1
                     updated_cv_list.append(cv_dict)
                 
-                # Update the cv_list
+                # Update the cv_list for the current activity
                 cur.execute("""
                     UPDATE tbl_recruiter_activity 
                     SET cv_list = %s, updated_at = now()
                     WHERE id = %s AND recruiter_id = %s
                 """, (json.dumps(updated_cv_list), activity_id, recruiter_id))
                 
-                # Check and update demand status based on total CV count
-                _check_and_update_demand_status(demand_id, cur)
+                # Step 2: Increase approved_cv_count by 1 for all recruiters with same demand_id
+                cur.execute("""
+                    UPDATE tbl_recruiter_activity
+                    SET approved_cv_count = COALESCE(approved_cv_count, 0) + 1, updated_at = now()
+                    WHERE demand_id = %s
+                """, (demand_id,))
+                
+                # Step 3: Auto Close Demand (if complete)
+                # Check if approved_cv_count >= required_cv_count
+                # Get the current approved_cv_count from tbl_recruiter_activity
+                cur.execute("""
+                    SELECT approved_cv_count, required_cv_count
+                    FROM tbl_recruiter_activity 
+                    WHERE demand_id = %s
+                    ORDER BY id DESC LIMIT 1
+                """, (demand_id,))
+                
+                activity_result = cur.fetchone()
+                if activity_result:
+                    approved_count, required_count = activity_result
+                    if approved_count and required_count and approved_count >= required_count:
+                        # Update demand status to 'closed'
+                        cur.execute("""
+                            UPDATE tbl_demand_sheet
+                            SET status = 'closed', updated_at = now()
+                            WHERE id = %s
+                        """, (demand_id,))
+                        
+                        # Also update activity_status to 'closed' for all recruiters
+                        cur.execute("""
+                            UPDATE tbl_recruiter_activity
+                            SET activity_status = 'closed', updated_at = now()
+                            WHERE demand_id = %s
+                        """, (demand_id,))
                 
                 conn.commit()
-                return {"message": "CV approved successfully"}
+                return {
+                    "message": "CV approved successfully",
+                    "demand_id": demand_id,
+                    "approved_count": approved_count if activity_result else 0,
+                    "required_count": required_count if activity_result else 0,
+                    "demand_closed": activity_result and approved_count and required_count and approved_count >= required_count
+                }
                 
     except Exception as e:
         if 'conn' in locals():
@@ -851,7 +957,7 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
 
 @router.post("/cv-reject/{activity_id}")
 async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] = None, cv_id: Optional[str] = None):
-    """Reject a CV (change status from 0 to 2) and handle count/status updates based on requirements"""
+    """Reject a CV (change status from 0 to 2) and implement enhanced Reject flow"""
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
@@ -905,7 +1011,7 @@ async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] 
                 if target_index is None or target_index < 0 or target_index >= len(cv_list):
                     raise HTTPException(status_code=404, detail="CV not found for update")
 
-                # Update CV status to rejected (2) based on candidate_id
+                # Step 1: Update JSON Field (cv_list) - Update status to 2
                 updated_cv_list = []
                 for i, cv in enumerate(cv_list):
                     cv_dict = dict(cv)
@@ -920,92 +1026,47 @@ async def reject_cv(activity_id: int, request: Request, cv_index: Optional[int] 
                     WHERE id = %s AND recruiter_id = %s
                 """, (json.dumps(updated_cv_list), activity_id, recruiter_id))
 
-                # Get the current total uploaded CV count across all recruiters for this demand
-                # Only count CVs that are not rejected (status != 2)
+                # Step 2: Decrease uploaded_cv_count by 1 for all recruiters with same demand_id
                 cur.execute("""
-                    SELECT COALESCE(SUM(
-                        (SELECT COUNT(*) 
-                         FROM jsonb_array_elements(ra.cv_list) AS cv 
-                         WHERE (cv->>'status')::int != 2)
-                    ), 0) as total_cv_count
-                    FROM tbl_recruiter_activity ra
-                    WHERE ra.demand_id = %s
-                    AND ra.cv_list IS NOT NULL
-                    AND jsonb_array_length(ra.cv_list) > 0
-                """, (demand_id,))
-                
-                result = cur.fetchone()
-                current_total_uploaded = result[0] if result else 0
-                
-                # Get required CV count for this demand
-                cur.execute("""
-                    SELECT required_cv_count FROM tbl_demand_sheet WHERE id = %s
-                """, (demand_id,))
-                
-                result = cur.fetchone()
-                required_count = result[0] if result else 0
-                
-                # Update uploaded_cv_count for all recruiters associated with the same demand_id
-                cur.execute("""
-                    UPDATE tbl_recruiter_activity 
-                    SET uploaded_cv_count = %s, updated_at = NOW()
+                    UPDATE tbl_recruiter_activity
+                    SET uploaded_cv_count = GREATEST(COALESCE(uploaded_cv_count, 0) - 1, 0), updated_at = now()
                     WHERE demand_id = %s
-                """, (current_total_uploaded, demand_id))
+                """, (demand_id,))
                 
-                # Check if activity_status is 'closed' and reopen it
-                if activity_status == 'closed':
-                    # Update activity_status to 'hold' for all recruiters of this demand
-                    cur.execute("""
-                        UPDATE tbl_recruiter_activity 
-                        SET activity_status = 'hold', updated_at = NOW()
-                        WHERE demand_id = %s
-                    """, (demand_id,))
-                    
-                    # Update demand status to 'open'
-                    cur.execute("""
-                        UPDATE tbl_demand_sheet 
-                        SET status = 'open', updated_at = NOW()
-                        WHERE id = %s
-                    """, (demand_id,))
-                    
-                    print(f"CV rejection: Activity was 'closed', reopened to 'hold' and demand to 'open' for demand_id {demand_id}")
-                else:
-                    # Check if uploaded_cv_count equals required_cv_count
-                    if current_total_uploaded == required_count and required_count > 0:
+                # Step 3: Update Recruiter Activity Status (if needed)
+                # Check if uploaded_cv_count < required_cv_count after decrease
+                cur.execute("""
+                    SELECT uploaded_cv_count, required_cv_count
+                    FROM tbl_recruiter_activity 
+                    WHERE demand_id = %s
+                    ORDER BY id DESC LIMIT 1
+                """, (demand_id,))
+                
+                result = cur.fetchone()
+                if result:
+                    current_uploaded, current_required = result
+                    if current_uploaded and current_required and current_uploaded < current_required:
                         # Update activity_status to 'hold' for all recruiters of this demand
                         cur.execute("""
-                            UPDATE tbl_recruiter_activity 
-                            SET activity_status = 'hold', updated_at = NOW()
+                            UPDATE tbl_recruiter_activity
+                            SET activity_status = 'hold', updated_at = now()
                             WHERE demand_id = %s
                         """, (demand_id,))
                         
                         # Update demand status to 'open'
                         cur.execute("""
-                            UPDATE tbl_demand_sheet 
-                            SET status = 'open', updated_at = NOW()
+                            UPDATE tbl_demand_sheet
+                            SET status = 'open', updated_at = now()
                             WHERE id = %s
                         """, (demand_id,))
-                        
-                        print(f"CV rejection: Counts equal ({current_total_uploaded}/{required_count}). Updated activity_status to 'hold' and demand status to 'open' for demand_id {demand_id}")
-                    else:
-                        print(f"CV rejection: Counts not equal ({current_total_uploaded}/{required_count}). Only updated uploaded_cv_count for demand_id {demand_id}")
                 
                 conn.commit()
-                
-                # Determine what status changes occurred
-                status_changes = []
-                if activity_status == 'closed':
-                    status_changes.append("reopened_from_closed")
-                elif current_total_uploaded == required_count and required_count > 0:
-                    status_changes.append("counts_equal_reopened")
-                
                 return {
                     "message": "CV rejected successfully",
-                    "uploaded_count": current_total_uploaded,
-                    "required_count": required_count,
-                    "demand_status": "open" if (activity_status == 'closed' or current_total_uploaded == required_count) else "unchanged",
-                    "status_changes": status_changes,
-                    "was_closed": activity_status == 'closed'
+                    "demand_id": demand_id,
+                    "uploaded_count": current_uploaded if result else 0,
+                    "required_count": current_required if result else 0,
+                    "activity_status_updated": result and current_uploaded and current_required and current_uploaded < current_required
                 }
                 
     except Exception as e:

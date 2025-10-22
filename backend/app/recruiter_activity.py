@@ -1,13 +1,14 @@
 import os
 import json
 import threading
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
+from datetime import datetime, timedelta
 
 import psycopg
 from fastapi import APIRouter, HTTPException, File, UploadFile, Form
 from fastapi import Body
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from fastapi import Depends
 import shutil
 import traceback
@@ -29,6 +30,15 @@ except Exception:
 
 
 router = APIRouter(tags=["recruiter"])
+
+class QuotaCheckRequest(BaseModel):
+    demand_id: Any
+    recruiter_id: Any
+    
+    class Config:
+        # Allow extra fields and be more flexible with validation
+        extra = "allow"
+        validate_assignment = False
 
 
 # ------------------------
@@ -64,34 +74,10 @@ def _recalculate_uploaded_cv_count(cv_list: list, activity_id: int, cur) -> None
 
 def _sync_uploaded_cv_count_across_demand(demand_id: int, cur) -> None:
     """Helper function to sync uploaded_cv_count across all recruiters for the same demand"""
-    try:
-        # Get the total count of CVs across all recruiters for this demand
-        # Only count CVs that are not rejected (status != 2)
-        cur.execute("""
-            SELECT COALESCE(SUM(
-                (SELECT COUNT(*) 
-                 FROM jsonb_array_elements(ra.cv_list) AS cv 
-                 WHERE (cv->>'status')::int != 2 OR cv->>'status' IS NULL)
-            ), 0) as total_cv_count
-            FROM tbl_recruiter_activity ra
-            WHERE ra.demand_id = %s
-            AND ra.cv_list IS NOT NULL
-            AND jsonb_array_length(ra.cv_list) > 0
-        """, (demand_id,))
-        
-        result = cur.fetchone()
-        total_count = result[0] if result else 0
-        
-        # Update all recruiter activities for this demand with the same count
-        cur.execute("""
-            UPDATE tbl_recruiter_activity 
-            SET uploaded_cv_count = %s, updated_at = NOW()
-            WHERE demand_id = %s
-        """, (total_count, demand_id))
-        
-    except Exception as e:
-        print(f"Error syncing uploaded_cv_count for demand {demand_id}: {e}")
-        pass
+    # DISABLED: This function is disabled to prevent conflicts with update-cv-count-and-check endpoint
+    # The count is now managed exclusively by the update-cv-count-and-check endpoint
+    print(f"⚠️ Sync function called for demand {demand_id} but is disabled to prevent count conflicts")
+    pass
 
 def _check_and_close_activity_on_submission(demand_id: int, cur) -> bool:
     """Check if uploaded_cv_count equals required_cv_count and close activity/demand if needed
@@ -380,7 +366,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             FROM tbl_demand_sheet ds
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
                             WHERE ds.assigned_to::text LIKE %s
-                            AND (ra.activity_status IS NULL OR ra.activity_status != 'closed')
+                            AND COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             """,
                             (recruiter_id, f"%{recruiter_id}%")
                         )
@@ -396,7 +382,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             FROM tbl_demand_sheet ds
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
                             WHERE %s = ANY(ds.assigned_to)
-                            AND (ra.activity_status IS NULL OR ra.activity_status != 'closed')
+                            AND COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             """,
                             (recruiter_id, recruiter_id)
                         )
@@ -409,7 +395,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             SELECT COUNT(1) 
                             FROM tbl_demand_sheet ds
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
-                            WHERE (ra.activity_status IS NULL OR ra.activity_status != 'closed')
+                            WHERE COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                         """, (recruiter_id,))
                         total = int(cur.fetchone()[0])
                         print(f"Recruiter API Debug - Fallback total: {total}")
@@ -435,7 +421,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             LEFT JOIN tbl_clients c ON c.id = ds.client_id
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
                             WHERE ds.assigned_to::text LIKE %s
-                            AND (ra.activity_status IS NULL OR ra.activity_status != 'closed')
+                            AND COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             ORDER BY ds.updated_at DESC NULLS LAST, ds.id DESC
                             OFFSET %s LIMIT %s
                             """,
@@ -463,7 +449,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             LEFT JOIN tbl_clients c ON c.id = ds.client_id
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
                             WHERE %s = ANY(ds.assigned_to)
-                            AND (ra.activity_status IS NULL OR ra.activity_status != 'closed')
+                            AND COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             ORDER BY ds.updated_at DESC NULLS LAST, ds.id DESC
                             OFFSET %s LIMIT %s
                             """,
@@ -489,7 +475,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             FROM tbl_demand_sheet ds
                             LEFT JOIN tbl_clients c ON c.id = ds.client_id
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
-                            WHERE (ra.activity_status IS NULL OR ra.activity_status != 'closed')
+                            WHERE COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             ORDER BY ds.updated_at DESC NULLS LAST, ds.id DESC
                             OFFSET %s LIMIT %s
                             """,
@@ -932,7 +918,7 @@ def generate_ai_questions(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                     cur.execute(
                         """
                         SELECT 
-                          COALESCE(NULLIF(ds.job_title,''), ds.skill) AS job_title,
+                         ds.skill AS job_title,
                           ds.skill,
                           ds.skill,
                           ds.experience_level,
@@ -1073,6 +1059,621 @@ def recruiter_activity(recruiter_id: int) -> Optional[Dict[str, Any]]:
         raise HTTPException(status_code=500, detail=f"Failed to fetch activity: {e}")
 
 
+# Dashboard API endpoints
+@router.get("/{recruiter_id}/dashboard/summary")
+def get_dashboard_summary(recruiter_id: int) -> Dict[str, Any]:
+    """Get recruiter dashboard summary with KPIs and CV status processing"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get activities with status in ('open', 'processing', 'hold') only
+                cur.execute("""
+                    SELECT 
+                        ra.*,
+                        ds.skill AS job_title,
+                        COALESCE(c.client_name, '') AS client_name,
+                        ds.skill,
+                        ds.no_of_positions,
+                        ds.priority,
+                        ds.status AS demand_status
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    LEFT JOIN tbl_clients c ON ds.client_id = c.id
+                    WHERE ra.recruiter_id = %s 
+                    AND ra.activity_status IN ('open', 'processing', 'hold')
+                    ORDER BY ra.updated_at DESC
+                """, (recruiter_id,))
+                
+                activities = _rows_to_dicts([desc[0] for desc in cur.description], cur.fetchall())
+                
+                # Initialize counters
+                total_demands = len(activities)
+                total_cvs = 0
+                approved = 0
+                under_verification = 0
+                rejected = 0
+                
+                # Process each activity's cv_list JSON
+                for activity in activities:
+                    cv_list = []
+                    if activity.get('cv_list'):
+                        try:
+                            cv_list = json.loads(activity['cv_list']) if isinstance(activity['cv_list'], str) else activity['cv_list']
+                        except:
+                            cv_list = []
+                    
+                    # Count CVs by status from cv_list JSON
+                    for cv in cv_list:
+                        if isinstance(cv, dict) and 'status' in cv:
+                            total_cvs += 1
+                            status = cv.get('status')
+                            if status == 1:  # approved
+                                approved += 1
+                            elif status == 0:  # under verification
+                                under_verification += 1
+                            elif status == 2:  # rejected
+                                rejected += 1
+                
+                # Calculate approval rate
+                approval_rate = round((approved / total_cvs) * 100, 1) if total_cvs > 0 else 0
+                
+                return {
+                    "summary": {
+                        "total_demands": total_demands,
+                        "total_cvs": total_cvs,
+                        "approved": approved,
+                        "under_verification": under_verification,
+                        "rejected": rejected,
+                        "approval_rate": approval_rate
+                    },
+                    "activities": activities
+                }
+    except Exception as e:
+        print(f"Error getting recruiter dashboard: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch dashboard summary: {e}")
+
+
+@router.get("/{recruiter_id}/dashboard")
+def get_recruiter_dashboard(recruiter_id: int) -> Dict[str, Any]:
+    """Get comprehensive recruiter dashboard data with CV statistics and visualizations"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get all activities for the recruiter with status in ('open', 'processing', 'hold')
+                cur.execute("""
+                    SELECT 
+                        ra.*,
+                        COALESCE(c.client_name, '') AS client_name,
+                        ds.skill,
+                        ds.no_of_positions,
+                        ds.priority,
+                        ds.status as demand_status
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    LEFT JOIN tbl_clients c ON ds.client_id = c.id
+                    WHERE ra.recruiter_id = %s 
+                    AND ra.activity_status IN ('open', 'processing', 'hold')
+                    ORDER BY ra.updated_at DESC
+                """, (recruiter_id,))
+                
+                activities = _rows_to_dicts([desc[0] for desc in cur.description], cur.fetchall())
+                
+                # Initialize counters
+                total_demands = len(activities)
+                total_cvs = 0
+                approved = 0
+                under_verification = 0
+                rejected = 0
+                
+                # Process each activity's cv_list
+                processed_activities = []
+                for activity in activities:
+                    # Parse cv_list JSON
+                    cv_list = []
+                    if activity.get('cv_list'):
+                        try:
+                            cv_list = json.loads(activity['cv_list']) if isinstance(activity['cv_list'], str) else activity['cv_list']
+                        except:
+                            cv_list = []
+                    
+                    # Count CVs by status
+                    activity_cv_count = 0
+                    activity_approved = 0
+                    activity_under_verification = 0
+                    activity_rejected = 0
+                    
+                    for cv in cv_list:
+                        if isinstance(cv, dict) and 'status' in cv:
+                            total_cvs += 1
+                            activity_cv_count += 1
+                            
+                            status = cv.get('status')
+                            if status == 1:  # approved
+                                approved += 1
+                                activity_approved += 1
+                            elif status == 0:  # under verification
+                                under_verification += 1
+                                activity_under_verification += 1
+                            elif status == 2:  # rejected
+                                rejected += 1
+                                activity_rejected += 1
+                    
+                    # Add processed data to activity
+                    activity['cv_list'] = cv_list
+                    activity['cv_stats'] = {
+                        'total': activity_cv_count,
+                        'approved': activity_approved,
+                        'under_verification': activity_under_verification,
+                        'rejected': activity_rejected
+                    }
+                    
+                    # Calculate progress percentage
+                    required_count = activity.get('required_cv_count', 0)
+                    uploaded_count = activity.get('uploaded_cv_count', 0)
+                    progress_percentage = (uploaded_count / required_count * 100) if required_count > 0 else 0
+                    activity['progress_percentage'] = round(progress_percentage, 1)
+                    
+                    processed_activities.append(activity)
+                
+                # Create summary statistics
+                summary = {
+                    'total_demands': total_demands,
+                    'total_cvs': total_cvs,
+                    'approved': approved,
+                    'under_verification': under_verification,
+                    'rejected': rejected
+                }
+                
+                # Calculate approval rate
+                if total_cvs > 0:
+                    summary['approval_rate'] = round((approved / total_cvs) * 100, 1)
+                else:
+                    summary['approval_rate'] = 0
+                
+                # Get trend data (last 30 days)
+                cur.execute("""
+                    SELECT 
+                        DATE(ra.updated_at) as date,
+                        COUNT(*) as daily_uploads
+                    FROM tbl_recruiter_activity ra
+                    WHERE ra.recruiter_id = %s 
+                    AND ra.updated_at >= NOW() - INTERVAL '30 days'
+                    AND ra.uploaded_cv_count > 0
+                    GROUP BY DATE(ra.updated_at)
+                    ORDER BY date DESC
+                """, (recruiter_id,))
+                
+                trend_data = _rows_to_dicts([desc[0] for desc in cur.description], cur.fetchall())
+                
+                return {
+                    'summary': summary,
+                    'activities': processed_activities,
+                    'trend_data': trend_data
+                }
+                
+    except Exception as e:
+        print(f"Error getting recruiter dashboard: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to get dashboard data")
+
+
+@router.get("/{recruiter_id}/dashboard/demands")
+def get_dashboard_demands(recruiter_id: int) -> Dict[str, Any]:
+    """Get detailed demand data for dashboard"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        ds.id as demand_id,
+                        ds.skill as title,
+                        ds.job_description,
+                        COALESCE(ra.required_cv_count, 0) as required_cv_count,
+                        COALESCE(ra.uploaded_cv_count, 0) as uploaded_cv_count,
+                        ds.status,
+                        ds.assigned_to,
+                        ds.created_at as assigned_date,
+                        c.client_name,
+                        COUNT(CASE WHEN cv_data.status = 'approved' THEN 1 END) as approved_cv_count
+                    FROM tbl_demand_sheet ds
+                    LEFT JOIN tbl_clients c ON c.id = ds.client_id
+                    LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
+                    LEFT JOIN LATERAL (
+                        SELECT jsonb_array_elements(COALESCE(ra.cv_list, '[]'::jsonb)) as cv_data
+                    ) cv_data ON true
+                    WHERE ds.assigned_to::text LIKE %s
+                    GROUP BY ds.id, ds.skill, ds.job_description, ra.required_cv_count, 
+                             ra.uploaded_cv_count, ds.status, ds.assigned_to, ds.created_at, c.client_name
+                    ORDER BY ds.created_at DESC
+                """, (recruiter_id, f"%{recruiter_id}%"))
+                
+                demands = []
+                for row in cur.fetchall():
+                    demands.append({
+                        "demand_id": row[0],
+                        "title": row[1],
+                        "job_description": row[2],
+                        "required_cv_count": row[3],
+                        "uploaded_cv_count": row[4],
+                        "status": row[5],
+                        "assigned_date": row[7].isoformat() if row[7] else None,
+                        "client_name": row[8],
+                        "approved_cv_count": row[9] or 0
+                    })
+                
+                return {"demands": demands}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch dashboard demands: {e}")
+
+
+@router.get("/{recruiter_id}/dashboard/timeseries")
+def get_dashboard_timeseries(recruiter_id: int, days: int = 30) -> Dict[str, Any]:
+    """Get time series data for dashboard charts"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get daily activity data
+                cur.execute("""
+                    WITH date_series AS (
+                        SELECT generate_series(
+                            CURRENT_DATE - INTERVAL '%s days',
+                            CURRENT_DATE,
+                            INTERVAL '1 day'
+                        )::date as date
+                    ),
+                    daily_activity AS (
+                        SELECT 
+                            DATE(ra.created_at) as activity_date,
+                            COUNT(CASE WHEN ra.activity_status = 'processing' THEN 1 END) as uploads,
+                            COUNT(CASE WHEN cv_data.status = 'approved' THEN 1 END) as approvals,
+                            COUNT(CASE WHEN cv_data.status = 'rejected' THEN 1 END) as rejections
+                        FROM tbl_recruiter_activity ra
+                        LEFT JOIN LATERAL (
+                            SELECT jsonb_array_elements(COALESCE(ra.cv_list, '[]'::jsonb)) as cv_data
+                        ) cv_data ON true
+                        WHERE ra.recruiter_id = %s
+                        AND ra.created_at >= CURRENT_DATE - INTERVAL '%s days'
+                        GROUP BY DATE(ra.created_at)
+                    )
+                    SELECT 
+                        ds.date,
+                        COALESCE(da.uploads, 0) as uploads,
+                        COALESCE(da.approvals, 0) as approvals,
+                        COALESCE(da.rejections, 0) as rejections
+                    FROM date_series ds
+                    LEFT JOIN daily_activity da ON ds.date = da.activity_date
+                    ORDER BY ds.date
+                """, (days, recruiter_id, days))
+                
+                time_series = []
+                for row in cur.fetchall():
+                    time_series.append({
+                        "date": row[0].isoformat(),
+                        "uploads": row[1],
+                        "approvals": row[2],
+                        "rejections": row[3]
+                    })
+                
+                return {"timeSeries": time_series}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch time series data: {e}")
+
+
+@router.get("/{recruiter_id}/dashboard/test")
+def test_dashboard_connection(recruiter_id: int) -> Dict[str, Any]:
+    """Test endpoint to verify database connection and basic data"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Test basic connection
+                cur.execute("SELECT 1 as test")
+                test_result = cur.fetchone()
+                
+                # Check if tables exist
+                cur.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name IN ('tbl_demand_sheet', 'tbl_recruiter_activity', 'tbl_clients')
+                """)
+                tables = [row[0] for row in cur.fetchall()]
+                
+                # Check demand sheet data
+                cur.execute("SELECT COUNT(*) FROM tbl_demand_sheet")
+                demand_count = cur.fetchone()[0]
+                
+                # Check recruiter activity data
+                cur.execute("SELECT COUNT(*) FROM tbl_recruiter_activity WHERE recruiter_id = %s", (recruiter_id,))
+                activity_count = cur.fetchone()[0]
+                
+                return {
+                    "connection_test": test_result[0] if test_result else "failed",
+                    "tables_found": tables,
+                    "total_demands": demand_count,
+                    "recruiter_activities": activity_count,
+                    "recruiter_id": recruiter_id
+                }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "recruiter_id": recruiter_id
+        }
+
+@router.get("/{recruiter_id}/dashboard/enhanced")
+def get_enhanced_dashboard(recruiter_id: int, days: int = 30) -> Dict[str, Any]:
+    """Get enhanced recruiter dashboard data with CV JSON processing"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                print(f"Enhanced Dashboard API - Fetching data for recruiter_id: {recruiter_id}")
+                
+                # Get activities with cv_list processing - only open, processing, hold statuses
+                cur.execute("""
+                    SELECT 
+                        ra.id,
+                        ra.demand_id,
+                        ra.activity_status,
+                        ra.required_cv_count,
+                        ra.uploaded_cv_count,
+                        ra.cv_list,
+                        ra.opened_at,
+                        ra.updated_at,
+                        ds.client_name,
+                        ds.skill
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    WHERE ra.recruiter_id = %s 
+                    AND ra.activity_status IN ('open', 'processing', 'hold')
+                    ORDER BY ra.updated_at DESC
+                """, (recruiter_id,))
+                
+                activities = _rows_to_dicts([desc[0] for desc in cur.description], cur.fetchall())
+                print(f"Found {len(activities)} activities for recruiter {recruiter_id}")
+                
+                # Process CV data from cv_list JSON
+                total_demands = len(activities)
+                total_cvs = 0
+                approved = 0
+                under_verification = 0
+                rejected = 0
+                
+                processed_activities = []
+                
+                for activity in activities:
+                    cv_list = activity.get('cv_list', [])
+                    if isinstance(cv_list, str):
+                        try:
+                            cv_list = json.loads(cv_list)
+                        except:
+                            cv_list = []
+                    
+                    # Count CVs by status
+                    activity_approved = 0
+                    activity_under_verification = 0
+                    activity_rejected = 0
+                    
+                    for cv in cv_list:
+                        if isinstance(cv, dict):
+                            status = cv.get('status')
+                            if status is not None:
+                                total_cvs += 1
+                                if status == 1:
+                                    approved += 1
+                                    activity_approved += 1
+                                elif status == 0:
+                                    under_verification += 1
+                                    activity_under_verification += 1
+                                elif status == 2:
+                                    rejected += 1
+                                    activity_rejected += 1
+                    
+                    # Add processed data to activity
+                    activity['approved_cv_count'] = activity_approved
+                    activity['under_verification_cv_count'] = activity_under_verification
+                    activity['rejected_cv_count'] = activity_rejected
+                    activity['title'] = activity.get('job_title', f"Demand #{activity['demand_id']}")
+                    activity['status'] = activity['activity_status']
+                    activity['assigned_date'] = activity['opened_at']
+                    
+                    processed_activities.append(activity)
+                
+                # Get time series data for the specified period
+                cur.execute("""
+                    SELECT 
+                        DATE(ra.updated_at) as date,
+                        COUNT(*) as uploads,
+                        COALESCE(
+                            (SELECT COUNT(*) 
+                             FROM jsonb_array_elements(ra.cv_list) as cv 
+                             WHERE (cv->>'status')::int = 1), 0
+                        ) as approvals,
+                        COALESCE(
+                            (SELECT COUNT(*) 
+                             FROM jsonb_array_elements(ra.cv_list) as cv 
+                             WHERE (cv->>'status')::int = 2), 0
+                        ) as rejections
+                    FROM tbl_recruiter_activity ra
+                    WHERE ra.recruiter_id = %s
+                    AND ra.updated_at >= CURRENT_DATE - INTERVAL '%s days'
+                    GROUP BY DATE(ra.updated_at)
+                    ORDER BY date
+                """, (recruiter_id, days))
+                
+                time_series = _rows_to_dicts([desc[0] for desc in cur.description], cur.fetchall())
+                
+                return {
+                    "summary": {
+                        "total_demands": total_demands,
+                        "total_cvs": total_cvs,
+                        "approved": approved,
+                        "under_verification": under_verification,
+                        "rejected": rejected,
+                        "open_demands": len([a for a in processed_activities if a['activity_status'] == 'open']),
+                        "processing_demands": len([a for a in processed_activities if a['activity_status'] == 'processing']),
+                        "hold_demands": len([a for a in processed_activities if a['activity_status'] == 'hold'])
+                    },
+                    "activities": processed_activities,
+                    "time_series": time_series
+                }
+                
+    except Exception as e:
+        print(f"Error in get_enhanced_dashboard: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{recruiter_id}/dashboard/complete")
+def get_complete_dashboard(recruiter_id: int, days: int = 30) -> Dict[str, Any]:
+    """Get complete dashboard data in a single request"""
+    _ensure_tables()
+    
+    if not recruiter_id or recruiter_id == 0:
+        raise HTTPException(status_code=422, detail="Invalid recruiter ID provided")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                print(f"Dashboard API Debug - Fetching data for recruiter_id: {recruiter_id}")
+                
+                # Simplified demand counts query
+                try:
+                    cur.execute("""
+                        SELECT 
+                            COUNT(*) as total_demands,
+                            COUNT(CASE WHEN ds.status = 'open' THEN 1 END) as open_demands,
+                            COUNT(CASE WHEN ds.status = 'closed' THEN 1 END) as closed_demands
+                        FROM tbl_demand_sheet ds
+                        WHERE ds.assigned_to::text LIKE %s
+                    """, (f"%{recruiter_id}%",))
+                    
+                    demand_counts = cur.fetchone()
+                    print(f"Demand counts: {demand_counts}")
+                except Exception as e:
+                    print(f"Error in demand counts query: {e}")
+                    demand_counts = (0, 0, 0)
+                
+                # Simplified CV statistics query
+                try:
+                    cur.execute("""
+                        SELECT 
+                            COALESCE(SUM(ra.uploaded_cv_count), 0) as total_uploads,
+                            COALESCE(SUM(ra.required_cv_count), 0) as total_required,
+                            0 as total_approvals,
+                            0 as total_rejections
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.recruiter_id = %s
+                    """, (recruiter_id,))
+                    
+                    cv_stats = cur.fetchone()
+                    print(f"CV stats: {cv_stats}")
+                except Exception as e:
+                    print(f"Error in CV stats query: {e}")
+                    cv_stats = (0, 0, 0, 0)
+                
+                # Simplified demands query
+                try:
+                    cur.execute("""
+                        SELECT 
+                            ds.id as demand_id,
+                            ds.skill as title,
+                            ds.job_description,
+                            COALESCE(ra.required_cv_count, 0) as required_cv_count,
+                            COALESCE(ra.uploaded_cv_count, 0) as uploaded_cv_count,
+                            ds.status,
+                            ds.created_at as assigned_date,
+                            c.client_name,
+                            0 as approved_cv_count
+                        FROM tbl_demand_sheet ds
+                        LEFT JOIN tbl_clients c ON c.id = ds.client_id
+                        LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
+                        WHERE ds.assigned_to::text LIKE %s
+                        ORDER BY ds.created_at DESC
+                        LIMIT 50
+                    """, (recruiter_id, f"%{recruiter_id}%"))
+                    
+                    demands = []
+                    for row in cur.fetchall():
+                        demands.append({
+                            "demand_id": row[0],
+                            "title": row[1],
+                            "job_description": row[2],
+                            "required_cv_count": row[3],
+                            "uploaded_cv_count": row[4],
+                            "status": row[5],
+                            "assigned_date": row[6].isoformat() if row[6] else None,
+                            "client_name": row[7],
+                            "approved_cv_count": row[8]
+                        })
+                    print(f"Found {len(demands)} demands")
+                except Exception as e:
+                    print(f"Error in demands query: {e}")
+                    demands = []
+                
+                # Simplified time series - just return empty for now
+                time_series = []
+                for i in range(days):
+                    date = datetime.now().date() - timedelta(days=i)
+                    time_series.append({
+                        "date": date.isoformat(),
+                        "uploads": 0,
+                        "approvals": 0,
+                        "rejections": 0
+                    })
+                
+                result = {
+                    "summary": {
+                        "openDemands": demand_counts[1] or 0,
+                        "closedDemands": demand_counts[2] or 0,
+                        "totalDemands": demand_counts[0] or 0,
+                        "totalUploads": cv_stats[0] or 0,
+                        "totalApprovals": cv_stats[2] or 0,
+                        "totalRejections": cv_stats[3] or 0,
+                        "totalRequired": cv_stats[1] or 0
+                    },
+                    "demands": demands,
+                    "timeSeries": time_series
+                }
+                
+                print(f"Dashboard result: {result}")
+                return result
+                
+    except Exception as e:
+        print(f"Dashboard API Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch complete dashboard data: {e}")
+
+
 @router.post("/user/{user_id}/settings")
 def save_settings(user_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
     _ensure_tables()
@@ -1170,8 +1771,8 @@ def activity_update_cv(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at = NOW() WHERE id=%s",
                     (json.dumps(current), activity_id),
                 )
-                # Sync uploaded_cv_count across all recruiters for this demand
-                _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                # Note: CV count is now managed by update-cv-count-and-check endpoint
+                # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 # audit downloaded/uploaded
                 event_type = (payload.get("event_type") or "downloaded").strip()
                 if event_type == "uploaded":
@@ -1218,8 +1819,8 @@ def activity_update_cv_list(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
                     (json.dumps(cv_list), activity_id)
                 )
-                # Sync uploaded_cv_count across all recruiters for this demand
-                _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                # Note: CV count is now managed by update-cv-count-and-check endpoint
+                # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 conn.commit()
                 
         return {"message": "cv_list updated", "activity_id": int(activity_id), "cv_list": cv_list}
@@ -1335,8 +1936,8 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                     "UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
                     (json.dumps(current), activity_id)
                 )
-                # Sync uploaded_cv_count across all recruiters for this demand
-                _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                # Note: CV count is now managed by update-cv-count-and-check endpoint
+                # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 conn.commit()
         return {"message": "Resume details saved", "file_name": filename}
     except HTTPException:
@@ -1432,8 +2033,8 @@ def submit_selected_cvs(payload: Dict[str, Any]) -> Dict[str, Any]:
                 # Persist updated cv_list
                 cur.execute("UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
                             (json.dumps(current), activity_id))
-                # Sync uploaded_cv_count across all recruiters for this demand
-                _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                # Note: CV count is now managed by update-cv-count-and-check endpoint
+                # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 conn.commit()
 
                 return {"message": "Selections submitted", "activity_id": activity_id, "cv_list": current}
@@ -1538,8 +2139,8 @@ def upload_cv(
                         "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at = NOW() WHERE id=%s",
                         (json.dumps(current), activity_id),
                     )
-                    # Sync uploaded_cv_count across all recruiters for this demand
-                    _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                    # Note: CV count is now managed by update-cv-count-and-check endpoint
+                    # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 
                 conn.commit()
         
@@ -1782,8 +2383,8 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                             "UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
                             (json.dumps(current), activity_id),
                         )
-                        # Sync uploaded_cv_count across all recruiters for this demand
-                        _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                        # Note: CV count is now managed by update-cv-count-and-check endpoint
+                        # _sync_uploaded_cv_count_across_demand(demand_id, cur)
 
                 conn.commit()
         return {"success": True, "message": "Resume status updated"}
@@ -1887,8 +2488,8 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
                         "UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
                         (json.dumps(current), activity_id),
                     )
-                    # Sync uploaded_cv_count across all recruiters for this demand
-                    _sync_uploaded_cv_count_across_demand(demand_id, cur)
+                    # Note: CV count is now managed by update-cv-count-and-check endpoint
+                    # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 conn.commit()
         return {"message": "Candidate updated", "id": int(row[0])}
     except HTTPException:
@@ -2819,34 +3420,28 @@ def close_activity_complete(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to auto-close activity: {e}")
 
 
-@router.post("/update-cv-count-and-check")
-def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Update CV count for all recruiters with same demand_id and check for auto-close"""
+@router.post("/check-quota-before-submission")
+def check_quota_before_submission(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Check if quota is already met before allowing submission"""
     try:
-        demand_id = payload.get("demand_id")
-        recruiter_id = payload.get("recruiter_id")
-        increment = payload.get("increment", 1)  # 1 for submit, -1 for reject
+        demand_id = request.get("demand_id")
+        recruiter_id = request.get("recruiter_id")
         
         if not all([demand_id, recruiter_id]):
+            print(f"❌ Missing parameters: demand_id={demand_id}, recruiter_id={recruiter_id}")
             raise HTTPException(status_code=400, detail="Missing required parameters")
         
-        print(f"🔄 Updating CV count for demand_id={demand_id}, increment={increment}")
+        # Convert to int if needed
+        try:
+            demand_id = int(demand_id)
+            recruiter_id = int(recruiter_id)
+        except (ValueError, TypeError) as e:
+            print(f"❌ Error converting IDs to int: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid ID format: {e}")
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Update uploaded_cv_count for all recruiters with same demand_id
-                cur.execute(
-                    """
-                    UPDATE tbl_recruiter_activity 
-                    SET uploaded_cv_count = uploaded_cv_count + %s, updated_at = NOW()
-                    WHERE demand_id = %s
-                    """,
-                    (increment, demand_id)
-                )
-                
-                print(f"📊 Updated {cur.rowcount} recruiter activities")
-                
-                # Get the updated count and required count for the current recruiter
+                # Get current counts for the recruiter
                 cur.execute(
                     """
                     SELECT uploaded_cv_count, required_cv_count, activity_status
@@ -2862,7 +3457,298 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
                 
                 uploaded_count, required_count, current_status = result
                 
+                # Handle None values - convert to 0 if None
+                uploaded_count = uploaded_count if uploaded_count is not None else 0
+                required_count = required_count if required_count is not None else 0
+                
+                # Check if quota is already met
+                quota_met = uploaded_count >= required_count and required_count > 0
+                
+                # If quota is met, update activity_status to 'closed'
+                if quota_met and current_status != 'closed':
+                    try:
+                        cur.execute(
+                            """
+                            UPDATE tbl_recruiter_activity 
+                            SET activity_status = 'closed', updated_at = NOW()
+                            WHERE demand_id = %s AND recruiter_id = %s
+                            """,
+                            (demand_id, recruiter_id)
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        print(f"Warning: Failed to update activity_status: {e}")
+                
+                return {
+                    "success": True,
+                    "quota_met": quota_met,
+                    "uploaded_count": uploaded_count,
+                    "required_count": required_count,
+                    "can_submit": not quota_met,
+                    "message": "All required profiles have already been submitted for this demand." if quota_met else "Submission allowed"
+                }
+                
+    except Exception as e:
+        print(f"❌ Error checking quota: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check quota: {e}")
+
+
+@router.post("/check-quota-and-update-status")
+def check_quota_and_update_status(request: Dict[str, Any]) -> Dict[str, Any]:
+    """Enhanced quota check that immediately updates DB status to closed when quota is met"""
+    _ensure_tables()
+    try:
+        demand_id = request.get("demand_id")
+        recruiter_id = request.get("recruiter_id")
+        
+        if not all([demand_id, recruiter_id]):
+            print(f"❌ Missing parameters: demand_id={demand_id}, recruiter_id={recruiter_id}")
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+        
+        # Convert to int if needed
+        try:
+            demand_id = int(demand_id)
+            recruiter_id = int(recruiter_id)
+        except (ValueError, TypeError) as e:
+            print(f"❌ Error converting IDs to int: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid ID format: {e}")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get current counts for the recruiter
+                cur.execute(
+                    """
+                    SELECT uploaded_cv_count, required_cv_count, activity_status, activity_status
+                    FROM tbl_recruiter_activity 
+                    WHERE demand_id = %s AND recruiter_id = %s
+                    """,
+                    (demand_id, recruiter_id)
+                )
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                uploaded_count, required_count, current_status, activity_status = result
+                
+                # Handle None values - convert to 0 if None
+                uploaded_count = uploaded_count if uploaded_count is not None else 0
+                required_count = required_count if required_count is not None else 0
+                
+                # Check if quota is already met
+                quota_met = uploaded_count >= required_count and required_count > 0
+                
+                # If quota is met, immediately update activity_status to 'closed'
+                if quota_met and current_status != 'closed':
+                    try:
+                        cur.execute(
+                            """
+                            UPDATE tbl_recruiter_activity 
+                            SET activity_status = 'closed', 
+                                updated_at = NOW()
+                            WHERE demand_id = %s AND recruiter_id = %s
+                            """,
+                            (demand_id, recruiter_id)
+                        )
+                        conn.commit()
+                        print(f"✅ Updated activity status to closed for demand {demand_id}, recruiter {recruiter_id}")
+                    except Exception as e:
+                        print(f"Warning: Failed to update activity status: {e}")
+                
+                return {
+                    "success": True,
+                    "quota_met": quota_met,
+                    "uploaded_count": uploaded_count,
+                    "required_count": required_count,
+                    "activity_status": current_status,
+                    "activity_status": activity_status,
+                    "can_submit": not quota_met,
+                    "message": "All required profiles have already been submitted for this demand." if quota_met else "Submission allowed"
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error checking quota: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check quota: {e}")
+
+
+@router.post("/check-quota-before-submission-legacy")
+def check_quota_before_submission_legacy(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Legacy endpoint for quota checking with Dict format"""
+    try:
+        print(f"🔍 Legacy endpoint - Received payload: {payload}")
+        demand_id = payload.get("demand_id")
+        recruiter_id = payload.get("recruiter_id")
+        print(f"🔍 Legacy endpoint - Parsed values: demand_id={demand_id}, recruiter_id={recruiter_id}")
+        
+        if not all([demand_id, recruiter_id]):
+            print(f"❌ Legacy endpoint - Missing required parameters: demand_id={demand_id}, recruiter_id={recruiter_id}")
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get current counts for the recruiter
+                cur.execute(
+                    """
+                    SELECT uploaded_cv_count, required_cv_count, activity_status
+                    FROM tbl_recruiter_activity 
+                    WHERE demand_id = %s AND recruiter_id = %s
+                    """,
+                    (demand_id, recruiter_id)
+                )
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                uploaded_count, required_count, current_status = result
+                
+                # Handle None values - convert to 0 if None
+                uploaded_count = uploaded_count if uploaded_count is not None else 0
+                required_count = required_count if required_count is not None else 0
+                
+                # Check if quota is already met
+                quota_met = uploaded_count >= required_count and required_count > 0
+                
+                # If quota is met, update activity_status to 'closed'
+                if quota_met and current_status != 'closed':
+                    try:
+                        cur.execute(
+                            """
+                            UPDATE tbl_recruiter_activity 
+                            SET activity_status = 'closed', updated_at = NOW()
+                            WHERE demand_id = %s AND recruiter_id = %s
+                            """,
+                            (demand_id, recruiter_id)
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        print(f"Warning: Failed to update activity_status: {e}")
+                
+                return {
+                    "success": True,
+                    "quota_met": quota_met,
+                    "uploaded_count": uploaded_count,
+                    "required_count": required_count,
+                    "can_submit": not quota_met,
+                    "message": "All required profiles have already been submitted for this demand." if quota_met else "Submission allowed"
+                }
+                
+    except Exception as e:
+        print(f"❌ Error checking quota (legacy): {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check quota: {e}")
+
+
+@router.post("/update-cv-count-and-check")
+def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Update CV count for all recruiters with same demand_id and check for auto-close"""
+    try:
+        print(f"🔍 Received payload: {payload}")
+        demand_id = payload.get("demand_id")
+        recruiter_id = payload.get("recruiter_id")
+        increment = payload.get("increment", 1)  # 1 for submit, -1 for reject
+        
+        print(f"🔍 Parsed values: demand_id={demand_id}, recruiter_id={recruiter_id}, increment={increment}")
+        
+        if not all([demand_id, recruiter_id]):
+            print(f"❌ Missing required parameters: demand_id={demand_id}, recruiter_id={recruiter_id}")
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+        
+        print(f"🔄 Updating CV count for demand_id={demand_id}, increment={increment}")
+        print(f"🔍 Database DSN: {DATABASE_DSN}")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Ensure the uploaded_cv_count column exists and has proper default
+                try:
+                    # First, ensure the column exists
+                    cur.execute("""
+                        ALTER TABLE tbl_recruiter_activity 
+                        ADD COLUMN IF NOT EXISTS uploaded_cv_count INTEGER DEFAULT 0
+                    """)
+                    
+                    # Then set the default value
+                    cur.execute("""
+                        ALTER TABLE tbl_recruiter_activity 
+                        ALTER COLUMN uploaded_cv_count SET DEFAULT 0
+                    """)
+                    
+                    # Update any NULL values to 0
+                    cur.execute("""
+                        UPDATE tbl_recruiter_activity 
+                        SET uploaded_cv_count = 0 
+                        WHERE uploaded_cv_count IS NULL
+                    """)
+                    
+                    print("✅ Ensured uploaded_cv_count column exists with default value 0")
+                except Exception as e:
+                    print(f"⚠️ Column setup warning: {e}")
+                
+                # Update uploaded_cv_count for all recruiters with same demand_id
+                try:
+                    # First, get current count to handle None values
+                    cur.execute(
+                        """
+                        SELECT uploaded_cv_count FROM tbl_recruiter_activity 
+                        WHERE demand_id = %s LIMIT 1
+                        """,
+                        (demand_id,)
+                    )
+                    current_result = cur.fetchone()
+                    current_count = current_result[0] if current_result else 0
+                    
+                    # Handle None values
+                    if current_count is None:
+                        current_count = 0
+                    
+                    new_count = current_count + increment
+                    print(f"🔍 Current count: {current_count}, Increment: {increment}, New count: {new_count}")
+                    
+                    # Update with the calculated new count
+                    cur.execute(
+                        """
+                        UPDATE tbl_recruiter_activity 
+                        SET uploaded_cv_count = %s, updated_at = NOW()
+                        WHERE demand_id = %s
+                        """,
+                        (new_count, demand_id)
+                    )
+                    
+                    print(f"📊 Updated {cur.rowcount} recruiter activities with new count: {new_count}")
+                except Exception as e:
+                    print(f"❌ Error updating recruiter activities: {e}")
+                    raise HTTPException(status_code=500, detail=f"Database error: {e}")
+                
+                # Get the updated count and required count for the current recruiter
+                try:
+                    cur.execute(
+                        """
+                        SELECT uploaded_cv_count, required_cv_count, activity_status
+                        FROM tbl_recruiter_activity 
+                        WHERE demand_id = %s AND recruiter_id = %s
+                        """,
+                        (demand_id, recruiter_id)
+                    )
+                    
+                    result = cur.fetchone()
+                    if not result:
+                        print(f"❌ Activity not found for demand_id={demand_id}, recruiter_id={recruiter_id}")
+                        raise HTTPException(status_code=404, detail="Activity not found")
+                    
+                    print(f"🔍 Raw database result: {result}")
+                except Exception as e:
+                    print(f"❌ Error fetching activity data: {e}")
+                    raise HTTPException(status_code=500, detail=f"Database error: {e}")
+                
+                uploaded_count, required_count, current_status = result
+                
+                # Handle None values - convert to 0 if None
+                uploaded_count = uploaded_count if uploaded_count is not None else 0
+                required_count = required_count if required_count is not None else 0
+                
                 print(f"📊 Current counts: uploaded={uploaded_count}, required={required_count}, status={current_status}")
+                print(f"🔍 Count types: uploaded={type(uploaded_count)}, required={type(required_count)}")
                 
                 # Check if we need to close or reopen based on increment
                 should_close = increment > 0 and uploaded_count >= required_count and required_count > 0
@@ -2921,7 +3807,7 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
                     cur.execute(
                         """
                         UPDATE tbl_recruiter_activity 
-                        SET activity_status = 'hold', updated_at = NOW()
+                        SET activity_status = 'processing', updated_at = NOW()
                         WHERE demand_id = %s
                         """,
                         (demand_id,)
@@ -2930,7 +3816,7 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
                     cur.execute(
                         """
                         UPDATE tbl_demand_sheet 
-                        SET status = 'open', updated_at = NOW()
+                        SET status = 'processing', updated_at = NOW()
                         WHERE id = %s
                         """,
                         (demand_id,)
@@ -2944,7 +3830,7 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
                             VALUES ('auto_reopen', %s, %s, %s::jsonb)
                             """,
                             (recruiter_id, demand_id, json.dumps({
-                                "reason": "cv_count_decreased",
+                                "reason": "cv_rejected",
                                 "uploaded_count": uploaded_count,
                                 "required_count": required_count
                             }))
@@ -2978,5 +3864,92 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error updating CV count: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update CV count: {e}")
+
+
+@router.get("/activity/{recruiter_id}/{demand_id}")
+def get_activity_status(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
+    """Get activity status and CV counts for auto-close logic"""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        activity_status,
+                        required_cv_count,
+                        uploaded_cv_count,
+                        cv_list
+                    FROM tbl_recruiter_activity 
+                    WHERE recruiter_id = %s AND demand_id = %s 
+                    ORDER BY id DESC LIMIT 1
+                """, (recruiter_id, demand_id))
+                
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                activity_status, required_cv_count, uploaded_cv_count, cv_list = row
+                
+                # Count actual CVs in cv_list if it exists
+                actual_cv_count = 0
+                if cv_list:
+                    try:
+                        if isinstance(cv_list, list):
+                            actual_cv_count = len(cv_list)
+                        else:
+                            import json
+                            cv_data = json.loads(cv_list) if isinstance(cv_list, str) else cv_list
+                            actual_cv_count = len(cv_data) if isinstance(cv_data, list) else 0
+                    except Exception:
+                        actual_cv_count = 0
+                
+                return {
+                    "activity_status": activity_status,
+                    "required_cv_count": required_cv_count or 0,
+                    "uploaded_cv_count": actual_cv_count,
+                    "can_auto_close": (required_cv_count or 0) == actual_cv_count
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting activity status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get activity status: {e}")
+
+
+@router.post("/close-activity")
+def close_activity(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Auto-close activity when required CV count is met"""
+    try:
+        recruiter_id = payload.get("recruiter_id")
+        demand_id = payload.get("demand_id")
+        
+        if not recruiter_id or not demand_id:
+            raise HTTPException(status_code=400, detail="recruiter_id and demand_id are required")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Update activity status to closed
+                cur.execute("""
+                    UPDATE tbl_recruiter_activity 
+                    SET activity_status = 'closed', updated_at = NOW()
+                    WHERE recruiter_id = %s AND demand_id = %s
+                """, (recruiter_id, demand_id))
+                
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                conn.commit()
+                
+                return {
+                    "success": True,
+                    "message": "Activity closed successfully",
+                    "activity_status": "closed"
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error closing activity: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to close activity: {e}")
 
 

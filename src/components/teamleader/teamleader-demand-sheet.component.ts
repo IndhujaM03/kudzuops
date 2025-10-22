@@ -1,6 +1,7 @@
 import { Component, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TeamLeaderService } from '../../services/teamleader.service';
+import { ToastService } from '../../services/toast.service';
 
 interface DemandItem {
   id: number;
@@ -116,12 +117,11 @@ interface DemandItem {
                         <span *ngIf="!cv.cv_url" class="no-link">No link</span>
                       </td>
                       <td class="view-profile">
-                        <button (click)="viewProfile(cv, cvData)" class="btn-view-profile" title="View Full Profile">
+                        <button (click)="openCvReviewModal(cv, cvData)" class="btn-view-profile" title="View CV Details">
                           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                           </svg>
-                          View Profile
                         </button>
                       </td>
                       <td class="status">
@@ -230,9 +230,124 @@ interface DemandItem {
         </ng-template>
       </div>
     </div>
+
+    <!-- CV Review Modal -->
+    <div class="modal-overlay" *ngIf="showCvModal" (click)="closeCvModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3 class="modal-title">CV Review - {{ selectedCv?.candidate_name || 'Unknown Candidate' }}</h3>
+          <button class="modal-close" (click)="closeCvModal()">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="modal-body" *ngIf="selectedCv && selectedCvData">
+          <div class="cv-details">
+            <div class="detail-section">
+              <h4>Candidate Information</h4>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <label>Name:</label>
+                  <span>{{ selectedCv.candidate_name || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Email:</label>
+                  <span>{{ selectedCv.candidate_email || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Phone:</label>
+                  <span>{{ selectedCv.candidate_phone || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Experience:</label>
+                  <span>{{ selectedCv.experience_years || 'N/A' }} years</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-section" *ngIf="selectedCv.skills && selectedCv.skills.length > 0">
+              <h4>Skills</h4>
+              <div class="skills-container">
+                <span class="skill-tag" *ngFor="let skill of selectedCv.skills">{{ skill }}</span>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h4>CV Document</h4>
+              <div class="cv-document">
+                <a [href]="selectedCv.cv_url" target="_blank" class="cv-link" *ngIf="selectedCv.cv_url">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                  </svg>
+                  View CV Document
+                </a>
+                <span *ngIf="!selectedCv.cv_url" class="no-cv">CV not available</span>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h4>Demand Information</h4>
+              <div class="detail-grid">
+                <div class="detail-item">
+                  <label>Demand ID:</label>
+                  <span>{{ selectedCvData.demand_id || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Recruiter:</label>
+                  <span>{{ selectedCvData.recruiter_name || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Client:</label>
+                  <span>{{ selectedCvData.client_name || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Skill:</label>
+                  <span>{{ selectedCvData.skill || 'N/A' }}</span>
+                </div>
+                <div class="detail-item">
+                  <label>Upload Date:</label>
+                  <span>{{ formatDate(selectedCv.upload_date) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-section" *ngIf="selectedCv.remark">
+              <h4>Recruiter Remarks</h4>
+              <div class="remark-text">{{ selectedCv.remark }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="action-buttons">
+            <button (click)="acceptCvFromModal()" class="btn-accept" title="Accept CV">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              Accept
+            </button>
+            <button (click)="rejectCvFromModal()" class="btn-reject" title="Reject CV">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+              Reject
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   `,
   styles: [`
-    .tl-demand-wrapper { background:#fff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.06); padding:16px; }
+    .tl-demand-wrapper { 
+      background:#fff; 
+      border:1px solid #e5e7eb; 
+      border-radius:12px; 
+      box-shadow:0 10px 30px rgba(24, 45, 23, 0.06); 
+      padding:16px; 
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+    }
     .tl-page-title { margin:0 0 12px; font-size:18px; font-weight:700; color:#111827; }
     .tl-tabs { display:flex; gap:8px; border-bottom:1px solid #e5e7eb; margin-bottom:8px; }
     .tl-tab { background:transparent; border:none; padding:10px 12px; cursor:pointer; color:#374151; border-bottom:2px solid transparent; }
@@ -250,8 +365,38 @@ interface DemandItem {
     .recruiter-names { margin-left:4px; }
     .tl-empty { padding:16px; color:#6b7280; font-size:14px; }
     .tl-refresh-section { margin-bottom:12px; }
-    .tl-refresh-btn { background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:14px; }
-    .tl-refresh-btn:hover { background:#2563eb; }
+    .tl-refresh-btn { 
+      background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); 
+      color:white; 
+      border:none; 
+      padding:8px 16px; 
+      border-radius:8px; 
+      cursor:pointer; 
+      font-size:14px; 
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .tl-refresh-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+    .tl-refresh-btn:hover { 
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px rgba(24, 45, 23, 0.1);
+    }
+    .tl-refresh-btn:hover::before {
+      left: 100%;
+    }
     
     /* CV Table Styles */
     .cv-table-container { overflow-x: auto; margin-top: 16px; }
@@ -289,10 +434,52 @@ interface DemandItem {
     .progress-bar { width: 100%; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #10b981, #059669); border-radius: 4px; transition: width 0.3s ease; }
     .progress-fill[style*="100%"] { background: linear-gradient(90deg, #059669, #047857); }
+    
+    /* Modal Styles */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-content { background: white; border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); max-width: 600px; width: 90%; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+    .modal-header { padding: 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
+    .modal-title { margin: 0; font-size: 18px; font-weight: 600; color: #111827; }
+    .modal-close { background: none; border: none; cursor: pointer; padding: 4px; color: #6b7280; }
+    .modal-close:hover { color: #374151; }
+    .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .modal-footer { padding: 20px; border-top: 1px solid #e5e7eb; background: #f9fafb; }
+    
+    /* CV Details Styles */
+    .cv-details { display: flex; flex-direction: column; gap: 20px; }
+    .detail-section { }
+    .detail-section h4 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: #111827; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .detail-item { display: flex; flex-direction: column; gap: 4px; }
+    .detail-item label { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-item span { font-size: 14px; color: #111827; }
+    .skills-container { display: flex; flex-wrap: wrap; gap: 8px; }
+    .skill-tag { background: #e0f2fe; color: #0277bd; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+    .cv-document { }
+    .cv-link { display: inline-flex; align-items: center; gap: 8px; color: #3b82f6; text-decoration: none; padding: 8px 12px; border-radius: 6px; background: #eff6ff; transition: all 0.2s; }
+    .cv-link:hover { background: #dbeafe; color: #1d4ed8; }
+    .no-cv { color: #9ca3af; font-style: italic; }
+    .remark-text { background: #f3f4f6; padding: 12px; border-radius: 6px; font-size: 14px; color: #374151; line-height: 1.5; }
+    
+    /* Modal Action Buttons */
+    .modal-footer .action-buttons { display: flex; gap: 12px; justify-content: flex-end; }
+    .btn-accept, .btn-reject { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
+    .btn-accept { background: #dcfce7; color: #166534; }
+    .btn-accept:hover { background: #bbf7d0; color: #14532d; }
+    .btn-reject { background: #fee2e2; color: #dc2626; }
+    .btn-reject:hover { background: #fecaca; color: #b91c1c; }
   `]
 })
 export class TeamLeaderDemandSheetComponent {
   private teamLeaderService = inject(TeamLeaderService);
+  private toastService = inject(ToastService);
+  
+  // Modal state
+  showCvModal = signal(false);
+  selectedCv: any = null;
+  selectedCvData: any = null;
+  selectedActivityId: number | null = null;
+  selectedCvIndex: number | null = null;
   
   activeTab = signal<'unassigned' | 'assigned' | 'cv-received' | 'submitted'>('unassigned');
 
@@ -541,7 +728,7 @@ export class TeamLeaderDemandSheetComponent {
     try {
       this.teamLeaderService.approveCv(activityId, cvIndex).subscribe({
         next: (response) => {
-          alert('✅ CV accepted successfully! It has been moved to the Submitted tab.');
+          this.toastService.success('✅ CV accepted successfully! It has been moved to the Submitted tab.');
           this.loadCvReceived(); // Refresh the data
         },
         error: (error) => {
@@ -595,5 +782,58 @@ export class TeamLeaderDemandSheetComponent {
       console.error('Failed to reject CV:', error);
       alert('❌ Failed to reject CV. Please try again.');
     }
+  }
+
+  // Modal methods
+  openCvReviewModal(cv: any, cvData: any) {
+    this.selectedCv = cv;
+    this.selectedCvData = cvData;
+    this.selectedActivityId = cvData.id;
+    this.selectedCvIndex = this.getCvIndex(cv, cvData);
+    this.showCvModal.set(true);
+  }
+
+  closeCvModal() {
+    this.showCvModal.set(false);
+    this.selectedCv = null;
+    this.selectedCvData = null;
+    this.selectedActivityId = null;
+    this.selectedCvIndex = null;
+  }
+
+  getCvIndex(cv: any, cvData: any): number {
+    if (!cvData.cv_list) return 0;
+    return cvData.cv_list.findIndex((item: any) => 
+      item.candidate_id === cv.candidate_id || 
+      item.candidate_name === cv.candidate_name
+    );
+  }
+
+  acceptCvFromModal() {
+    if (!this.selectedActivityId || this.selectedCvIndex === null) {
+      alert('❌ Missing activity or CV information');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to ACCEPT this CV? It will move to the Submitted tab.')) {
+      return;
+    }
+
+    this.approveCv(this.selectedActivityId, this.selectedCvIndex);
+    this.closeCvModal();
+  }
+
+  rejectCvFromModal() {
+    if (!this.selectedActivityId || this.selectedCvIndex === null) {
+      alert('❌ Missing activity or CV information');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to REJECT this CV? This will decrease the uploaded CV count and allow the recruiter to upload a new CV.')) {
+      return;
+    }
+
+    this.rejectCv(this.selectedActivityId, this.selectedCvIndex);
+    this.closeCvModal();
   }
 }
