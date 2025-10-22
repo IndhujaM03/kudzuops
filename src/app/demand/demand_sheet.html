@@ -1,17 +1,31 @@
 <div class="min-h-screen bg-gray-50 py-2 demand-sheet-page">
   <div class="max-w-6xl mx-auto px-4">
-    <div class="flex justify-between items-center mb-6">
-      <h2 class="text-2xl font-bold text-gray-900">Demand Sheet</h2>
-      <button (click)="submit()" [disabled]="submitting() || !isValid()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">
-        ✏️ Create Demand
-      </button>
+    <div class="flex items-center justify-between mb-6">
+      <button *ngIf="!showForm" (click)="openCreateModal()" class="glassy-cta px-4 py-2 rounded-lg">Create Demand</button>
+      <div class="chrome-tabs">
+        <button class="chrome-tab" [class.active]="activeTab==='unassigned'" (click)="setTab('unassigned')">Unassigned</button>
+        <button class="chrome-tab" [class.active]="activeTab==='assigned'" (click)="setTab('assigned')">Assigned</button>
+        <button class="chrome-tab" [class.active]="activeTab==='cv_received'" (click)="setTab('cv_received')">
+          CV Received
+          <span *ngIf="cvReceivedCount() > 0" class="tab-badge">{{ cvReceivedCount() }}</span>
+        </button>
+        <button class="chrome-tab" [class.active]="activeTab==='submitted'" (click)="setTab('submitted')">Submitted</button>
+      </div>
     </div>
 
     <div *ngIf="errorMsg()" class="mb-4 p-3 rounded border border-red-200 bg-red-50 text-red-700">{{ errorMsg() }}</div>
     <div *ngIf="successMsg()" class="mb-4 p-3 rounded border border-green-200 bg-green-50 text-green-700">{{ successMsg() }}</div>
 
-    <div class="demand-card p-6">
-      <form (ngSubmit)="submit()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Create Demand Modal -->
+    <div *ngIf="showForm" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title">Create Demand</div>
+          <button class="modal-close" (click)="closeCreateModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="demand-card p-6">
+          <form (ngSubmit)="submit()" class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Client -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Client <span class="text-red-600">*</span></label>
@@ -32,18 +46,17 @@
           </select>
         </div>
 
-        <!-- Skills -->
-        <div class="md:col-span-2">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Skills</label>
-          <textarea [(ngModel)]="form().skills" name="skills" rows="2"
-                    placeholder="e.g., Java, Spring Boot, Microservices"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"></textarea>
-        </div>
-
         <!-- No. of Positions -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">No. of Positions</label>
           <input [(ngModel)]="form().no_of_positions" name="no_of_positions" type="number" min="0"
+                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500" />
+        </div>
+
+        <!-- Required Profile -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Required No.of Profile <span class="text-red-600">*</span></label>
+          <input [(ngModel)]="form().required_cv_count" name="required_cv_count" type="number" min="1" required
                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500" />
         </div>
 
@@ -56,6 +69,72 @@
             <option value="Medium">Medium</option>
             <option value="High">High</option>
           </select>
+        </div>
+
+        <!-- Assigned To -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Assigned To (Optional)</label>
+          <!-- Unified Dropdown with Search and Multiselect (no outer card) -->
+          <div class="unified-dropdown minimal">
+            <!-- Search Bar with inline dropdown icon on right -->
+            <div class="search-section">
+              <input type="text"
+                     [(ngModel)]="assignedToSearchTerm"
+                     name="assignedToSearch"
+                     (input)="filterAssignedToRecruiters()"
+                     (focus)="showAssignedToDropdown=true"
+                     placeholder="Search recruiters..."
+                     class="search-input" style="padding-right: 40px;" />
+              <button type="button"
+                      (click)="toggleAssignedToDropdown()"
+                      aria-label="Toggle dropdown"
+                      style="position:absolute; right:12px; top:50%; transform: translateY(-50%); background: transparent; border: 0; padding: 0; cursor: pointer; z-index: 2;">
+                <svg class="dropdown-arrow-icon" [class.rotated]="showAssignedToDropdown" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width:16px;height:16px;">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Selected Items Display -->
+            <div class="selected-section" *ngIf="selectedAssignedToIds.size > 0">
+              <div class="selected-items">
+                <div class="selected-item" *ngFor="let recruiterId of getSelectedAssignedToNames(); let first = first">
+                  <span *ngIf="first">{{ getRecruiterDisplayName(getAssignedToRecruiterById(recruiterId)) }}</span>
+                  <span *ngIf="!first && selectedAssignedToIds.size > 1" class="more-items">
+                    & {{ selectedAssignedToIds.size - 1 }} MORE
+                  </span>
+                  <button type="button" (click)="removeAssignedToRecruiter(recruiterId)">✕</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dropdown List -->
+            <div class="dropdown-list" [class.show]="showAssignedToDropdown" *ngIf="showAssignedToDropdown">
+              <div *ngIf="filteredAssignedToRecruiters.length===0" class="empty-state">
+                <span>No recruiters found</span>
+              </div>
+              <label class="dropdown-item" *ngFor="let r of filteredAssignedToRecruiters">
+                <input type="checkbox"
+                       [checked]="selectedAssignedToIds.has(r.id)"
+                       (change)="toggleAssignedToRecruiter(r.id, $event)"
+                       class="item-checkbox" />
+                <span class="item-name">{{ getRecruiterDisplayName(r) }}</span>
+                <div class="item-status" [class.selected]="selectedAssignedToIds.has(r.id)">
+                  <svg *ngIf="selectedAssignedToIds.has(r.id)" class="check-icon" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Skills -->
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Skills</label>
+          <textarea [(ngModel)]="form().skills" name="skills" rows="2"
+                    placeholder="e.g., Java, Spring Boot, Microservices"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"></textarea>
         </div>
 
         <!-- Job Description  -->
@@ -72,30 +151,555 @@
                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"></textarea>
         </div>
 
-        <!-- Status (readonly default) -->
+        <!-- Status -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
           <input [value]="form().status" disabled class="mt-1 block w-full bg-gray-100 rounded-md border-gray-300" />
         </div>
 
-        <!-- Actions -->
-        <div class="md:col-span-2 flex items-center gap-3 pt-2">
-          <button type="submit" [disabled]="submitting() || !isValid()"
-                  class="inline-flex items-center px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
-            <svg *ngIf="submitting()" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-            </svg>
-            Submit
-          </button>
-          <button type="button" (click)="resetForm()"
-                  class="px-4 py-2 rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50">
-            Reset
-          </button>
+            <!-- Actions -->
+            <div class="md:col-span-2 flex items-center gap-3 pt-2">
+              <button type="submit" [disabled]="submitting() || !isValid()"
+                      class="inline-flex items-center px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50">
+                <svg *ngIf="submitting()" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                Submit
+              </button>
+              <button type="button" (click)="resetForm()"
+                      class="px-4 py-2 rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-50">
+                Reset
+              </button>
+            </div>
+          </form>
+          </div>
         </div>
-      </form>
+      </div>
+    </div>
+
+    <!-- Content sections -->
+    <div class="mt-6">
+
+
+      <div class="mt-4 demand-card p-4 unassigned-panel" *ngIf="activeTab==='unassigned'">
+        <div class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>S.No</th>
+                <th>Client</th>
+                <th>SPOC</th>
+                <th>Skills</th>
+                <th>No. of Positions</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>JD</th>
+                <th>Remarks</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngIf="unassigned().length===0">
+                <td colspan="10" class="text-gray-600">No unassigned demands</td>
+              </tr>
+              <tr *ngFor="let d of unassigned(); let i = index">
+                <td>{{ i + 1 }}</td>
+                <td>{{ d.client_name || d.client_id }}</td>
+                <td>{{ d.spoc_name || d.spoc_id }}</td>
+                <td>{{ d.skills || d.skill }}</td>
+                <td>{{ d.no_of_positions || d.positions || '-' }}</td>
+                <td>{{ d.priority || '-' }}</td>
+                <td>{{ d.status || 'Open' }}</td>
+                <td>
+                  <button *ngIf="d.job_description_url" 
+                          class="jd-view-btn" 
+                          (click)="viewJD(d.job_description_url)"
+                          title="View Job Description">
+                    <svg class="info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                  <span *ngIf="!d.job_description_url">-</span>
+                </td>
+                <td>{{ d.remarks || '-' }}</td>
+                <td class="action-cell">
+                  <button class="icon-btn" (click)="openAssignModal(d)"> ⋮ </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="mt-4 demand-card p-4" *ngIf="activeTab==='assigned'">
+        <!-- Clean Search Bar -->
+        <div class="search-container">
+          <div class="search-wrapper">
+            <div class="search-input-container">
+              <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input 
+                type="text" 
+                [(ngModel)]="assignedSearchTerm" 
+                (input)="onAssignedSearchChange($event)"
+                placeholder="Search assigned demands..."
+                class="search-input"
+              />
+              <button 
+                *ngIf="assignedSearchTerm()" 
+                (click)="clearAssignedSearch()" 
+                class="clear-btn"
+                title="Clear search"
+              >
+                <svg class="clear-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div class="search-info" *ngIf="assigned().length > 0">
+              <span class="results-text">{{ filteredAssigned().length }} of {{ assigned().length }} results</span>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="assigned().length===0" class="text-gray-600">No assigned demands</div>
+        <div *ngIf="assigned().length>0 && filteredAssigned().length===0" class="search-no-results">
+          <div class="no-results-icon">🔍</div>
+          <div class="no-results-title">No results found</div>
+          <div class="no-results-message">Try adjusting your search terms or clear the search to see all demands.</div>
+        </div>
+        <div *ngIf="assigned().length>0 && filteredAssigned().length>0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>S.No</th>
+                <th>Client</th>
+                <th>SPOC</th>
+                <th>Skills</th>
+                <th>No. of Positions</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>JD</th>
+                <th>Remarks</th>
+                <th>Assigned To</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let d of filteredAssigned(); let i = index">
+                <td>{{ i + 1 }}</td>
+                <td>{{ d.client_name || d.client_id }}</td>
+                <td>{{ d.spoc_name || d.spoc_id }}</td>
+                <td>{{ d.skills || d.skill }}</td>
+                <td>{{ d.no_of_positions || d.positions || '-' }}</td>
+                <td>{{ d.priority || '-' }}</td>
+                <td>{{ d.status || 'Assigned' }}</td>
+                <td>
+                  <button *ngIf="d.job_description_url" 
+                          class="jd-view-btn" 
+                          (click)="viewJD(d.job_description_url)"
+                          title="View Job Description">
+                    <svg class="info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                  <span *ngIf="!d.job_description_url">-</span>
+                </td>
+                <td>{{ d.remarks || '-' }}</td>
+                <td class="assigned-to-cell">
+                  <div class="assigned-to-names">
+                    <span *ngFor="let name of d.assigned_recruiter_names; let last = last" class="recruiter-name-tag">
+                      {{ name || 'Unknown' }}<span *ngIf="!last">, </span>
+                    </span>
+                    <span *ngIf="!d.assigned_recruiter_names || d.assigned_recruiter_names.length === 0">-</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div *ngIf="activeTab==='cv_received'">
+        <div *ngIf="cvReceived().length===0" class="text-gray-600">No CVs received yet</div>
+        <div *ngIf="cvReceived().length>0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>S.No</th>
+                <th>Demand ID</th>
+                <th>CV Count</th>
+                <th>Client</th>
+                <th>SPOC</th>
+                <th>Skills</th>
+                <th>Recruiter</th>
+                <th>Candidate Name</th>
+                <th>View Profile</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let cv of cvReceived(); let i = index">
+                <td>{{ i + 1 }}</td>
+                <td>{{ cv.demand_id || '-' }}</td>
+                <td>
+                  <span class="cv-count-badge">{{ cv.uploaded_cv_count || 0 }}/{{ cv.required_cv_count || 0 }}</span>
+                </td>
+                <td>{{ cv.client_name || '-' }}</td>
+                <td>{{ cv.spoc_name || '-' }}</td>
+                <td>{{ cv.skill || '-' }}</td>
+                <td>{{ cv.recruiter_name || cv.recruiter_email || '-' }}</td>
+                <td>{{ cv.candidate_name || '-' }}</td>
+                <td>
+                  <button class="view-profile-btn" (click)="viewProfiles(cv)">View Details</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div *ngIf="activeTab==='submitted'">
+        <div *ngIf="submitted().length===0" class="text-gray-600">No demands submitted by Team Leader yet</div>
+        <div *ngIf="submitted().length>0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>S.No</th>
+                <th>Demand ID</th>
+                <th>CV Count</th>
+                <th>Client</th>
+                <th>SPOC</th>
+                <th>Skills</th>
+                <th>Recruiter</th>
+                <th>Candidate Name</th>
+                <th>View Profile</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let cv of submitted(); let i = index">
+                <td>{{ i + 1 }}</td>
+                <td>{{ cv.demand_id || '-' }}</td>
+                <td>
+                  <span class="cv-count-badge">{{ cv.uploaded_cv_count || 0 }}/{{ cv.required_cv_count || 0 }}</span>
+                </td>
+                <td>{{ cv.client_name || '-' }}</td>
+                <td>{{ cv.spoc_name || '-' }}</td>
+                <td>{{ cv.skill || '-' }}</td>
+                <td>{{ cv.recruiter_name || cv.recruiter_email || '-' }}</td>
+                <td>{{ cv.candidate_name || '-' }}</td>
+                <td>
+                  <button class="view-profile-btn" (click)="viewProfiles(cv)">View Details</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
+<!-- Assign Modal -->
+<div *ngIf="showAssign" class="modal-overlay">
+  <div class="modal-card assign-modal-card assign-demand-modal">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg class="modal-title-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+        </svg>
+        Assign Demand
+      </div>
+      <button class="modal-close" (click)="closeAssignModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Demand Info -->
+      <div class="demand-info-card">
+        <div class="demand-info-title">Demand Details</div>
+        <div class="demand-info-grid demand-info-grid-aligned">
+          <div class="demand-info-item">
+            <span class="demand-info-label">Client:</span>
+            <span class="demand-info-value">{{ assignTarget?.client_name || 'N/A' }}</span>
+          </div>
+          <div class="demand-info-item">
+            <span class="demand-info-label">SPOC Name:</span>
+            <span class="demand-info-value">{{ assignTarget?.spoc_name || 'N/A' }}</span>
+          </div>
+          <div class="demand-info-item">
+            <span class="demand-info-label">No. of Positions:</span>
+            <span class="demand-info-value">{{ assignTarget?.no_of_positions || 'N/A' }}</span>
+          </div>
+        </div>
+        <div class="demand-info-item demand-info-item-full">
+          <span class="demand-info-label">Skills:</span>
+          <span class="demand-info-value">{{ assignTarget?.skills || assignTarget?.skill || 'N/A' }}</span>
+        </div>
+      </div>
+
+      <!-- Assignment Form -->
+      <div class="assignment-form">
+        <!-- Recruiters and Team Leader Section (Aligned in same row) -->
+        <div class="form-row form-row-aligned">
+          <!-- Recruiters Section -->
+          <div class="form-group form-group-half">
+            <div class="dropdown-card">
+              <label class="form-label">
+                <svg class="form-label-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Recruiters
+              </label>
+              
+              <!-- Unified Dropdown with Search and Multiselect -->
+              <div class="unified-dropdown">
+                <!-- Search Bar -->
+                <div class="search-section">
+                  <input type="text" 
+                         [(ngModel)]="recruiterSearchTerm" 
+                         (input)="filterRecruiters()"
+                         placeholder="Search recruiters..."
+                         class="search-input" />
+                </div>
+                
+                <!-- Selected Items Display -->
+                <div class="selected-section" *ngIf="selectedRecruiterIds.size > 0">
+                  <div class="selected-items">
+                    <div class="selected-item" *ngFor="let recruiterId of getSelectedRecruiterNames(); let first = first">
+                      <span *ngIf="first">{{ getRecruiterDisplayName(getRecruiterById(recruiterId)) }}</span>
+                      <span *ngIf="!first && selectedRecruiterIds.size > 1" class="more-items">
+                        & {{ selectedRecruiterIds.size - 1 }} MORE
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Dropdown List -->
+                <div class="dropdown-list" [class.show]="showRecruiterDropdown" *ngIf="showRecruiterDropdown">
+                  <div *ngIf="filteredRecruiters.length===0" class="empty-state">
+                    <span>No recruiters found</span>
+                  </div>
+                  <label class="dropdown-item" *ngFor="let r of filteredRecruiters">
+                    <input type="checkbox" [checked]="selectedRecruiterIds.has(r.id)" (change)="toggleRecruiter(r.id, $event)" 
+                           class="item-checkbox" />
+                    <span class="item-name">{{ getRecruiterDisplayName(r) }}</span>
+                    <div class="item-status" [class.selected]="selectedRecruiterIds.has(r.id)">
+                      <svg *ngIf="selectedRecruiterIds.has(r.id)" class="check-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                      </svg>
+                    </div>
+                  </label>
+                </div>
+                
+            <!-- Dropdown Toggle Button -->
+            <button class="dropdown-toggle" (click)="toggleRecruiterDropdown()" type="button">
+              <svg class="dropdown-arrow" [class.rotated]="showRecruiterDropdown" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team Leader Section -->
+          <div class="form-group form-group-half">
+            <div class="dropdown-card">
+              <label class="form-label">
+                <svg class="form-label-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Team Leader
+              </label>
+              
+              <!-- Unified Dropdown with Search and Single Select -->
+              <div class="unified-dropdown">
+                <!-- Search Bar -->
+                <div class="search-section">
+                  <input type="text" 
+                         [(ngModel)]="teamLeaderSearchTerm" 
+                         (input)="filterTeamLeaders()"
+                         placeholder="Search team leaders..."
+                         class="search-input" />
+                </div>
+                
+                <!-- Selected Team Leader Display -->
+                <div class="selected-section" *ngIf="selectedTeamLeaderId">
+                  <div class="selected-items">
+                    <div class="selected-item">
+                      <span>{{ getSelectedTeamLeaderName() }}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Dropdown List -->
+                <div class="dropdown-list" [class.show]="showTeamLeaderDropdown" *ngIf="showTeamLeaderDropdown">
+                  <div *ngIf="filteredTeamLeaders.length===0" class="empty-state">
+                    <span>No team leaders found</span>
+                  </div>
+                  <label class="dropdown-item" *ngFor="let tl of filteredTeamLeaders">
+                    <input type="radio" [value]="tl.id" [(ngModel)]="selectedTeamLeaderId" name="teamLeader" 
+                           class="item-radio" />
+                    <span class="item-name">{{ getTeamLeaderDisplayName(tl) }}</span>
+                    <div class="item-status" [class.selected]="selectedTeamLeaderId == tl.id">
+                      <svg *ngIf="selectedTeamLeaderId == tl.id" class="check-icon" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                      </svg>
+                    </div>
+                  </label>
+                </div>
+                
+            <!-- Dropdown Toggle Button -->
+            <button class="dropdown-toggle" (click)="toggleTeamLeaderDropdown()" type="button">
+              <svg class="dropdown-arrow" [class.rotated]="showTeamLeaderDropdown" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="modal-actions">
+        <button class="btn-secondary" (click)="closeAssignModal()">
+          <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          Cancel
+        </button>
+        <button class="btn-primary" (click)="assignSelected()" [disabled]="selectedRecruiterIds.size === 0">
+          <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+          Assign
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JD Modal -->
+<div *ngIf="showJdModal()" class="jd-modal-overlay" (click)="closeJdModal()">
+  <div class="jd-modal" (click)="$event.stopPropagation()">
+    <div class="jd-modal-header">
+      <h3 class="jd-modal-title">Job Description</h3>
+      <button class="jd-modal-close" (click)="closeJdModal()">×</button>
+    </div>
+    <div class="jd-modal-content">
+      <div class="jd-content">
+        <p class="jd-text">{{ currentJdContent() }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div *ngIf="showToast()" class="toast-notification" [class.toast-success]="toastType() === 'success'" [class.toast-error]="toastType() === 'error'">
+  <div class="toast-content">
+    <div class="toast-icon">
+      <svg *ngIf="toastType() === 'success'" class="toast-icon-svg" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+      </svg>
+      <svg *ngIf="toastType() === 'error'" class="toast-icon-svg" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+      </svg>
+    </div>
+    <div class="toast-message">{{ toastMessage() }}</div>
+    <button class="toast-close" (click)="hideToast()">
+      <svg class="toast-close-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- Profile Modal -->
+<div *ngIf="showProfileModal" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">Submitted Profiles - Demand #{{ selectedDemand?.demand_id || selectedDemand?.id }}</div>
+      <button class="modal-close" (click)="closeProfileModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div *ngIf="profiles().length===0" class="text-gray-600">No profiles submitted</div>
+      <div *ngIf="profiles().length>0" class="table-wrapper">
+        <table class="glassy-table">
+          <thead>
+            <tr>
+              <th>Recruiter</th>
+              <th>Profile Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Remarks</th>
+              <th>CV File</th>
+              <th *ngIf="activeTab==='cv_received'">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let profile of profiles()">
+              <td>{{ profile.recruiter_name || profile.recruiter_email || '-' }}</td>
+              <td>{{ profile.profile_name || '-' }}</td>
+              <td>{{ profile.candidate_email || '-' }}</td>
+              <td>{{ profile.candidate_phone || '-' }}</td>
+              <td>{{ profile.remark || '-' }}</td>
+              <td>
+                <button *ngIf="profile.cv_url && profile.cv_available === true" class="cv-link-btn" (click)="viewCvInModal($event, profile.cv_url)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                  </svg>
+                  View CV
+                </button>
+                <span *ngIf="!profile.cv_url || profile.cv_available === false" class="no-link">CV not present</span>
+              </td>
+              <td *ngIf="activeTab==='cv_received'">
+                <div class="tl-action glassy">
+                  <button class="glassy-btn accept" (click)="approveCv(selectedActivityId!, profile._cv_index, profile._cv_id)">✅ Accept</button>
+                  <button class="glassy-btn reject" (click)="rejectCv(selectedActivityId!, profile._cv_index, profile._cv_id)">❌ Reject</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CV Modal -->
+<div *ngIf="showCvModal()" class="modal-overlay" (click)="closeCvModal()">
+  <div class="modal-card cv-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg class="modal-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        CV Document
+      </div>
+      <button class="modal-close cv-close-top" (click)="closeCvModal()">
+        <svg class="w-6 h-6" fill="none" stroke="#000000" stroke-width="3" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body cv-modal-body">
+      <!-- CV Document -->
+      <div *ngIf="currentCvUrl()" class="cv-container">
+        <iframe [src]="currentCvUrl()" class="cv-iframe" frameborder="0" 
+                (load)="onCvLoad()" (error)="onCvError()"></iframe>
+        <div class="cv-fallback">
+          <p>If the document doesn't load, you can <a [href]="currentCvUrl()" target="_blank" class="cv-direct-link">open it directly</a></p>
+        </div>
+      </div>
+      
+      <!-- Error State -->
+      <div *ngIf="!currentCvUrl()" class="cv-error">
+        <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <p>CV file not available</p>
+      </div>
+      
+    </div>
+  </div>
+</div>
 

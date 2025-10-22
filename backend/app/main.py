@@ -1,9 +1,12 @@
 import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from .login import router as auth_router, super_router, get_current_user
 from .routes.demand_sheet import router as demand_router
+from .clientsettings import router as clientsettings_router
+from .recruiter_activity import router as recruiter_router
 
 # -----------------------------
 # Load .env from backend folder
@@ -32,10 +35,27 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Include authentication, superadmin, and demand routes
+    # Include authentication, superadmin, demand, client settings, and recruiter routes
     app.include_router(auth_router)
     app.include_router(super_router)
     app.include_router(demand_router)
+    app.include_router(clientsettings_router)
+    app.include_router(recruiter_router, prefix="/recruiter")
+
+    # Mount static files for CV uploads
+    cv_uploads_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "cv_uploads")
+    if os.path.exists(cv_uploads_path):
+        app.mount("/cv-files", StaticFiles(directory=cv_uploads_path), name="cv-files")
+        print(f"[OK] CV uploads directory mounted: {cv_uploads_path}")
+    else:
+        print(f"[WARN] CV uploads directory not found: {cv_uploads_path}")
+        # Try alternative path
+        alt_path = os.path.join(os.path.dirname(__file__), "..", "src", "assets", "cv_uploads")
+        if os.path.exists(alt_path):
+            app.mount("/cv-files", StaticFiles(directory=alt_path), name="cv-files")
+            print(f"[OK] CV uploads directory mounted (alt): {alt_path}")
+        else:
+            print(f"[WARN] Alternative CV uploads directory not found: {alt_path}")
 
     # Health check
     @app.get("/health")

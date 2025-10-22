@@ -1,27 +1,17 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { Router } from '@angular/router';
 import { SuperAdminService, PendingUser } from '../../services/superadmin.service';
+import { HttpClient } from '@angular/common/http';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-superadmin-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, FormsModule],
   template: `
-    <div>
-      <div class="superadmin-card" style="margin-bottom: 24px; padding: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <div>
-            <h2 class="superadmin-section-title" style="margin-bottom: 6px;">Demand Sheet</h2>
-            <p style="color:#4a5568; margin:0;">Create and track client demands</p>
-          </div>
-          <a routerLink="/superadmin/demand-sheet" class="superadmin-btn" style="background:#667eea; color:white;">
-            ✏️ Create Demand
-          </a>
-        </div>
-      </div>
-      <h2 class="superadmin-section-title">Pending Approvals</h2>
+    <h2 class="superadmin-section-title">Pending Approvals</h2>
       <div class="superadmin-card superadmin-card-elevated">
         <div *ngIf="pendingUsers().length === 0" class="superadmin-empty-state">
           <div class="superadmin-empty-icon">✅</div>
@@ -34,28 +24,68 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Reporting To</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let user of pendingUsers()">
-              <td>{{ user.email.split('@')[0] }}</td>
+              <td>{{ (user.first_name + ' ' + user.last_name).trim() || user.email.split('@')[0] }}</td>
               <td>{{ user.email }}</td>
               <td>
-                <select [(ngModel)]="user.role" (change)="setRole(user.id, $event)" class="superadmin-role-select">
-                  <option value="candidate">Candidate</option>
-                  <option value="recruiter">Recruiter</option>
-                  <option value="manager">Manager</option>
-                  <option value="super_admin">Super Admin</option>
+                <div class="superadmin-role-dropdown" [class.open]="user.showRoleDropdown">
+                  <div class="superadmin-role-trigger" (click)="toggleRoleDropdown(user, $event)">
+                    <span class="superadmin-role-display">
+                      {{ user.role ? (user.role | titlecase) : 'Select Role' }}
+                    </span>
+                    <span class="superadmin-role-arrow">▼</span>
+                  </div>
+                  <div class="superadmin-role-checkboxes" *ngIf="user.showRoleDropdown" (click)="$event.stopPropagation()">
+                    <label class="superadmin-role-checkbox">
+                      <input type="checkbox" [checked]="user.role === 'recruiter'" (change)="setRoleFromCheckbox(user, 'recruiter'); $event.stopPropagation()">
+                      <span>Recruiter</span>
+                    </label>
+                    <label class="superadmin-role-checkbox">
+                      <input type="checkbox" [checked]="user.role === 'team_leader'" (change)="setRoleFromCheckbox(user, 'team_leader'); $event.stopPropagation()">
+                      <span>Team Leader</span>
+                    </label>
+                    <label class="superadmin-role-checkbox">
+                      <input type="checkbox" [checked]="user.role === 'manager'" (change)="setRoleFromCheckbox(user, 'manager'); $event.stopPropagation()">
+                      <span>Manager</span>
+                    </label>
+                    <label class="superadmin-role-checkbox">
+                      <input type="checkbox" [checked]="user.role === 'business_head'" (change)="setRoleFromCheckbox(user, 'business_head'); $event.stopPropagation()">
+                      <span>Business Head</span>
+                    </label>
+                    <label class="superadmin-role-checkbox">
+                      <input type="checkbox" [checked]="user.role === 'cluster_manager'" (change)="setRoleFromCheckbox(user, 'cluster_manager'); $event.stopPropagation()">
+                      <span>Cluster Manager</span>
+                    </label>
+                    <label class="superadmin-role-checkbox">
+                      <input type="checkbox" [checked]="user.role === 'super_admin'" (change)="setRoleFromCheckbox(user, 'super_admin'); $event.stopPropagation()">
+                      <span>Super Admin</span>
+                    </label>
+                  </div>
+                </div>
+              </td>
+              <td *ngIf="needsReportingPerson(user.role)">
+                <select [(ngModel)]="user.reporting_to" class="superadmin-reporting-select">
+                  <option value="">Select the reporting person</option>
+                  <option *ngFor="let person of getReportingPersons(user.role)" [value]="person.id">
+                    {{ (person.first_name + ' ' + person.last_name).trim() || person.email.split('@')[0] }}
+                  </option>
                 </select>
+              </td>
+              <td *ngIf="!needsReportingPerson(user.role)">
+                <span class="superadmin-no-reporting">N/A</span>
               </td>
               <td>
                 <span class="superadmin-status-badge pending">Pending</span>
               </td>
               <td>
                 <div class="superadmin-action-buttons">
-                  <button (click)="approveUser(user.id)" class="superadmin-btn superadmin-btn-approve superadmin-btn-pill">Approve</button>
+                  <button (click)="approveUser(user)" class="superadmin-btn superadmin-btn-approve superadmin-btn-pill">Approve</button>
                   <button (click)="rejectUser(user.id)" class="superadmin-btn superadmin-btn-reject superadmin-btn-pill">Reject</button>
                 </div>
               </td>
@@ -63,13 +93,13 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
           </tbody>
         </table>
       </div>
-    </div>
   `,
   styles: [`
     /* Super Admin Dashboard Styles */
     .superadmin-dashboard {
       min-height: 100vh;
-      background: #f7fafc;
+      background: #F8FAFC;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .superadmin-sidebar {
@@ -208,13 +238,15 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
       border-radius: 12px;
       box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
       border: 1px solid #e2e8f0;
-      overflow: hidden;
+      overflow: visible;
+      min-height: 400px;
     }
     .superadmin-card-elevated { box-shadow: 0 10px 18px rgba(0,0,0,0.06); border-color:#e6eef8; }
 
     .superadmin-table {
       width: 100%;
       border-collapse: collapse;
+      overflow: visible;
     }
 
     .superadmin-table th {
@@ -231,6 +263,9 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
       padding: 16px 24px;
       border-bottom: 1px solid #f1f5f9;
       color: #2d3748;
+      position: relative;
+      vertical-align: middle;
+      height: 60px;
     }
 
     .superadmin-table tr:hover {
@@ -278,13 +313,33 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
     }
 
     .superadmin-btn-approve {
-      background: #48bb78;
+      background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
       color: white;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+    }
+
+    .superadmin-btn-approve::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
     }
 
     .superadmin-btn-approve:hover {
-      background: #38a169;
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px rgba(24, 45, 23, 0.1);
+    }
+
+    .superadmin-btn-approve:hover::before {
+      left: 100%;
     }
 
     .superadmin-btn-reject {
@@ -298,8 +353,16 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
     }
     .superadmin-btn-pill { border-radius: 9999px; padding: 8px 18px; }
 
-    .superadmin-role-select {
-      padding: 6px 12px;
+    .superadmin-role-dropdown {
+      position: relative;
+      display: inline-block;
+    }
+
+    .superadmin-role-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
       border: 1px solid #e2e8f0;
       border-radius: 6px;
       background: white;
@@ -307,12 +370,91 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
       color: #2d3748;
       cursor: pointer;
       transition: border-color 0.2s ease;
+      min-width: 140px;
+      height: 36px;
+      box-sizing: border-box;
     }
 
-    .superadmin-role-select:focus {
+    .superadmin-role-trigger:hover {
+      border-color: #667eea;
+    }
+
+    .superadmin-role-display {
+      flex: 1;
+      text-align: left;
+    }
+
+    .superadmin-role-arrow {
+      margin-left: 8px;
+      font-size: 12px;
+      color: #6b7280;
+      transition: transform 0.2s ease;
+    }
+
+    .superadmin-role-dropdown.open .superadmin-role-arrow {
+      transform: rotate(180deg);
+    }
+
+    .superadmin-role-checkboxes {
+      position: fixed;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+      z-index: 10000;
+      max-height: 250px;
+      overflow-y: auto;
+      min-width: 200px;
+      max-width: 300px;
+    }
+
+    .superadmin-role-checkbox {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      font-size: 14px;
+    }
+
+    .superadmin-role-checkbox:hover {
+      background-color: #f7fafc;
+    }
+
+    .superadmin-role-checkbox input[type="checkbox"] {
+      margin-right: 8px;
+      cursor: pointer;
+    }
+
+    .superadmin-role-checkbox span {
+      color: #2d3748;
+      font-weight: 500;
+    }
+
+    .superadmin-reporting-select {
+      padding: 8px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+      color: #2d3748;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+      min-width: 200px;
+      height: 36px;
+      box-sizing: border-box;
+    }
+
+    .superadmin-reporting-select:focus {
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .superadmin-no-reporting {
+      color: #6b7280;
+      font-style: italic;
+      font-size: 14px;
     }
 
     .superadmin-empty-state {
@@ -372,19 +514,47 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
 export class SuperAdminDashboardComponent implements OnInit {
   private superAdminService = inject(SuperAdminService);
   private router = inject(Router);
+  private http = inject(HttpClient);
 
   pendingUsers = signal<PendingUser[]>([]);
   pendingCount = signal(0);
+  
+  // Reporting persons data
+  teamLeaders = signal<any[]>([]);
+  managers = signal<any[]>([]);
+  businessHeads = signal<any[]>([]);
+  clusterManagers = signal<any[]>([]);
+  superAdmins = signal<any[]>([]);
+  
+  apiBase = environment.apiBase || 'http://localhost:8000';
 
   ngOnInit(): void {
+    console.log('📊 SuperAdminDashboardComponent initialized');
     this.loadPendingUsers();
+    this.loadReportingPersons();
+    
+    // Add click outside handler to close dropdowns
+    document.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.superadmin-role-dropdown')) {
+        this.pendingUsers().forEach((user: any) => {
+          user.showRoleDropdown = false;
+        });
+      }
+    });
   }
 
   loadPendingUsers(): void {
     this.superAdminService.getPendingUsers().subscribe({
       next: (users) => {
-        this.pendingUsers.set(users);
-        this.pendingCount.set(users.length);
+        // Ensure users don't have a default role and initialize dropdown state
+        const processedUsers = users.map(user => ({
+          ...user,
+          role: '', // Always start with empty role (Select Role)
+          showRoleDropdown: false // Initialize dropdown state
+        }));
+        this.pendingUsers.set(processedUsers);
+        this.pendingCount.set(processedUsers.length);
       },
       error: (err) => {
         console.error('Failed to load pending users:', err);
@@ -395,8 +565,20 @@ export class SuperAdminDashboardComponent implements OnInit {
     });
   }
 
-  approveUser(userId: number): void {
-    this.superAdminService.approveUser(userId).subscribe({
+  approveUser(user: any): void {
+    // Check if role is selected
+    if (!user.role || user.role === '') {
+      alert('Please choose a role.');
+      return;
+    }
+
+    // Check if reporting person is required and selected
+    if (this.needsReportingPerson(user.role) && !user.reporting_to) {
+      alert('Please select a reporting person for this role.');
+      return;
+    }
+
+    this.superAdminService.approveUser(user.id, user.reporting_to).subscribe({
       next: (res) => {
         console.log('User approved:', res.message);
         this.loadPendingUsers(); // Refresh the list
@@ -419,16 +601,117 @@ export class SuperAdminDashboardComponent implements OnInit {
     });
   }
 
-  setRole(userId: number, event: Event): void {
-    const selectElement = event.target as HTMLSelectElement;
-    const role = selectElement.value;
-    this.superAdminService.setUserRole(userId, role).subscribe({
+
+  // Load all reporting persons
+  loadReportingPersons(): void {
+    this.loadTeamLeaders();
+    this.loadManagers();
+    this.loadBusinessHeads();
+    this.loadClusterManagers();
+    this.loadSuperAdmins();
+  }
+
+  loadTeamLeaders(): void {
+    this.http.get<any[]>(`${this.apiBase}/teamleaders`).subscribe({
+      next: (data) => this.teamLeaders.set(data || []),
+      error: (err) => console.error('Failed to load team leaders:', err)
+    });
+  }
+
+  loadManagers(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=manager`).subscribe({
+      next: (data) => this.managers.set(data || []),
+      error: (err) => console.error('Failed to load managers:', err)
+    });
+  }
+
+  loadBusinessHeads(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=business_head`).subscribe({
+      next: (data) => this.businessHeads.set(data || []),
+      error: (err) => console.error('Failed to load business heads:', err)
+    });
+  }
+
+  loadClusterManagers(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=cluster_manager`).subscribe({
+      next: (data) => this.clusterManagers.set(data || []),
+      error: (err) => console.error('Failed to load cluster managers:', err)
+    });
+  }
+
+  loadSuperAdmins(): void {
+    this.http.get<any[]>(`${this.apiBase}/users?role=super_admin`).subscribe({
+      next: (data) => this.superAdmins.set(data || []),
+      error: (err) => console.error('Failed to load super admins:', err)
+    });
+  }
+
+  // Check if a role needs a reporting person
+  needsReportingPerson(role: string): boolean {
+    return ['recruiter', 'team_leader', 'business_head', 'cluster_manager'].includes(role);
+  }
+
+  // Get reporting persons based on role
+  getReportingPersons(role: string): any[] {
+    switch (role) {
+      case 'recruiter':
+        return this.teamLeaders();
+      case 'team_leader':
+        return this.managers();
+      case 'business_head':
+        return this.clusterManagers();
+      case 'cluster_manager':
+        return this.superAdmins();
+      default:
+        return [];
+    }
+  }
+
+
+  // Toggle role dropdown visibility
+  toggleRoleDropdown(user: any, event: Event): void {
+    // Close all other dropdowns first
+    this.pendingUsers().forEach((u: any) => {
+      if (u !== user) {
+        u.showRoleDropdown = false;
+      }
+    });
+    
+    // Toggle current dropdown
+    user.showRoleDropdown = !user.showRoleDropdown;
+    
+    if (user.showRoleDropdown) {
+      // Calculate position for fixed dropdown
+      const trigger = event.target as HTMLElement;
+      const rect = trigger.getBoundingClientRect();
+      const dropdown = document.querySelector('.superadmin-role-checkboxes') as HTMLElement;
+      
+      if (dropdown) {
+        // Position dropdown below the trigger
+        dropdown.style.top = `${rect.bottom + 5}px`;
+        dropdown.style.left = `${rect.left}px`;
+        dropdown.style.right = 'auto';
+        dropdown.style.width = `${Math.max(rect.width, 200)}px`;
+      }
+    }
+  }
+
+  // Handle role selection from checkbox
+  setRoleFromCheckbox(user: any, role: string): void {
+    user.role = role;
+    user.reporting_to = '';
+    user.showRoleDropdown = false; // Close dropdown after selection
+    
+    // Update the role in the backend without refreshing the page
+    this.superAdminService.setUserRole(user.id, role).subscribe({
       next: (res) => {
-        console.log('Role updated:', res.message);
-        this.loadPendingUsers(); // Refresh the list
+        console.log('Role updated successfully:', res.message);
+        // Don't refresh the page, just update the local state
       },
       error: (err) => {
         console.error('Role update failed:', err);
+        // Revert the role if update failed
+        user.role = '';
       }
     });
   }

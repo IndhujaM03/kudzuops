@@ -4,9 +4,13 @@ import { Observable } from 'rxjs';
 
 export interface PendingUser {
   id: number;
+  first_name: string;
+  last_name: string;
   email: string;
   role: string;
   approval_status: boolean;
+  reporting_to?: number;
+  showRoleDropdown?: boolean;
 }
 
 export interface SuperAdminAuthResponse {
@@ -20,8 +24,9 @@ export class SuperAdminService {
   private http = inject(HttpClient);
   private api = 'http://localhost:8000';
   private getAuthHeaders(): HttpHeaders {
-    const token = localStorage.getItem('superadmin_token') || localStorage.getItem('access_token');
-    const type = localStorage.getItem('superadmin_token_type') || localStorage.getItem('token_type') || 'bearer';
+    const token = localStorage.getItem('access_token');
+    const type = localStorage.getItem('token_type') || 'bearer';
+    console.log('🔑 SuperAdmin API using token:', !!token, 'Type:', type);
     return new HttpHeaders({ 'Authorization': `${type} ${token}` });
   }
 
@@ -33,8 +38,9 @@ export class SuperAdminService {
     return this.http.get<PendingUser[]>(`${this.api}/superadmin/pending-users`, { headers: this.getAuthHeaders() });
   }
 
-  approveUser(userId: number): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`${this.api}/superadmin/approve/${userId}`, {}, { headers: this.getAuthHeaders() });
+  approveUser(userId: number, reportingTo?: number): Observable<{ message: string }> {
+    const payload = reportingTo ? { reporting_to: reportingTo } : {};
+    return this.http.post<{ message: string }>(`${this.api}/superadmin/approve/${userId}`, payload, { headers: this.getAuthHeaders() });
   }
 
   rejectUser(userId: number): Observable<{ message: string }> {

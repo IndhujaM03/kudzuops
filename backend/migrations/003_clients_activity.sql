@@ -36,10 +36,10 @@ CREATE TABLE IF NOT EXISTS tbl_client_spocs (
 );
 
 -- 3) Recruiter Activity
--- recruiter_id references users.id (table name is users)
+-- recruiter_id references tbl_users.id
 CREATE TABLE IF NOT EXISTS tbl_recruiter_activity (
     id BIGSERIAL PRIMARY KEY,
-    recruiter_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recruiter_id BIGINT NOT NULL REFERENCES tbl_users(id) ON DELETE CASCADE,
     analysis_date DATE NOT NULL,
     skill VARCHAR(255),
     cvs_sourced INT NOT NULL DEFAULT 0,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS tbl_demand_sheet (
     demand_date DATE NOT NULL,
     client_id BIGINT NOT NULL REFERENCES tbl_clients(id) ON DELETE CASCADE,
     spoc_id BIGINT REFERENCES tbl_client_spocs(id) ON DELETE SET NULL,
-    recruiter_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    recruiter_id BIGINT REFERENCES tbl_users(id) ON DELETE SET NULL,
     skill VARCHAR(255),
     no_of_positions INT NOT NULL DEFAULT 1,
     status demand_status_enum NOT NULL DEFAULT 'open',
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS tbl_submissions (
     id BIGSERIAL PRIMARY KEY,
     submission_date DATE NOT NULL,
     submission_week INT,
-    recruiter_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    recruiter_id BIGINT REFERENCES tbl_users(id) ON DELETE SET NULL,
     spoc_id BIGINT REFERENCES tbl_client_spocs(id) ON DELETE SET NULL,
     skill VARCHAR(255),
     demand_id BIGINT REFERENCES tbl_demand_sheet(id) ON DELETE CASCADE,
@@ -89,6 +89,8 @@ CREATE INDEX IF NOT EXISTS idx_client_spocs_client ON tbl_client_spocs(client_id
 CREATE INDEX IF NOT EXISTS idx_recruiter_activity_recruiter ON tbl_recruiter_activity(recruiter_id);
 CREATE INDEX IF NOT EXISTS idx_demand_sheet_client ON tbl_demand_sheet(client_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_demand ON tbl_submissions(demand_id);
+
+
 
 
 

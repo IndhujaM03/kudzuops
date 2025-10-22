@@ -46,6 +46,9 @@ private SUBMISSION_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQ
 private DEMAND_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7Pm_7pTn04ONGLY_xA69cq2ZHP9wf7Hb5VlFBJLFdGjL9ocdgnHo5fxeA6Dtjq5dPzGDs7/pub?gid=1637620106&single=true&output=csv';
 
 private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7Pm_7pTn04ONGLY_xA69cq2ZHP9wf7Hb5VlFBJLFdGjL9ocdgnHo5fxeA6Dtjq5dPzGDs7/pub?gid=364112528&single=true&output=csv';
+
+  apiBase = 'http://localhost:8000';
+
   constructor(private http: HttpClient) {}
 
   getProtectedDashboard(): Observable<any> {
@@ -240,5 +243,23 @@ private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJ
 
     console.log('Processed Dashboard Data:', processedData);
     return processedData;
+  }
+
+  getRecruiterSubmitted(recruiterId: number): Observable<any> {
+    return this.http.get(`${this.apiBase}/recruiter/${recruiterId}/submitted`);
+  }
+
+  moveExistingResumes(recruiterId: number, demandId: number): Observable<any> {
+    return this.http.post(`${this.apiBase}/recruiter/${recruiterId}/demand/${demandId}/move-resumes`, {});
+  }
+
+  updateCvEvent(recruiterId: number, demandId: number, filename: string, timestamp: string, eventType: string): Observable<any> {
+    return this.http.post(`${this.apiBase}/activity/update_cv`, {
+      recruiter_id: recruiterId,
+      demand_id: demandId,
+      filename: filename,
+      timestamp: timestamp,
+      event_type: eventType
+    });
   }
 }
