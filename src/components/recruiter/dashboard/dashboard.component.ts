@@ -39,7 +39,6 @@ interface SubmissionStats {
       <!-- Process Overview Card -->
       <div class="card">
         <div class="card-header">
-          <h1 class="card-title">Recruiter Dashboard</h1>
           <p class="card-subtitle">Manage your assigned demands and track your progress</p>
         </div>
         
@@ -175,30 +174,45 @@ interface SubmissionStats {
     </div>
   `,
   styles: [`
+    /* Import Manrope Font */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+    /* Kudzu Theme Variables */
+    :root {
+      --kudzu-primary: rgb(24, 45, 23);
+      --kudzu-primary-light: rgba(24, 45, 23, 0.1);
+      --kudzu-primary-dark: rgb(18, 35, 18);
+    }
+
     .dashboard-container {
       padding: 20px;
-      background: #f8fafc;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
       min-height: 100vh;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .card {
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(24, 45, 23, 0.1);
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
       margin-bottom: 20px;
       overflow: hidden;
     }
 
     .card-header {
       padding: 20px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid rgba(24, 45, 23, 0.1);
+      background: rgba(24, 45, 23, 0.02);
     }
 
     .card-title {
       font-size: 18px;
       font-weight: 600;
-      color: #1e293b;
+      color: var(--kudzu-primary);
       margin: 0 0 4px 0;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .card-subtitle {
@@ -219,14 +233,21 @@ interface SubmissionStats {
       align-items: center;
       gap: 16px;
       padding: 20px;
-      border-radius: 8px;
-      background: #f8fafc;
-      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(24, 45, 23, 0.1);
+      transition: all 0.2s ease;
+    }
+
+    .overview-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(24, 45, 23, 0.1);
     }
 
     .overview-card.current {
-      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-      border-color: #10b981;
+      background: linear-gradient(135deg, rgba(24, 45, 23, 0.1) 0%, rgba(24, 45, 23, 0.05) 100%);
+      border-color: var(--kudzu-primary);
     }
 
     .overview-icon {
@@ -245,18 +266,18 @@ interface SubmissionStats {
     }
 
     .overview-icon.total {
-      background: #dbeafe;
-      color: #3b82f6;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary);
     }
 
     .overview-icon.current {
-      background: #10b981;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .overview-icon.completed {
-      background: #d1fae5;
-      color: #059669;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary-dark);
     }
 
     .overview-content {
@@ -439,21 +460,22 @@ interface SubmissionStats {
     }
 
     .btn-primary {
-      background: #3b82f6;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-primary:hover {
-      background: #2563eb;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-secondary {
-      background: #e5e7eb;
-      color: #374151;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary);
     }
 
     .btn-secondary:hover {
-      background: #d1d5db;
+      background: var(--kudzu-primary);
+      color: white;
     }
 
     .btn-secondary:disabled {
@@ -487,7 +509,7 @@ interface SubmissionStats {
       width: 40px;
       height: 40px;
       border: 4px solid #e5e7eb;
-      border-top: 4px solid #3b82f6;
+      border-top: 4px solid var(--kudzu-primary);
       border-radius: 50%;
       animation: spin 1s linear infinite;
       margin-bottom: 16px;
@@ -610,7 +632,7 @@ interface SubmissionStats {
 
     .demand-option:hover {
       background: #f9fafb;
-      border-color: #3b82f6;
+      border-color: var(--kudzu-primary);
     }
 
     .demand-info {

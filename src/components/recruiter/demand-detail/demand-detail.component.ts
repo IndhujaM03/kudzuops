@@ -4,7 +4,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } 
 import { HttpClient } from '@angular/common/http';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../../services/auth.service';
-import { environment } from '../../../../environments/environment';
+import { environment } from '../../../environments/environment';
 
 interface DemandDetail {
   id: number;
@@ -58,10 +58,21 @@ interface SubmissionData {
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule],
   styles: [`
+    /* Import Manrope Font */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+    /* Kudzu Theme Variables */
+    :root {
+      --kudzu-primary: rgb(24, 45, 23);
+      --kudzu-primary-light: rgba(24, 45, 23, 0.1);
+      --kudzu-primary-dark: rgb(18, 35, 18);
+    }
+
     .demand-detail-container {
       padding: 20px;
-      background: #f8fafc;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
       min-height: 100vh;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .header {
@@ -75,7 +86,8 @@ interface SubmissionData {
       margin: 0 0 4px 0;
       font-size: 24px;
       font-weight: 600;
-      color: #1e293b;
+      color: var(--kudzu-primary);
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .header-left p {
@@ -181,30 +193,31 @@ interface SubmissionData {
     }
 
     .btn-primary {
-      background: #3b82f6;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-primary:hover {
-      background: #2563eb;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-secondary {
-      background: #6b7280;
-      color: white;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary);
     }
 
     .btn-secondary:hover {
-      background: #4b5563;
+      background: var(--kudzu-primary);
+      color: white;
     }
 
     .btn-success {
-      background: #10b981;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-success:hover {
-      background: #059669;
+      background: var(--kudzu-primary-dark);
     }
 
     .icon {
@@ -222,7 +235,7 @@ interface SubmissionData {
       padding: 12px;
       border-radius: 6px;
       margin-bottom: 8px;
-      border-left: 4px solid #3b82f6;
+      border-left: 4px solid rgb(24, 45, 23);
     }
 
     .question-header {
@@ -233,7 +246,7 @@ interface SubmissionData {
     }
 
     .question-number {
-      background: #3b82f6;
+      background: rgb(24, 45, 23);
       color: white;
       width: 20px;
       height: 20px;
@@ -277,8 +290,8 @@ interface SubmissionData {
     }
 
     .upload-area.drag-over {
-      border-color: #3b82f6;
-      background: #eff6ff;
+      border-color: rgb(24, 45, 23);
+      background: rgba(24, 45, 23, 0.05);
     }
 
     .upload-icon {
@@ -375,8 +388,8 @@ interface SubmissionData {
 
     .form-input:focus {
       outline: none;
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      border-color: rgb(24, 45, 23);
+      box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1);
     }
 
     .form-textarea {
@@ -391,8 +404,8 @@ interface SubmissionData {
 
     .form-textarea:focus {
       outline: none;
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      border-color: rgb(24, 45, 23);
+      box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1);
     }
 
     .loading {
@@ -686,7 +699,7 @@ export class DemandDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private auth = inject(AuthService);
   private fb = inject(FormBuilder);
-  private api = environment.apiUrl;
+  private api = environment.apiBase;
 
   demand: DemandDetail | null = null;
   questions: AIQuestion[] = [];

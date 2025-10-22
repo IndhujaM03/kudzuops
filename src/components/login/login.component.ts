@@ -33,60 +33,58 @@ class NotificationService {
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterModule],
   template: `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;padding:20px;">
-      <div style="width:100%;max-width:380px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.06);padding:28px;">
-        <div style="text-align:center;margin-bottom:18px;">
-          <img src="assets/kudzulogo.png" alt="Kudzu Logo" style="width:56px;height:56px;border-radius:8px;" />
-          <h1 style="margin:10px 0 4px;font-size:22px;font-weight:700;color:#111827;">Sign in</h1>
-          <p style="margin:0;color:#6b7280;font-size:14px;">Access your dashboard</p>
+    <div class="center-fullpage">
+      <div class="auth-card">
+        <div class="auth-header">
+          <img src="assets/kudzulogo.png" alt="Kudzu Logo" class="auth-logo" />
+          <h1 class="auth-title">Sign in</h1>
+          <p class="auth-subtitle">Access your dashboard</p>
         </div>
 
-        <div *ngIf="alertMessage" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:10px 12px;border-radius:8px;margin-bottom:12px;font-size:14px;">
+        <div *ngIf="alertMessage" class="alert alert-error">
           {{ alertMessage }}
         </div>
 
-
         <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
-          <div style="margin-bottom:14px;">
-            <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Email</label>
+          <div class="form-group">
+            <label class="form-label">Email</label>
             <input type="email" formControlName="email" placeholder="you@example.com"
                    [class.error]="submitted && form.get('email')?.invalid"
-                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" />
-            <div *ngIf="submitted && form.get('email')?.invalid" style="color:#b91c1c;font-size:12px;margin-top:6px;">
+                   class="form-input" />
+            <div *ngIf="submitted && form.get('email')?.invalid" class="form-error">
               <span *ngIf="form.get('email')?.errors?.['required']">Email is required</span>
               <span *ngIf="form.get('email')?.errors?.['email']">Enter a valid email</span>
             </div>
           </div>
 
-          <div style="margin-bottom:16px;">
-            <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Password</label>
+          <div class="form-group">
+            <label class="form-label">Password</label>
             <input [type]="showPassword() ? 'text' : 'password'" formControlName="password" placeholder="••••••••"
                    [class.error]="submitted && form.get('password')?.invalid"
-                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" />
-            <div *ngIf="submitted && form.get('password')?.invalid" style="color:#b91c1c;font-size:12px;margin-top:6px;">
+                   class="form-input" />
+            <div *ngIf="submitted && form.get('password')?.invalid" class="form-error">
               <span *ngIf="form.get('password')?.errors?.['required']">Password is required</span>
             </div>
           </div>
 
-          <button type="submit" class="login-button" [disabled]="loading() || form.invalid">
+          <button type="submit" class="btn btn-primary btn-full" [disabled]="loading() || form.invalid">
             <span *ngIf="!loading()">Sign In</span>
             <span *ngIf="loading()">Signing in…</span>
           </button>
         </form>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 12px;">
-          <a [routerLink]="['/reset-password']" style="font-size:13px;color:#2563eb;text-decoration:none;">Forgot password?</a>
-          <a [routerLink]="['/signup']" style="font-size:13px;color:#2563eb;text-decoration:none;">Create account</a>
+        <div class="auth-links">
+          <a [routerLink]="['/reset-password']" class="auth-link">Forgot password?</a>
+          <a [routerLink]="['/signup']" class="auth-link">Create account</a>
         </div>
 
-        <div style="display:flex;align-items:center;margin:10px 0 12px;gap:10px;">
-          <div style="height:1px;background:#e5e7eb;flex:1;"></div>
-          <div style="color:#6b7280;font-size:12px;">or</div>
-          <div style="height:1px;background:#e5e7eb;flex:1;"></div>
+        <div class="auth-divider">
+          <div class="divider-line"></div>
+          <div class="divider-text">or</div>
+          <div class="divider-line"></div>
         </div>
 
-        <button type="button" (click)="onGoogleSignIn()" [disabled]="loading()"
-                style="width:100%;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:10px 14px;border-radius:8px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <button type="button" (click)="onGoogleSignIn()" [disabled]="loading()" class="btn btn-outline btn-full">
           <svg width="18" height="18" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -97,27 +95,221 @@ class NotificationService {
         </button>
 
         <!-- Pending Approval Modal -->
-        <div *ngIf="showApprovalModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;">
-          <div style="background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:100%;max-width:460px;padding:22px;">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-              <div style="width:36px;height:36px;border-radius:9999px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;color:#D97706;font-weight:700;">!
-              </div>
-              <h3 style="margin:0;font-size:18px;font-weight:700;color:#111827;">Awaiting approval</h3>
+        <div *ngIf="showApprovalModal" class="modal-overlay">
+          <div class="modal">
+            <div class="modal-header">
+              <div class="modal-icon">!</div>
+              <h3 class="modal-title">Awaiting approval</h3>
             </div>
-            <p style="margin:0 0 12px;color:#374151;">Your email is verified. A super admin must approve your account before you can sign in.</p>
-            <ul style="margin:0 0 16px 16px;color:#4B5563;">
-              <li>We’ll notify you by email once approved</li>
-              <li>You can close this window and try later</li>
-            </ul>
-            <div style="display:flex;justify-content:flex-end;gap:8px;">
-              <button (click)="showApprovalModal=false" style="background:#fff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:8px;">Close</button>
-              <button (click)="onGoogleSignIn()" style="background:#2563EB;color:#fff;border:0;padding:8px 12px;border-radius:8px;">Contact Admin</button>
+            <div class="modal-body">
+              <p class="modal-text">Your email is verified. A super admin must approve your account before you can sign in.</p>
+              <ul class="modal-list">
+                <li>We'll notify you by email once approved</li>
+                <li>You can close this window and try later</li>
+              </ul>
+            </div>
+            <div class="modal-footer">
+              <button (click)="showApprovalModal=false" class="btn btn-secondary">Close</button>
+              <button (click)="onGoogleSignIn()" class="btn btn-primary">Contact Admin</button>
             </div>
           </div>
         </div>
       </div>
     </div>
-  `
+  `,
+  styles: [`
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-size: 13px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--kudzu-primary);
+      box-shadow: 0 0 0 3px var(--kudzu-primary-light);
+    }
+
+    .form-input.error {
+      border-color: #ef4444;
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    }
+
+    .form-error {
+      color: #ef4444;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--kudzu-primary);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--kudzu-primary-dark);
+    }
+
+    .btn-secondary {
+      background: #fff;
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: #f9fafb;
+    }
+
+    .btn-outline {
+      background: #fff;
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-outline:hover {
+      background: #f9fafb;
+    }
+
+    .btn-full {
+      width: 100%;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .auth-links {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 14px 0 12px;
+    }
+
+    .auth-link {
+      font-size: 13px;
+      color: var(--kudzu-primary);
+      text-decoration: none;
+    }
+
+    .auth-link:hover {
+      text-decoration: underline;
+    }
+
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      margin: 10px 0 12px;
+      gap: 10px;
+    }
+
+    .divider-line {
+      height: 1px;
+      background: var(--border-color);
+      flex: 1;
+    }
+
+    .divider-text {
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      width: 100%;
+      max-width: 460px;
+      padding: 22px;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .modal-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
+      background: #FEF3C7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #D97706;
+      font-weight: 700;
+    }
+
+    .modal-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .modal-body {
+      margin-bottom: 16px;
+    }
+
+    .modal-text {
+      margin: 0 0 12px;
+      color: var(--text-secondary);
+    }
+
+    .modal-list {
+      margin: 0 0 16px 16px;
+      color: var(--text-secondary);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+  `]
 })
 export class LoginComponent {
   private fb = inject(FormBuilder);

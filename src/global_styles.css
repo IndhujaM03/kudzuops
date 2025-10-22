@@ -1,23 +1,29 @@
-/* Global Styles - Clean Professional Design */
+/* Import Manrope Font */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+/* Global Styles - Kudzu Infotech Theme */
 :root {
+  /* Kudzu Infotech Theme Colors */
+  --kudzu-primary: rgb(24, 45, 23);
+  --kudzu-primary-light: rgba(24, 45, 23, 0.1);
+  --kudzu-primary-dark: rgb(18, 35, 18);
+  
   /* Light Theme - Clean & Professional */
-  --primary-bg: #f8fafc;
+  --primary-bg: #ffffff;
   --secondary-bg: #ffffff;
   --card-bg: #ffffff;
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
+  --text-primary: #000000;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
   --border-color: #e2e8f0;
   --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   
-  /* Color Palette from Reference Image */
-  --primary-blue: #4A90E2;
-  --light-blue: #87CEEB;
-  --sky-blue: #B0E0E6;
-  --navy-blue: #1B365D;
-  --dark-navy: #0F2A44;
+  /* Kudzu Theme Color Palette */
+  --primary-color: var(--kudzu-primary);
+  --primary-hover: var(--kudzu-primary-dark);
+  --primary-light: var(--kudzu-primary-light);
   --accent-blue: #3B82F6;
   --accent-teal: #40E0D0;
   --accent-green: #32CD32;
@@ -66,7 +72,7 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
   background-color: var(--primary-bg);
   color: var(--text-primary);
   transition: all 0.3s ease;
@@ -430,7 +436,7 @@ body {
 
 /* Header Styles */
 .header {
-  background: linear-gradient(135deg, var(--sky-blue) 0%, var(--primary-blue) 50%, var(--navy-blue) 100%);
+  background: var(--kudzu-primary);
   padding: 3rem 0;
   position: relative;
   overflow: hidden;
@@ -556,7 +562,7 @@ body {
 
 /* Part Labels */
 .part-label {
-  background: linear-gradient(135deg, var(--primary-blue), var(--navy-blue));
+  background: var(--kudzu-primary);
   color: white;
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
@@ -583,14 +589,15 @@ body {
 }
 
 .btn-primary {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--kudzu-primary);
   color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--kudzu-primary);
   backdrop-filter: blur(10px);
 }
 
 .btn-primary:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--kudzu-primary-dark);
+  border-color: var(--kudzu-primary-dark);
   transform: translateY(-1px);
 }
 
@@ -631,7 +638,7 @@ body {
   transform: translateX(-50%);
   width: 60px;
   height: 3px;
-  background: linear-gradient(90deg, var(--primary-blue), var(--navy-blue));
+  background: var(--kudzu-primary);
   border-radius: 2px;
 }
 
@@ -648,10 +655,7 @@ body {
 .highlight-number {
   font-size: 3rem;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--primary-blue), var(--navy-blue));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--kudzu-primary);
   margin-bottom: 0.5rem;
   line-height: 1;
 }
@@ -827,7 +831,7 @@ body {
 
 /* Observations Section */
 .observations {
-  background: linear-gradient(135deg, var(--primary-blue) 0%, var(--navy-blue) 100%);
+  background: var(--kudzu-primary);
   border-radius: 16px;
   padding: 2rem;
   color: white;

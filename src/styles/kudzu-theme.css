@@ -1,0 +1,301 @@
+/* Kudzu Theme - Centralized CSS for consistent theming across all modules */
+
+/* Kudzu Theme Variables */
+:root {
+  --kudzu-primary: rgb(24, 45, 23);
+  --kudzu-primary-light: rgba(24, 45, 23, 0.1);
+  --kudzu-primary-dark: rgb(18, 35, 18);
+  --kudzu-primary-hover: rgb(12, 25, 12);
+  --kudzu-text-primary: #1e293b;
+  --kudzu-text-secondary: #6b7280;
+  --kudzu-text-light: #9ca3af;
+  --kudzu-bg-light: #f8fafc;
+  --kudzu-bg-white: #ffffff;
+  --kudzu-border: rgba(24, 45, 23, 0.1);
+  --kudzu-shadow: rgba(24, 45, 23, 0.1);
+}
+
+/* Global Button Styles - Kudzu Theme */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 14px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+.btn-primary {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  border: 1px solid var(--kudzu-primary) !important;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--kudzu-primary-dark) !important;
+  border-color: var(--kudzu-primary-dark) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--kudzu-shadow);
+}
+
+.btn-secondary {
+  background: var(--kudzu-primary-light) !important;
+  color: var(--kudzu-primary) !important;
+  border: 1px solid var(--kudzu-primary) !important;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  border-color: var(--kudzu-primary) !important;
+}
+
+.btn-outline {
+  background: transparent !important;
+  color: var(--kudzu-primary) !important;
+  border: 1px solid var(--kudzu-primary) !important;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  border-color: var(--kudzu-primary) !important;
+}
+
+.btn-success {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  border: 1px solid var(--kudzu-primary) !important;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--kudzu-primary-dark) !important;
+  border-color: var(--kudzu-primary-dark) !important;
+}
+
+.btn-warning {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  border: 1px solid var(--kudzu-primary) !important;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: var(--kudzu-primary-dark) !important;
+  border-color: var(--kudzu-primary-dark) !important;
+}
+
+.btn-danger {
+  background: #dc2626 !important;
+  color: white !important;
+  border: 1px solid #dc2626 !important;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #b91c1c !important;
+  border-color: #b91c1c !important;
+}
+
+.btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Button Sizes */
+.btn-sm {
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+}
+
+.btn-lg {
+  padding: 12px 24px !important;
+  font-size: 16px !important;
+}
+
+/* Modal and Popup Buttons */
+.modal-footer .btn,
+.popup-footer .btn,
+.save-btn,
+.close-btn {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  border: 1px solid var(--kudzu-primary) !important;
+  padding: 8px 16px !important;
+  font-size: 14px !important;
+  border-radius: 6px !important;
+  transition: all 0.2s ease !important;
+}
+
+.modal-footer .btn:hover:not(:disabled),
+.popup-footer .btn:hover:not(:disabled),
+.save-btn:hover:not(:disabled) {
+  background: var(--kudzu-primary-dark) !important;
+  border-color: var(--kudzu-primary-dark) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px var(--kudzu-shadow) !important;
+}
+
+.close-btn {
+  background: transparent !important;
+  color: var(--kudzu-text-secondary) !important;
+  border: none !important;
+  padding: 4px !important;
+}
+
+.close-btn:hover {
+  background: var(--kudzu-bg-light) !important;
+  color: var(--kudzu-primary) !important;
+}
+
+/* Action Buttons */
+.action-item,
+.action-trigger {
+  color: var(--kudzu-text-primary) !important;
+}
+
+.action-item:hover,
+.action-trigger:hover {
+  background: var(--kudzu-primary-light) !important;
+  color: var(--kudzu-primary) !important;
+}
+
+/* Form Elements */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  border-color: var(--kudzu-border) !important;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--kudzu-primary) !important;
+  box-shadow: 0 0 0 3px var(--kudzu-primary-light) !important;
+}
+
+/* Links */
+a {
+  color: var(--kudzu-primary) !important;
+}
+
+a:hover {
+  color: var(--kudzu-primary-dark) !important;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--kudzu-text-primary) !important;
+}
+
+/* Text Colors */
+.text-primary {
+  color: var(--kudzu-primary) !important;
+}
+
+.text-secondary {
+  color: var(--kudzu-text-secondary) !important;
+}
+
+.text-light {
+  color: var(--kudzu-text-light) !important;
+}
+
+/* Background Colors */
+.bg-primary {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+}
+
+.bg-light {
+  background: var(--kudzu-bg-light) !important;
+}
+
+/* Borders */
+.border-primary {
+  border-color: var(--kudzu-primary) !important;
+}
+
+/* Shadows */
+.shadow-primary {
+  box-shadow: 0 4px 12px var(--kudzu-shadow) !important;
+}
+
+/* Priority and Status Badges */
+.priority-high,
+.status-processing {
+  background: var(--kudzu-primary-light) !important;
+  color: var(--kudzu-primary) !important;
+}
+
+.priority-medium,
+.status-hold {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+.priority-low,
+.status-open {
+  background: #dbeafe !important;
+  color: #1e40af !important;
+}
+
+.status-closed {
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+}
+
+/* Table Styles */
+table th {
+  background: var(--kudzu-bg-light) !important;
+  color: var(--kudzu-text-primary) !important;
+  border-color: var(--kudzu-border) !important;
+}
+
+table td {
+  border-color: var(--kudzu-border) !important;
+}
+
+/* Card Styles */
+.card {
+  background: var(--kudzu-bg-white) !important;
+  border: 1px solid var(--kudzu-border) !important;
+  box-shadow: 0 1px 3px var(--kudzu-shadow) !important;
+}
+
+/* Navigation - Only apply to main navigation, not sidebar */
+.nav-item.active {
+  background: var(--kudzu-primary-light) !important;
+  color: var(--kudzu-primary) !important;
+}
+
+.nav-item:hover {
+  background: var(--kudzu-primary-light) !important;
+  color: var(--kudzu-primary) !important;
+}
+
+/* Sidebar navigation should maintain its own styling - handled by individual components */
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .btn {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+  
+  .btn-sm {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
+}

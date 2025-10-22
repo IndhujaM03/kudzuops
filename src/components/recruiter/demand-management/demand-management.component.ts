@@ -78,7 +78,6 @@ interface ViewDrawer {
     <div class="demand-management-container">
       <!-- Header -->
       <div class="header">
-        <h1 class="title">My Assigned Demands</h1>
         <div class="header-stats">
           <div class="stat-item">
             <span class="stat-label">Total Assigned:</span>
@@ -536,7 +535,7 @@ interface ViewDrawer {
 
     .header {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
       margin-bottom: 16px;
       padding: 12px 16px;
@@ -546,13 +545,6 @@ interface ViewDrawer {
       max-width: 1200px;
       margin-left: auto;
       margin-right: auto;
-    }
-
-    .title {
-      font-size: 20px;
-      font-weight: 600;
-      color: #1e293b;
-      margin: 0;
     }
 
     .header-stats {
@@ -629,7 +621,7 @@ interface ViewDrawer {
     }
 
     .demands-table td {
-      padding: 12px 16px;
+      padding: 8px 16px;
       border-bottom: 1px solid #f3f4f6;
     }
 
@@ -774,39 +766,40 @@ interface ViewDrawer {
     }
 
     .btn-primary {
-      background: #3b82f6;
+      background:var(--kudzu-primary);
       color: white;
     }
 
     .btn-primary:hover:not(:disabled) {
-      background: #2563eb;
+      background:var(--kudzu-primary-dark);
     }
 
     .btn-secondary {
-      background: #6b7280;
-      color: white;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary);
     }
 
     .btn-secondary:hover {
-      background: #4b5563;
+      background: var(--kudzu-primary);
+      color: white;
     }
 
     .btn-success {
-      background: #10b981;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-success:hover:not(:disabled) {
-      background: #059669;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-warning {
-      background: #f59e0b;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-warning:hover {
-      background: #d97706;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn:disabled {

@@ -1,9 +1,11 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { RouterLink, RouterLinkActive, RouterOutlet, ActivatedRoute } from '@angular/router';
 import { Router } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../services/auth.service';
 import { ToastContainerComponent } from '../../shared/components/toast-container.component';
+import { environment } from '../../environments/environment';
 
 
 @Component({
@@ -15,12 +17,8 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
       <!-- Sidebar -->
       <div class="sidebar" *ngIf="!shouldHideSidebar()">
         <div class="sidebar-header">
-          <h1 class="sidebar-title">Recruiter</h1>
-          <p class="sidebar-subtitle">Operations Dashboard</p>
-          <div *ngIf="userInfo" class="sidebar-user-info">
-            <p class="sidebar-user-name">{{ userInfo.display_name }}</p>
-            <p class="sidebar-user-role">{{ userInfo.role | titlecase }}</p>
-          </div>
+          <h1 class="sidebar-title">{{ getUserDisplayName() }}</h1>
+          <p class="sidebar-subtitle">Recruiter</p>
         </div>
         
         <nav class="sidebar-nav">
@@ -62,21 +60,15 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
       </div>
       
       <!-- Main Content -->
-      <div class="main-content" [class.fullWidth]="shouldHideSidebar()">
+      <div class="main-content" [ngClass]="{ fullWidth: shouldHideSidebar(), noHeader: shouldHideHeader() }">
         <!-- Header -->
-        <header class="header">
+        <header class="header" *ngIf="!shouldHideHeader()">
           <div class="header-content">
             <div class="header-left">
-              <h2 class="header-title">Dashboard</h2>
+              <!-- Left side content can be added here if needed -->
             </div>
-            <div class="header-actions">
-              <div class="notification-btn">
-                <button class="notification-button">
-                  <svg class="notification-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                  </svg>
-                </button>
-              </div>
+            <div class="header-right">
+              <div class="user-initials">{{ getUserInitials() }}</div>
             </div>
           </div>
         </header>
@@ -94,57 +86,65 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
     <app-toast-container></app-toast-container>
   `,
   styles: [`
+    /* Import Manrope Font */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+    /* Kudzu Theme Variables */
+    :root {
+      --kudzu-primary: rgb(24, 45, 23);
+      --kudzu-primary-light: rgba(24, 45, 23, 0.1);
+      --kudzu-primary-dark: rgb(18, 35, 18);
+    }
+
     .admin-layout {
       display: flex;
       min-height: 100vh;
-      background: #f8fafc;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 280px;
-      background: white;
-      border-right: 1px solid #e5e7eb;
+      height: 100vh;
+      background: linear-gradient(180deg, var(--kudzu-primary) 0%, var(--kudzu-primary-dark) 100%);
+      color: white;
       display: flex;
       flex-direction: column;
+      box-shadow: 4px 0 20px rgba(24, 45, 23, 0.15);
+      backdrop-filter: blur(10px);
+      z-index: 1001;
     }
 
     .sidebar-header {
       padding: 24px 20px;
-      border-bottom: 1px solid #e5e7eb;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: transparent;
       color: white;
     }
 
     .sidebar-title {
-      font-size: 20px;
-      font-weight: 600;
-      margin: 0 0 4px 0;
+      font-size: 18px !important;
+      font-weight: 600 !important;
+      margin: 0 0 4px 0 !important;
+      color: white !important;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
+      display: block !important;
+      visibility: visible !important;
     }
 
     .sidebar-subtitle {
-      font-size: 14px;
-      opacity: 0.9;
-      margin: 0 0 16px 0;
+      font-size: 12px !important;
+      opacity: 0.8 !important;
+      margin: 0 !important;
+      color: rgba(255, 255, 255, 0.8) !important;
+      display: block !important;
+      visibility: visible !important;
     }
 
-    .sidebar-user-info {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 12px;
-      border-radius: 8px;
-      backdrop-filter: blur(10px);
-    }
 
-    .sidebar-user-name {
-      font-weight: 500;
-      margin: 0 0 4px 0;
-      font-size: 14px;
-    }
-
-    .sidebar-user-role {
-      font-size: 12px;
-      opacity: 0.8;
-      margin: 0;
-    }
 
     .sidebar-nav {
       flex: 1;
@@ -152,25 +152,26 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
     }
 
     .sidebar-nav-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 20px;
-      color: #6b7280;
-      text-decoration: none;
-      transition: all 0.2s;
-      border-left: 3px solid transparent;
+      display: flex !important;
+      align-items: center !important;
+      gap: 12px !important;
+      padding: 12px 24px !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+      text-decoration: none !important;
+      transition: all 0.2s ease !important;
+      border-left: 3px solid transparent !important;
+      position: relative !important;
     }
 
     .sidebar-nav-item:hover {
-      background: #f8fafc;
-      color: #374151;
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: white !important;
     }
 
     .sidebar-nav-item.active {
-      background: #eff6ff;
-      color: #2563eb;
-      border-left-color: #2563eb;
+      background: rgba(255, 255, 255, 0.15) !important;
+      color: white !important;
+      border-left-color: white !important;
     }
 
     .sidebar-nav-icon {
@@ -180,8 +181,8 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
 
 
     .sidebar-footer {
-      padding: 20px;
-      border-top: 1px solid #e5e7eb;
+      padding: 20px 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .sidebar-logout-btn {
@@ -190,41 +191,56 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
       align-items: center;
       gap: 12px;
       padding: 12px 16px;
-      background: #f3f4f6;
-      color: #374151;
-      border: none;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 8px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
       font-size: 14px;
+      font-weight: 500;
     }
 
     .sidebar-logout-btn:hover {
-      background: #e5e7eb;
-      color: #1f2937;
+      background: rgba(239, 68, 68, 0.1);
+      color: white;
+      border-color: #ef4444;
     }
 
     .main-content {
+      margin-left: 280px;
       flex: 1;
       display: flex;
       flex-direction: column;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      padding-top: 60px; /* Add space for fixed header */
     }
 
+    /* Fullscreen adjustments when sidebar/header hidden */
+    .main-content.fullWidth { margin-left: 0; }
+    .main-content.noHeader { padding-top: 0; }
+
     .header {
-      background: white;
-      border-bottom: 1px solid #e5e7eb;
-      padding: 0 24px;
-      height: 64px;
+      position: fixed;
+      top: 0;
+      left: 280px;
+      right: 0;
+      z-index: 1000;
+      height: 60px;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      border-bottom: 1px solid rgba(24, 45, 23, 0.1);
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
       display: flex;
       align-items: center;
-      justify-content: space-between;
     }
 
     .header-content {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      padding: 0 32px;
       width: 100%;
+      height: 100%;
     }
 
     .header-left {
@@ -232,46 +248,36 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
       align-items: center;
     }
 
-    .header-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1e293b;
-      margin: 0;
-    }
-
-    .header-actions {
+    .header-right {
       display: flex;
       align-items: center;
-      gap: 16px;
     }
 
-    .notification-btn {
-      position: relative;
-    }
-
-    .notification-button {
-      background: none;
-      border: none;
-      padding: 8px;
-      border-radius: 6px;
+    .user-initials {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--kudzu-primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.3s ease;
       cursor: pointer;
-      color: #6b7280;
-      transition: all 0.2s;
     }
 
-    .notification-button:hover {
-      background: #f3f4f6;
-      color: #374151;
+    .user-initials:hover {
+      background: var(--kudzu-primary-dark);
+      transform: scale(1.05);
     }
 
-    .notification-icon {
-      width: 20px;
-      height: 20px;
-    }
+
 
     .page-content {
       flex: 1;
-      padding: 0;
+      padding: 32px;
     }
 
     .container {
@@ -286,7 +292,7 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
         position: fixed;
         top: 0;
         left: -100%;
-        z-index: 1000;
+        z-index: 1001;
         transition: left 0.3s ease;
       }
 
@@ -295,7 +301,26 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
       }
 
       .main-content {
+        margin-left: 0;
         width: 100%;
+      }
+
+      .header {
+        left: 0;
+        height: 50px;
+        display: flex;
+        align-items: center;
+      }
+
+      .header-content {
+        padding: 0 20px;
+        width: 100%;
+        height: 100%;
+      }
+
+
+      .page-content {
+        padding: 20px;
       }
     }
   `]
@@ -303,18 +328,179 @@ import { ToastContainerComponent } from '../../shared/components/toast-container
 export class RecruiterComponent implements OnInit {
   private router = inject(Router);
   private auth = inject(AuthService);
+  private route = inject(ActivatedRoute);
+  private http = inject(HttpClient);
   
   userInfo: any = null;
+  apiBase = environment.apiBase || '';
 
   ngOnInit(): void {
     this.loadUserInfo();
+    // Fallback: try to get user info from localStorage
+    this.loadUserInfoFromStorage();
+    
+    // Also try to get from localStorage immediately as backup
+    const storedUser = localStorage.getItem('user_info');
+    console.log('🔍 Immediate localStorage check:', storedUser);
+    if (storedUser && !this.userInfo) {
+      try {
+        this.userInfo = JSON.parse(storedUser);
+        console.log('✅ User info loaded from localStorage on init:', this.userInfo);
+        console.log('📊 Init storage user info fields:', {
+          id: this.userInfo?.id,
+          email: this.userInfo?.email,
+          display_name: this.userInfo?.display_name,
+          first_name: this.userInfo?.first_name,
+          last_name: this.userInfo?.last_name,
+          name: this.userInfo?.name,
+          role: this.userInfo?.role
+        });
+      } catch (e) {
+        console.error('❌ Error parsing stored user info:', e);
+      }
+    } else if (storedUser) {
+      console.log('ℹ️ User info already loaded, skipping init localStorage');
+    } else {
+      console.log('⚠️ No user info in localStorage on init');
+    }
   }
 
   loadUserInfo(): void {
+    console.log('🔄 Loading user info from API...');
     this.auth.getCurrentUser().subscribe({
-      next: (user) => this.userInfo = user,
-      error: () => this.userInfo = null
+      next: (user) => {
+        this.userInfo = user;
+        console.log('✅ User info loaded from API:', user);
+        console.log('📊 User info fields:', {
+          id: user?.id,
+          email: user?.email,
+          display_name: user?.display_name,
+          first_name: user?.first_name,
+          last_name: user?.last_name,
+          name: user?.name,
+          role: user?.role
+        });
+        
+        // If we don't have name fields, use email as fallback
+        if (user?.id && (!user?.first_name && !user?.last_name && !user?.display_name)) {
+          console.log('🔄 No name fields found, using email as fallback...');
+          this.useEmailAsName(user);
+        }
+      },
+      error: (error) => {
+        console.error('❌ Error loading user info from API:', error);
+        this.userInfo = null;
+      }
     });
+  }
+
+  useEmailAsName(user: any): void {
+    console.log('🔄 Fetching user profile from database for user:', user);
+    
+    // Fetch user profile from database
+    this.fetchUserProfileFromDB(user.id);
+  }
+
+  fetchUserProfileFromDB(userId: number): void {
+    console.log('🔄 Fetching user profile from database for ID:', userId);
+    
+    // First try to get from localStorage
+    const storedUser = localStorage.getItem(`user_profile_${userId}`);
+    if (storedUser) {
+      try {
+        const profile = JSON.parse(storedUser);
+        console.log('✅ Found stored user profile:', profile);
+        this.updateUserInfoWithProfile(profile);
+        return;
+      } catch (error) {
+        console.error('❌ Error parsing stored user profile:', error);
+      }
+    }
+    
+    // Fetch from database
+    this.http.get<any[]>(`${this.apiBase}/users`).subscribe({
+      next: (users) => {
+        console.log('✅ Fetched users from database:', users);
+        const userProfile = users.find(u => u.id === userId);
+        if (userProfile) {
+          console.log('✅ Found user profile in database:', userProfile);
+          // Store in localStorage for future use
+          localStorage.setItem(`user_profile_${userId}`, JSON.stringify(userProfile));
+          this.updateUserInfoWithProfile(userProfile);
+        } else {
+          console.log('⚠️ User profile not found in database, using fallback');
+          this.useFallbackName();
+        }
+      },
+      error: (error) => {
+        console.error('❌ Error fetching user profile from database:', error);
+        this.useFallbackName();
+      }
+    });
+  }
+
+  updateUserInfoWithProfile(profile: any): void {
+    console.log('🔄 Updating user info with profile:', profile);
+    
+    let displayName = 'Recruiter';
+    
+    if (profile.first_name && profile.last_name) {
+      displayName = `${profile.first_name} ${profile.last_name}`;
+    } else if (profile.first_name) {
+      displayName = profile.first_name;
+    } else if (profile.email) {
+      // Use email as fallback
+      const emailName = profile.email.split('@')[0];
+      displayName = emailName
+        .replace(/[._-]/g, ' ')
+        .split(' ')
+        .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    }
+    
+    this.userInfo = {
+      ...this.userInfo,
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      email: profile.email,
+      display_name: displayName
+    };
+    
+    console.log('✅ Updated user info with profile data:', this.userInfo);
+  }
+
+  useFallbackName(): void {
+    console.log('⚠️ Using fallback name strategy');
+    this.userInfo = {
+      ...this.userInfo,
+      display_name: this.userInfo?.role === 'recruiter' ? 'Recruiter' : 'User'
+    };
+  }
+
+  loadUserInfoFromStorage(): void {
+    try {
+      const userInfo = localStorage.getItem('user_info');
+      console.log('🔍 Checking localStorage for user info:', userInfo);
+      if (userInfo && !this.userInfo) {
+        this.userInfo = JSON.parse(userInfo);
+        console.log('✅ User info loaded from storage:', this.userInfo);
+        console.log('📊 Storage user info fields:', {
+          id: this.userInfo?.id,
+          email: this.userInfo?.email,
+          display_name: this.userInfo?.display_name,
+          first_name: this.userInfo?.first_name,
+          last_name: this.userInfo?.last_name,
+          name: this.userInfo?.name,
+          role: this.userInfo?.role
+        });
+      } else if (userInfo) {
+        console.log('ℹ️ User info already loaded from API, skipping storage');
+      } else {
+        console.log('⚠️ No user info found in localStorage');
+      }
+    } catch (error) {
+      console.error('❌ Error parsing user info from storage:', error);
+    }
   }
 
   shouldHideSidebar(): boolean {
@@ -331,6 +517,103 @@ export class RecruiterComponent implements OnInit {
     }
   }
 
+  shouldHideHeader(): boolean {
+    try {
+      // Hide header on activity (process) pages
+      const url = this.router.url || '';
+      return url.includes('/recruiter/activity/');
+    } catch {
+      return false;
+    }
+  }
+
+
+  getPageTitle(): string {
+    const url = this.router.url || '';
+    if (url.includes('/dashboard')) return 'Dashboard';
+    if (url.includes('/demands')) return 'Assigned Demands';
+    if (url.includes('/settings')) return 'Settings';
+    if (url.includes('/submitted')) return 'Submitted CVs';
+    if (url.includes('/interview-schedule')) return 'Interview Schedule';
+    if (url.includes('/activity/')) return 'Recruiter Activity';
+    return 'Dashboard';
+  }
+
+  getUserDisplayName(): string {
+    if (!this.userInfo) {
+      return 'Loading...';
+    }
+    
+    console.log('🔍 Getting user display name for:', this.userInfo);
+    
+    if (this.userInfo.display_name) {
+      console.log('✅ Using display_name:', this.userInfo.display_name);
+      return this.userInfo.display_name;
+    }
+    if (this.userInfo.first_name && this.userInfo.last_name) {
+      const fullName = `${this.userInfo.first_name} ${this.userInfo.last_name}`;
+      console.log('✅ Using first_name + last_name:', fullName);
+      return fullName;
+    }
+    if (this.userInfo.first_name) {
+      console.log('✅ Using first_name:', this.userInfo.first_name);
+      return this.userInfo.first_name;
+    }
+    if (this.userInfo.name) {
+      console.log('✅ Using name:', this.userInfo.name);
+      return this.userInfo.name;
+    }
+    if (this.userInfo.email) {
+      console.log('✅ Using email:', this.userInfo.email);
+      return this.userInfo.email;
+    }
+    
+    // If we have an ID but no name, show a generic name
+    if (this.userInfo.id) {
+      console.log('⚠️ No name fields found, using ID-based name');
+      return `Recruiter #${this.userInfo.id}`;
+    }
+    
+    console.log('⚠️ No user info available, using fallback');
+    return 'Recruiter';
+  }
+
+  getUserInitials(): string {
+    if (!this.userInfo) {
+      return 'R';
+    }
+    
+    // Try to get initials from display_name or first_name + last_name
+    if (this.userInfo.display_name) {
+      const parts = this.userInfo.display_name.trim().split(' ');
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0][0].toUpperCase();
+    }
+    
+    if (this.userInfo.first_name && this.userInfo.last_name) {
+      return (this.userInfo.first_name[0] + this.userInfo.last_name[0]).toUpperCase();
+    }
+    
+    if (this.userInfo.first_name) {
+      return this.userInfo.first_name[0].toUpperCase();
+    }
+    
+    if (this.userInfo.name) {
+      const parts = this.userInfo.name.trim().split(' ');
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return parts[0][0].toUpperCase();
+    }
+    
+    if (this.userInfo.email) {
+      return this.userInfo.email[0].toUpperCase();
+    }
+    
+    return 'R';
+  }
 
   logout() {
     try { localStorage.removeItem('access_token'); } catch {}

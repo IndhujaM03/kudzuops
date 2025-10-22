@@ -3,15 +3,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { SuperAdminService, PendingUser } from '../../services/superadmin.service';
-import { HttpClient } from '@angular/common/http';
-import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-superadmin-dashboard',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <h2 class="superadmin-section-title">Pending Approvals</h2>
+    <h2 class="superadmin-section-title"></h2>
       <div class="superadmin-card superadmin-card-elevated">
         <div *ngIf="pendingUsers().length === 0" class="superadmin-empty-state">
           <div class="superadmin-empty-icon">✅</div>
@@ -95,10 +93,11 @@ import { environment } from '../../environments/environment';
       </div>
   `,
   styles: [`
-    /* Super Admin Dashboard Styles */
+    /* Super Admin Dashboard Styles - Kudzu Theme */
     .superadmin-dashboard {
       min-height: 100vh;
-      background: #f7fafc;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .superadmin-sidebar {
@@ -233,14 +232,18 @@ import { environment } from '../../environments/environment';
     }
 
     .superadmin-card {
-      background: white;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
       border-radius: 12px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+      border: 1px solid rgba(24, 45, 23, 0.1);
       overflow: visible;
       min-height: 400px;
     }
-    .superadmin-card-elevated { box-shadow: 0 10px 18px rgba(0,0,0,0.06); border-color:#e6eef8; }
+    .superadmin-card-elevated { 
+      box-shadow: 0 10px 18px rgba(24, 45, 23, 0.15); 
+      border-color: rgba(24, 45, 23, 0.2); 
+    }
 
     .superadmin-table {
       width: 100%;
@@ -312,22 +315,22 @@ import { environment } from '../../environments/environment';
     }
 
     .superadmin-btn-approve {
-      background: #48bb78;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .superadmin-btn-approve:hover {
-      background: #38a169;
+      background: var(--kudzu-primary-dark);
       transform: translateY(-1px);
     }
 
     .superadmin-btn-reject {
-      background: #f56565;
+      background: #ef4444;
       color: white;
     }
 
     .superadmin-btn-reject:hover {
-      background: #e53e3e;
+      background: #dc2626;
       transform: translateY(-1px);
     }
     .superadmin-btn-pill { border-radius: 9999px; padding: 8px 18px; }
@@ -493,7 +496,6 @@ import { environment } from '../../environments/environment';
 export class SuperAdminDashboardComponent implements OnInit {
   private superAdminService = inject(SuperAdminService);
   private router = inject(Router);
-  private http = inject(HttpClient);
 
   pendingUsers = signal<PendingUser[]>([]);
   pendingCount = signal(0);
@@ -504,8 +506,6 @@ export class SuperAdminDashboardComponent implements OnInit {
   businessHeads = signal<any[]>([]);
   clusterManagers = signal<any[]>([]);
   superAdmins = signal<any[]>([]);
-  
-  apiBase = environment.apiBase || 'http://localhost:8000';
 
   ngOnInit(): void {
     console.log('📊 SuperAdminDashboardComponent initialized');
@@ -591,37 +591,37 @@ export class SuperAdminDashboardComponent implements OnInit {
   }
 
   loadTeamLeaders(): void {
-    this.http.get<any[]>(`${this.apiBase}/teamleaders`).subscribe({
-      next: (data) => this.teamLeaders.set(data || []),
-      error: (err) => console.error('Failed to load team leaders:', err)
+    this.superAdminService.getTeamLeaders().subscribe({
+      next: (data: any[]) => this.teamLeaders.set(data || []),
+      error: (err: any) => console.error('Failed to load team leaders:', err)
     });
   }
 
   loadManagers(): void {
-    this.http.get<any[]>(`${this.apiBase}/users?role=manager`).subscribe({
-      next: (data) => this.managers.set(data || []),
-      error: (err) => console.error('Failed to load managers:', err)
+    this.superAdminService.getUsersByRole('manager').subscribe({
+      next: (data: any[]) => this.managers.set(data || []),
+      error: (err: any) => console.error('Failed to load managers:', err)
     });
   }
 
   loadBusinessHeads(): void {
-    this.http.get<any[]>(`${this.apiBase}/users?role=business_head`).subscribe({
-      next: (data) => this.businessHeads.set(data || []),
-      error: (err) => console.error('Failed to load business heads:', err)
+    this.superAdminService.getUsersByRole('business_head').subscribe({
+      next: (data: any[]) => this.businessHeads.set(data || []),
+      error: (err: any) => console.error('Failed to load business heads:', err)
     });
   }
 
   loadClusterManagers(): void {
-    this.http.get<any[]>(`${this.apiBase}/users?role=cluster_manager`).subscribe({
-      next: (data) => this.clusterManagers.set(data || []),
-      error: (err) => console.error('Failed to load cluster managers:', err)
+    this.superAdminService.getUsersByRole('cluster_manager').subscribe({
+      next: (data: any[]) => this.clusterManagers.set(data || []),
+      error: (err: any) => console.error('Failed to load cluster managers:', err)
     });
   }
 
   loadSuperAdmins(): void {
-    this.http.get<any[]>(`${this.apiBase}/users?role=super_admin`).subscribe({
-      next: (data) => this.superAdmins.set(data || []),
-      error: (err) => console.error('Failed to load super admins:', err)
+    this.superAdminService.getUsersByRole('super_admin').subscribe({
+      next: (data: any[]) => this.superAdmins.set(data || []),
+      error: (err: any) => console.error('Failed to load super admins:', err)
     });
   }
 

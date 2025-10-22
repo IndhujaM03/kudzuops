@@ -1,4 +1,4 @@
-/* Super Admin Dashboard Styles */
+/* Super Admin Dashboard Styles - Kudzu Theme with Glassy Effect */
 
 /* Login Page Styles */
 .superadmin-login-container {
@@ -6,14 +6,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--kudzu-primary) 0%, var(--kudzu-primary-dark) 100%);
   padding: 20px;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
 }
 
 .superadmin-login-card {
-  background: white;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 40px rgba(24, 45, 23, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 40px;
   width: 100%;
   max-width: 400px;
@@ -28,7 +31,7 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: var(--kudzu-primary);
 }
 
 .superadmin-login-header {
@@ -72,9 +75,9 @@
 
 .superadmin-form-input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--kudzu-primary);
   background: white;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px var(--kudzu-primary-light);
 }
 
 .superadmin-form-input.error {
@@ -97,7 +100,7 @@
 
 .superadmin-login-button {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--kudzu-primary);
   color: white;
   border: none;
   padding: 14px 20px;
@@ -112,7 +115,8 @@
 
 .superadmin-login-button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 10px 20px rgba(24, 45, 23, 0.3);
+  background: var(--kudzu-primary-dark);
 }
 
 .superadmin-login-button:disabled {
@@ -138,7 +142,8 @@
 /* Dashboard Styles */
 .superadmin-dashboard {
   min-height: 100vh;
-  background: #f7fafc;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
 }
 
 .superadmin-sidebar {
@@ -147,10 +152,11 @@
   left: 0;
   width: 280px;
   height: 100vh;
-  background: linear-gradient(180deg, #2d3748 0%, #1a202c 100%);
+  background: linear-gradient(180deg, var(--kudzu-primary) 0%, var(--kudzu-primary-dark) 100%);
   color: white;
   z-index: 1000;
-  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+  box-shadow: 4px 0 20px rgba(24, 45, 23, 0.15);
+  backdrop-filter: blur(10px);
 }
 
 .superadmin-sidebar-header {
@@ -162,7 +168,7 @@
 .superadmin-sidebar-logo {
   font-size: 24px;
   font-weight: 700;
-  color: #667eea;
+  color: #ffffff;
   margin-bottom: 8px;
 }
 
@@ -187,14 +193,14 @@
 }
 
 .superadmin-nav-item:hover {
-  background: rgba(102, 126, 234, 0.1);
-  color: #667eea;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
 .superadmin-nav-item.active {
-  background: rgba(102, 126, 234, 0.2);
-  color: #667eea;
-  border-right: 3px solid #667eea;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-right: 3px solid #ffffff;
 }
 
 .superadmin-nav-icon {
@@ -244,17 +250,18 @@
 .superadmin-main-content {
   margin-left: 0;
   min-height: 100vh;
-  background: #f7fafc;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
 }
 @media (min-width: 1024px) {
   .superadmin-main-content { margin-left: 280px; }
 }
 
 .superadmin-header {
-  background: white;
-  border-bottom: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(24, 45, 23, 0.1);
   padding: 20px 32px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(24, 45, 23, 0.1);
 }
 
 .superadmin-header-title {
@@ -276,10 +283,11 @@
 }
 
 .superadmin-card {
-  background: white;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
   border-radius: 12px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+  border: 1px solid rgba(24, 45, 23, 0.1);
   overflow: hidden;
 }
 
@@ -349,22 +357,22 @@
 }
 
 .superadmin-btn-approve {
-  background: #48bb78;
+  background: var(--kudzu-primary);
   color: white;
 }
 
 .superadmin-btn-approve:hover {
-  background: #38a169;
+  background: var(--kudzu-primary-dark);
   transform: translateY(-1px);
 }
 
 .superadmin-btn-reject {
-  background: #f56565;
+  background: #ef4444;
   color: white;
 }
 
 .superadmin-btn-reject:hover {
-  background: #e53e3e;
+  background: #dc2626;
   transform: translateY(-1px);
 }
 
@@ -381,8 +389,8 @@
 
 .superadmin-role-select:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: var(--kudzu-primary);
+  box-shadow: 0 0 0 3px var(--kudzu-primary-light);
 }
 
 .superadmin-empty-state {
@@ -422,7 +430,7 @@
   width: 24px;
   height: 24px;
   border: 2px solid #e2e8f0;
-  border-top-color: #667eea;
+  border-top-color: var(--kudzu-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-right: 12px;
@@ -482,5 +490,5 @@
 }
 
 .superadmin-sidebar::-webkit-scrollbar-thumb:hover {
-  background: #667eea;
+  background: #ffffff;
 }

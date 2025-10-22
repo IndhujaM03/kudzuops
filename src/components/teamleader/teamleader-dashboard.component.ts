@@ -22,14 +22,47 @@ import { CommonModule } from '@angular/common';
     </div>
   `,
   styles: [`
-    .tl-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; }
-    .tl-card { background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.06); padding:20px; }
-    .tl-card-title { font-size:14px; color:#4b5563; margin-bottom:8px; font-weight:600; }
-    .tl-card-value { font-size:28px; font-weight:800; color:#111827; }
-    .tl-card-unassigned { border-color:#fde68a; }
-    .tl-card-assigned { border-color:#93c5fd; }
-    .tl-card-submitted { border-color:#86efac; }
-    @media (max-width: 768px) { .tl-grid { grid-template-columns: 1fr; } }
+    .tl-grid { 
+      display:grid; 
+      grid-template-columns: repeat(3, 1fr); 
+      gap:20px; 
+    }
+    .tl-card { 
+      background:rgba(255, 255, 255, 0.8); 
+      backdrop-filter:blur(10px);
+      border:1px solid rgba(24, 45, 23, 0.1); 
+      border-radius:12px; 
+      box-shadow:0 4px 6px rgba(24, 45, 23, 0.1); 
+      padding:24px; 
+      transition:all 0.2s ease;
+    }
+    .tl-card:hover {
+      transform: translateY(-2px);
+      box-shadow:0 10px 18px rgba(24, 45, 23, 0.15);
+    }
+    .tl-card-title { 
+      font-size:14px; 
+      color:#4b5563; 
+      margin-bottom:8px; 
+      font-weight:600; 
+    }
+    .tl-card-value { 
+      font-size:28px; 
+      font-weight:800; 
+      color:#111827; 
+    }
+    .tl-card-unassigned { 
+      border-left:4px solid #f59e0b; 
+    }
+    .tl-card-assigned { 
+      border-left:4px solid var(--kudzu-primary); 
+    }
+    .tl-card-submitted { 
+      border-left:4px solid #10b981; 
+    }
+    @media (max-width: 768px) { 
+      .tl-grid { grid-template-columns: 1fr; } 
+    }
   `]
 })
 export class TeamLeaderDashboardComponent {}

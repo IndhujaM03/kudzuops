@@ -207,39 +207,40 @@ interface Interview {
     }
 
     .btn-primary {
-      background: #3b82f6;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-primary:hover {
-      background: #2563eb;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-success {
-      background: #10b981;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-success:hover {
-      background: #059669;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-warning {
-      background: #f59e0b;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-warning:hover {
-      background: #d97706;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-secondary {
-      background: #6b7280;
-      color: white;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary);
     }
 
     .btn-secondary:hover {
-      background: #4b5563;
+      background: var(--kudzu-primary);
+      color: white;
     }
 
     .btn-sm {

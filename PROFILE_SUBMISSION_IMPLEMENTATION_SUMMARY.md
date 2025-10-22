@@ -171,3 +171,4 @@ The implementation successfully addresses all requirements:
 The solution ensures that profile submissions trigger appropriate status updates only when CV counts exactly match requirements, providing a robust and reliable recruitment process management system.
 
 
+

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { ActivatedRoute } from '@angular/router';
 import { environment } from '../../environments/environment';
 
 interface Client {
@@ -30,6 +31,7 @@ interface Spoc {
 export class DemandSheetComponent implements OnInit {
   private http = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
+  private route = inject(ActivatedRoute);
 
   clients = signal<Client[]>([]);
   spocs = signal<Spoc[]>([]);
@@ -116,6 +118,13 @@ export class DemandSheetComponent implements OnInit {
     this.loadUnassigned();
     this.fetchTeamLeads();
     this.fetchAssignedToRecruiters();
+    
+    // Check for create query parameter
+    this.route.queryParams.subscribe(params => {
+      if (params['create'] === 'true') {
+        this.openCreateModal();
+      }
+    });
   }
 
   fetchClients(): void {
@@ -420,8 +429,12 @@ export class DemandSheetComponent implements OnInit {
   }
 
   // Modal helpers
-  openCreateModal(): void { this.showForm = true; }
-  closeCreateModal(): void { this.showForm = false; }
+  openCreateModal(): void { 
+    this.showForm = true; 
+  }
+  closeCreateModal(): void { 
+    this.showForm = false; 
+  }
 
   openAssignModal(row: any): void {
     console.log('🔍 Opening assign modal for demand:', row);
@@ -475,6 +488,7 @@ export class DemandSheetComponent implements OnInit {
       next: (rows) => {
         console.log('✅ Team leaders fetched:', rows);
         this.teamLeaders = rows || [];
+        
         this.filteredTeamLeaders = [...this.teamLeaders];
         console.log('✅ Team leaders array updated:', this.teamLeaders);
       },

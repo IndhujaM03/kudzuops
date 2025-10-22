@@ -38,6 +38,18 @@ export class SuperAdminService {
     return this.http.get<PendingUser[]>(`${this.api}/superadmin/pending-users`, { headers: this.getAuthHeaders() });
   }
 
+  getPendingCount(): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>(`${this.api}/superadmin/pending-approvals/count`, { headers: this.getAuthHeaders() });
+  }
+
+  getTeamLeaders(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.api}/teamleaders`, { headers: this.getAuthHeaders() });
+  }
+
+  getUsersByRole(role: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.api}/users?role=${role}`, { headers: this.getAuthHeaders() });
+  }
+
   approveUser(userId: number, reportingTo?: number): Observable<{ message: string }> {
     const payload = reportingTo ? { reporting_to: reportingTo } : {};
     return this.http.post<{ message: string }>(`${this.api}/superadmin/approve/${userId}`, payload, { headers: this.getAuthHeaders() });
@@ -52,17 +64,18 @@ export class SuperAdminService {
   }
 
   isSuperAdminLoggedIn(): boolean {
-    const token = localStorage.getItem('superadmin_token');
+    const token = localStorage.getItem('access_token');
     return !!token;
   }
 
   logout(): void {
-    localStorage.removeItem('superadmin_token');
-    localStorage.removeItem('superadmin_token_type');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('token_type');
+    localStorage.removeItem('expires_at');
   }
 
   storeAuth(response: SuperAdminAuthResponse): void {
-    localStorage.setItem('superadmin_token', response.access_token);
-    localStorage.setItem('superadmin_token_type', response.token_type || 'bearer');
+    localStorage.setItem('access_token', response.access_token);
+    localStorage.setItem('token_type', response.token_type || 'bearer');
   }
 }

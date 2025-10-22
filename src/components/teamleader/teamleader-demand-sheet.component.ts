@@ -1,6 +1,8 @@
-import { Component, signal, inject } from '@angular/core';
+import { Component, signal, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TeamLeaderService } from '../../services/teamleader.service';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 interface DemandItem {
   id: number;
@@ -15,8 +17,6 @@ interface DemandItem {
   imports: [CommonModule],
   template: `
     <div class="tl-demand-wrapper">
-      <h2 class="tl-page-title">Demand Sheet</h2>
-
       <div class="tl-tabs">
         <button class="tl-tab" [class.active]="activeTab() === 'unassigned'" (click)="setTab('unassigned')">Unassigned</button>
         <button class="tl-tab" [class.active]="activeTab() === 'assigned'" (click)="setTab('assigned')">Assigned</button>
@@ -28,8 +28,15 @@ interface DemandItem {
         <ng-container *ngIf="unassigned().length; else emptyUnassigned">
           <div class="tl-list">
             <div class="tl-item" *ngFor="let d of unassigned()">
-              <div class="tl-item-title">{{ d.title }}</div>
-              <div class="tl-item-sub">{{ d.client || '—' }} • {{ d.createdAt || '' }}</div>
+              <div class="tl-item-content">
+                <div class="tl-item-title">{{ d.title }}</div>
+                <div class="tl-item-sub">{{ d.client || '—' }} • {{ d.createdAt || '' }}</div>
+              </div>
+              <div class="tl-item-actions">
+                <button (click)="assignDemand(d.id)" class="btn-assign" title="Assign Demand">
+                  Assign
+                </button>
+              </div>
             </div>
           </div>
         </ng-container>
@@ -116,12 +123,11 @@ interface DemandItem {
                         <span *ngIf="!cv.cv_url" class="no-link">No link</span>
                       </td>
                       <td class="view-profile">
-                        <button (click)="viewProfile(cv, cvData)" class="btn-view-profile" title="View Full Profile">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        <button (click)="viewProfile(cv, cvData)" class="jd-view-btn" title="View Profile Information">
+                          <svg class="info-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="10" fill="#FFFFFF" stroke="none"/>
+                            <path d="M12 16V12M12 8H12.01" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                           </svg>
-                          View Profile
                         </button>
                       </td>
                       <td class="status">
@@ -207,12 +213,11 @@ interface DemandItem {
                         <span *ngIf="!cv.cv_url" class="no-link">No link</span>
                       </td>
                       <td class="view-profile">
-                        <button (click)="viewProfile(cv, cvData)" class="btn-view-profile" title="View Full Profile">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        <button (click)="viewProfile(cv, cvData)" class="jd-view-btn" title="View Profile Information">
+                          <svg class="info-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="10" fill="#FFFFFF" stroke="none"/>
+                            <path d="M12 16V12M12 8H12.01" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                           </svg>
-                          View Profile
                         </button>
                       </td>
                       <td class="status">
@@ -229,70 +234,309 @@ interface DemandItem {
           <div class="tl-empty">No submitted CVs</div>
         </ng-template>
       </div>
+
     </div>
   `,
   styles: [`
-    .tl-demand-wrapper { background:#fff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.06); padding:16px; }
-    .tl-page-title { margin:0 0 12px; font-size:18px; font-weight:700; color:#111827; }
-    .tl-tabs { display:flex; gap:8px; border-bottom:1px solid #e5e7eb; margin-bottom:8px; }
-    .tl-tab { background:transparent; border:none; padding:10px 12px; cursor:pointer; color:#374151; border-bottom:2px solid transparent; }
-    .tl-tab.active { color:#111827; border-bottom-color:#667eea; }
-    .tl-tab-panel { padding-top:8px; }
-    .tl-list { display:flex; flex-direction:column; gap:8px; }
-    .tl-item { padding:12px; border:1px solid #f1f5f9; border-radius:8px; background:#fafafa; }
-    .tl-item-title { font-weight:600; color:#111827; margin-bottom:4px; }
-    .tl-item-sub { font-size:12px; color:#6b7280; }
-    .tl-item-cv-count { margin-top:4px; font-size:11px; color:#3b82f6; }
-    .cv-count-label { font-weight:600; }
-    .cv-count-value { margin-left:4px; font-weight:700; }
-    .tl-item-recruiters { margin-top:4px; font-size:11px; color:#059669; }
-    .recruiter-label { font-weight:600; }
-    .recruiter-names { margin-left:4px; }
-    .tl-empty { padding:16px; color:#6b7280; font-size:14px; }
-    .tl-refresh-section { margin-bottom:12px; }
-    .tl-refresh-btn { background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:14px; }
-    .tl-refresh-btn:hover { background:#2563eb; }
+    .tl-demand-wrapper { 
+      background:rgba(255, 255, 255, 0.8); 
+      backdrop-filter:blur(10px);
+      border:1px solid rgba(24, 45, 23, 0.1); 
+      border-radius:12px; 
+      box-shadow:0 4px 6px rgba(24, 45, 23, 0.1); 
+      padding:24px; 
+    }
+    .tl-tabs { 
+      display:flex; 
+      gap:8px; 
+      border-bottom:1px solid rgba(24, 45, 23, 0.1); 
+      margin-bottom:16px; 
+      justify-content: flex-start;
+    }
+    .tl-tab { 
+      background:transparent; 
+      border:none; 
+      padding:12px 16px; 
+      cursor:pointer; 
+      color:#374151; 
+      border-bottom:2px solid transparent; 
+      transition:all 0.2s ease;
+      font-weight:500;
+    }
+    .tl-tab.active { 
+      color:var(--kudzu-primary); 
+      border-bottom-color:var(--kudzu-primary); 
+    }
+    .tl-tab:hover {
+      color:var(--kudzu-primary);
+    }
+    .tl-tab-panel { 
+      padding-top:16px; 
+    }
+    .tl-list { 
+      display:flex; 
+      flex-direction:column; 
+      gap:12px; 
+    }
+    .tl-item { 
+      padding:16px; 
+      border:1px solid rgba(24, 45, 23, 0.1); 
+      border-radius:8px; 
+      background:rgba(255, 255, 255, 0.6);
+      backdrop-filter:blur(5px);
+      transition:all 0.2s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .tl-item-content {
+      flex: 1;
+    }
+    .tl-item-actions {
+      margin-left: 16px;
+    }
+    .tl-item:hover {
+      transform: translateY(-1px);
+      box-shadow:0 4px 8px rgba(24, 45, 23, 0.1);
+    }
+    .tl-item-title { 
+      font-weight:600; 
+      color: var(--kudzu-primary); 
+      margin-bottom:4px; 
+    }
+    .tl-item-sub { 
+      font-size:12px; 
+      color:#6b7280; 
+    }
+    .tl-item-cv-count { 
+      margin-top:4px; 
+      font-size:11px; 
+      color:var(--kudzu-primary); 
+    }
+    .cv-count-label { 
+      font-weight:600; 
+    }
+    .cv-count-value { 
+      margin-left:4px; 
+      font-weight:700; 
+    }
+    .tl-item-recruiters { 
+      margin-top:4px; 
+      font-size:11px; 
+      color:#059669; 
+    }
+    .recruiter-label { 
+      font-weight:600; 
+    }
+    .recruiter-names { 
+      margin-left:4px; 
+    }
+    .tl-empty { 
+      padding:24px; 
+      color:#6b7280; 
+      font-size:14px; 
+      text-align:center;
+    }
+    .tl-refresh-section { 
+      margin-bottom:16px; 
+    }
+    .tl-refresh-btn { 
+      background:var(--kudzu-primary); 
+      color:white; 
+      border:none; 
+      padding:10px 20px; 
+      border-radius:8px; 
+      cursor:pointer; 
+      font-size:14px; 
+      font-weight:600;
+      transition:all 0.2s ease;
+    }
+    .tl-refresh-btn:hover { 
+      background:var(--kudzu-primary-dark);
+      transform: translateY(-1px);
+    }
     
     /* CV Table Styles */
-    .cv-table-container { overflow-x: auto; margin-top: 16px; }
-    .cv-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .cv-table th { background: #f8fafc; padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    .cv-table td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
-    .cv-row:hover { background: #f8fafc; }
-    .candidate-name { font-weight: 600; color: #111827; }
-    .recruiter-name { color: #6b7280; }
-    .client-name { color: #374151; font-weight: 500; }
-    .skill { color: #6b7280; }
-    .upload-date { color: #6b7280; font-size: 13px; }
-    .cv-link-btn { display: inline-flex; align-items: center; gap: 4px; color: #3b82f6; text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; background: #eff6ff; transition: all 0.2s; }
-    .cv-link-btn:hover { background: #dbeafe; color: #1d4ed8; }
-    .no-link { color: #9ca3af; font-style: italic; }
-    .status-badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-    .status-waiting { background: #fef3c7; color: #d97706; }
-    .status-approved { background: #dcfce7; color: #166534; }
-    .action-buttons { display: flex; gap: 8px; }
-    .btn-approve, .btn-reject { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; }
-    .btn-approve { background: #dcfce7; color: #166534; }
-    .btn-approve:hover { background: #bbf7d0; color: #14532d; }
-    .btn-reject { background: #fee2e2; color: #dc2626; }
-    .btn-reject:hover { background: #fecaca; color: #b91c1c; }
+    .cv-table-container { 
+      overflow-x: auto; 
+      margin-top: 20px; 
+      background:rgba(255, 255, 255, 0.8);
+      backdrop-filter:blur(10px);
+      border-radius: 12px;
+      box-shadow:0 4px 6px rgba(24, 45, 23, 0.1);
+    }
+    .cv-table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      background: transparent; 
+      border-radius: 12px; 
+      overflow: hidden; 
+    }
+    .cv-table th { 
+      background: rgba(24, 45, 23, 0.05); 
+      padding: 16px; 
+      text-align: left; 
+      font-weight: 600; 
+      color: var(--kudzu-primary); 
+      border-bottom: 1px solid rgba(24, 45, 23, 0.1); 
+      font-size: 14px; 
+    }
+    .cv-table td { 
+      padding: 16px; 
+      border-bottom: 1px solid rgba(24, 45, 23, 0.05); 
+      font-size: 14px; 
+    }
+    .cv-row:hover { 
+      background: rgba(24, 45, 23, 0.02); 
+    }
+    .candidate-name { 
+      font-weight: 600; 
+      color: #111827; 
+    }
+    .recruiter-name { 
+      color: #6b7280; 
+    }
+    .client-name { 
+      color: #374151; 
+      font-weight: 500; 
+    }
+    .skill { 
+      color: #6b7280; 
+    }
+    .upload-date { 
+      color: #6b7280; 
+      font-size: 13px; 
+    }
+    .cv-link-btn { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 4px; 
+      color: var(--kudzu-primary); 
+      text-decoration: none; 
+      font-size: 13px; 
+      padding: 6px 12px; 
+      border-radius: 6px; 
+      background: rgba(24, 45, 23, 0.1); 
+      transition: all 0.2s; 
+    }
+    .cv-link-btn:hover { 
+      background: var(--kudzu-primary-light); 
+      color: var(--kudzu-primary-dark); 
+    }
+    .no-link { 
+      color: #9ca3af; 
+      font-style: italic; 
+    }
+    .status-badge { 
+      display: inline-block; 
+      padding: 6px 12px; 
+      border-radius: 12px; 
+      font-size: 12px; 
+      font-weight: 500; 
+    }
+    .status-waiting { 
+      background: #fef3c7; 
+      color: #d97706; 
+    }
+    .status-approved { 
+      background: #dcfce7; 
+      color: #166534; 
+    }
+    .action-buttons { 
+      display: flex; 
+      gap: 8px; 
+    }
+    .btn-approve, .btn-reject { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 4px; 
+      padding: 8px 12px; 
+      border-radius: 6px; 
+      font-size: 12px; 
+      font-weight: 500; 
+      cursor: pointer; 
+      transition: all 0.2s; 
+      border: none; 
+    }
+    .btn-approve { 
+      background: var(--kudzu-primary); 
+      color: #FFFFFF; 
+    }
+    .btn-approve:hover { 
+      background: var(--kudzu-primary-dark); 
+      color: #FFFFFF; 
+      transform: translateY(-1px);
+    }
+    .btn-reject { 
+      background: var(--kudzu-primary-dark);
+      color: #FFFFFF; 
+    }
+    .btn-reject:hover { 
+      background: var(--kudzu-primary-dark); 
+      color: #FFFFFF; 
+      transform: translateY(-1px);
+    }
     
     /* New styles for enhanced CV table */
-    .demand-id { font-weight: 600; color: #1f2937; font-family: monospace; }
-    .btn-view-profile { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; background: #e0f2fe; color: #0277bd; }
-    .btn-view-profile:hover { background: #b3e5fc; color: #01579b; }
+    .demand-id { 
+      font-weight: 600; 
+      color: var(--kudzu-primary); 
+      font-family: monospace; 
+    }
+    .btn-assign { 
+      background: rgb(24, 45, 23) !important; 
+      color: #FFFFFF !important; 
+      border: none; 
+      padding: 8px 16px; 
+      border-radius: 6px; 
+      cursor: pointer; 
+      font-size: 14px; 
+      font-weight: 500; 
+      transition: all 0.2s ease; 
+    }
+    .btn-assign:hover { 
+      background: rgb(18, 35, 18) !important; 
+      color: #FFFFFF !important; 
+      transform: translateY(-1px);
+    }
     
     /* CV Progress Bar Styles */
-    .cv-progress { min-width: 120px; }
-    .progress-container { display: flex; flex-direction: column; gap: 4px; }
-    .progress-text { font-size: 12px; font-weight: 600; color: #374151; text-align: center; }
-    .progress-bar { width: 100%; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; background: linear-gradient(90deg, #10b981, #059669); border-radius: 4px; transition: width 0.3s ease; }
-    .progress-fill[style*="100%"] { background: linear-gradient(90deg, #059669, #047857); }
+    .cv-progress { 
+      min-width: 120px; 
+    }
+    .progress-container { 
+      display: flex; 
+      flex-direction: column; 
+      gap: 4px; 
+    }
+    .progress-text { 
+      font-size: 12px; 
+      font-weight: 600; 
+      color: var(--kudzu-primary); 
+      text-align: center; 
+    }
+    .progress-bar { 
+      width: 100%; 
+      height: 8px; 
+      background: rgba(24, 45, 23, 0.1); 
+      border-radius: 4px; 
+      overflow: hidden; 
+    }
+    .progress-fill { 
+      height: 100%; 
+      background: linear-gradient(90deg, var(--kudzu-primary), var(--kudzu-primary-dark)); 
+      border-radius: 4px; 
+      transition: width 0.3s ease; 
+    }
+    .progress-fill[style*="100%"] { 
+      background: linear-gradient(90deg, var(--kudzu-primary-dark), #047857); 
+    }
+
   `]
 })
-export class TeamLeaderDemandSheetComponent {
+export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   private teamLeaderService = inject(TeamLeaderService);
+  private destroy$ = new Subject<void>();
   
   activeTab = signal<'unassigned' | 'assigned' | 'cv-received' | 'submitted'>('unassigned');
 
@@ -301,6 +545,13 @@ export class TeamLeaderDemandSheetComponent {
   cvReceived = signal<any[]>([]);
   cvSubmitted = signal<any[]>([]);
   submitted = signal<DemandItem[]>([]);
+
+  ngOnInit(): void {}
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   setTab(tab: 'unassigned' | 'assigned' | 'cv-received' | 'submitted') {
     this.activeTab.set(tab);
@@ -473,14 +724,47 @@ export class TeamLeaderDemandSheetComponent {
             .profile-title { font-size: 24px; font-weight: bold; color: #333; margin: 0; }
             .profile-subtitle { color: #666; margin: 5px 0 0 0; }
             .profile-section { margin: 20px 0; }
-            .profile-label { font-weight: bold; color: #555; margin-bottom: 5px; }
-            .profile-value { color: #333; margin-bottom: 15px; }
+            .profile-label { font-weight: bold; color: rgb(24, 45, 23); margin-bottom: 5px; }
+            .profile-value { color: rgb(24, 45, 23); margin-bottom: 15px; }
             .skills-list { display: flex; flex-wrap: wrap; gap: 8px; }
-            .skill-tag { background: #e3f2fd; color: #1976d2; padding: 4px 12px; border-radius: 16px; font-size: 14px; }
+            .skill-tag { background: rgba(24, 45, 23, 0.1); color: rgb(24, 45, 23); padding: 4px 12px; border-radius: 16px; font-size: 14px; }
             .cv-link { display: inline-block; background: #4caf50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 10px; }
             .cv-link:hover { background: #45a049; }
             .no-cv { display: inline-block; background: #f5f5f5; color: #666; padding: 10px 20px; border-radius: 5px; margin-top: 10px; font-style: italic; }
             .close-btn { position: absolute; top: 10px; right: 15px; background: #f44336; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+            .header-section { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e9ecef; }
+            .header-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+            .header-item { flex: 1; text-align: center; }
+            .header-label { font-weight: bold; color: rgb(24, 45, 23); font-size: 14px; margin-bottom: 5px; }
+            .header-value { color: rgb(24, 45, 23); font-size: 13px; }
+            .action-buttons { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+            .btn-approve, .btn-reject { 
+              padding: 8px 16px; 
+              border: none; 
+              border-radius: 6px; 
+              cursor: pointer; 
+              font-size: 14px !important; 
+              font-weight: bold;
+              display: inline-block;
+              text-align: center;
+              min-width: 80px;
+            }
+            .btn-approve { 
+              background: rgb(24, 45, 23) !important; 
+              color: white !important; 
+            }
+            .btn-reject { 
+              background: rgb(24, 45, 23) !important; 
+              color: white !important; 
+            }
+            .btn-approve:hover { 
+              background: rgb(18, 35, 18) !important; 
+              color: white !important;
+            }
+            .btn-reject:hover { 
+              background: rgb(18, 35, 18) !important; 
+              color: white !important;
+            }
           </style>
         </head>
         <body>
@@ -489,6 +773,23 @@ export class TeamLeaderDemandSheetComponent {
             <div class="profile-header">
               <h1 class="profile-title">${cv.candidate_name}</h1>
               <p class="profile-subtitle">${cvData.skill} • ${cvData.client_name}</p>
+            </div>
+            
+            <div class="header-section">
+              <div class="header-row">
+                <div class="header-item">
+                  <div class="header-label">Client</div>
+                  <div class="header-value">${cvData.client_name || 'N/A'}</div>
+                </div>
+                <div class="header-item">
+                  <div class="header-label">SPOC</div>
+                  <div class="header-value">${cvData.recruiter_name || 'N/A'}</div>
+                </div>
+                <div class="header-item">
+                  <div class="header-label">Demand</div>
+                  <div class="header-value">${cvData.demand_id || 'N/A'}</div>
+                </div>
+              </div>
             </div>
             
             <div class="profile-section">
@@ -524,6 +825,11 @@ export class TeamLeaderDemandSheetComponent {
               <div class="profile-value"><strong>Demand ID:</strong> ${cvData.demand_id}</div>
               <div class="profile-value"><strong>Recruiter:</strong> ${cvData.recruiter_name}</div>
               <div class="profile-value"><strong>Upload Date:</strong> ${cv.upload_date}</div>
+            </div>
+            
+            <div class="action-buttons">
+              <button class="btn-approve" onclick="alert('CV Approved')">Accept</button>
+              <button class="btn-reject" onclick="alert('CV Rejected')">Reject</button>
             </div>
           </div>
         </body>
@@ -596,4 +902,11 @@ export class TeamLeaderDemandSheetComponent {
       alert('❌ Failed to reject CV. Please try again.');
     }
   }
+
+  assignDemand(demandId: number) {
+    console.log('Assigning demand:', demandId);
+    // TODO: Implement assign demand logic
+    alert('Demand assignment functionality will be implemented');
+  }
+
 }

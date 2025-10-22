@@ -114,12 +114,7 @@ import { ViewChild } from '@angular/core';
             <h1 class="title">Demand Details</h1>
           </div>
           <div class="header-right">
-            <div class="mode-indicator" [ngClass]="'mode-' + mode">
-              {{ mode === 'view' ? 'View Mode' : 'Process Mode' }}
-            </div>
-            <button class="btn btn-sm btn-outline" (click)="checkAndCloseActivityIfComplete()" title="Test Auto-Close" *ngIf="mode === 'process'">
-              🔍 Test Auto-Close
-            </button>
+            <!-- Buttons removed as requested -->
           </div>
         </div>
 
@@ -180,9 +175,9 @@ import { ViewChild } from '@angular/core';
           </div>
         </div>
 
-        <!-- Top Section: Job Description and AI Questions -->
+        <!-- Top Section: Job Description -->
         <div class="top-section">
-          <!-- Left: Job Description -->
+          <!-- Job Description -->
           <div class="job-description-section">
             <div class="section-header">
               <h2>Job Description</h2>
@@ -197,36 +192,7 @@ import { ViewChild } from '@angular/core';
             </div>
           </div>
 
-          <!-- Right: AI Questions -->
-          <div class="ai-questions-section">
-            <div class="section-header">
-              <h2>AI Questions</h2>
-              <div class="section-actions" *ngIf="mode === 'process'">
-                <button class="btn btn-outline" (click)="refreshAIQuestions()" [disabled]="aiLoading">
-                  <svg class="icon" [class.spinning]="aiLoading" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Refresh
-                </button>
-              </div>
-            </div>
-            <div class="ai-questions-content">
-              <div *ngIf="aiQuestions.length > 0" class="questions-list">
-                <div *ngFor="let question of aiQuestions; let i = index" class="question-item">
-                  <div class="question-number">{{ i + 1 }}</div>
-                  <div class="question-text">{{ question }}</div>
-                </div>
-              </div>
-              <div *ngIf="aiQuestions.length === 0 && !aiLoading" class="no-content">
-                <p *ngIf="mode === 'process'">No AI questions generated yet. Click refresh to generate questions.</p>
-                <p *ngIf="mode === 'view'">No AI questions available for this demand.</p>
-              </div>
-              <div *ngIf="aiLoading" class="loading-content">
-                <div class="loading-spinner small"></div>
-                <p>Generating AI questions...</p>
-              </div>
-            </div>
-          </div>
+          <!-- AI Questions section hidden -->
         </div>
 
 
@@ -480,24 +446,6 @@ import { ViewChild } from '@angular/core';
       gap: 12px;
     }
 
-    .mode-indicator {
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .mode-view {
-      background: #dbeafe;
-      color: #1e40af;
-    }
-
-    .mode-process {
-      background: #d1fae5;
-      color: #065f46;
-    }
 
     .btn {
       display: inline-flex;
@@ -513,31 +461,31 @@ import { ViewChild } from '@angular/core';
     }
 
     .btn-primary {
-      background: #3b82f6;
+      background: var(--kudzu-primary);
       color: white;
     }
 
     .btn-primary:hover:not(:disabled) {
-      background: #2563eb;
+      background: var(--kudzu-primary-dark);
     }
 
     .btn-secondary {
       background: #e5e7eb;
-      color: #374151;
+      color:var(--kudzu-primary);
     }
 
     .btn-secondary:hover {
-      background: #d1d5db;
+      background: var(--kudzu-primary-light);
     }
 
     .btn-outline {
       background: transparent;
-      color: #3b82f6;
-      border: 1px solid #3b82f6;
+      color: var(--kudzu-primary);
+      border: 1px solid var(--kudzu-primary);
     }
 
     .btn-outline:hover {
-      background: #3b82f6;
+      background: var(--kudzu-primary-dark);
       color: white;
     }
 
@@ -621,12 +569,12 @@ import { ViewChild } from '@angular/core';
 
     .detail-item label {
       font-weight: 600;
-      color: #374151;
+      color: var(--kudzu-primary);
       font-size: 14px;
     }
 
     .detail-item span {
-      color: #6b7280;
+      color: #1e293b;
       font-size: 14px;
     }
 
@@ -660,7 +608,7 @@ import { ViewChild } from '@angular/core';
 
     .top-section {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 12px;
     }
 
@@ -686,7 +634,7 @@ import { ViewChild } from '@angular/core';
     .section-header h2 {
       font-size: 18px;
       font-weight: 600;
-      color: #1e293b;
+      color: var(--kudzu-primary);
       margin: 0;
     }
 
@@ -1043,16 +991,18 @@ import { ViewChild } from '@angular/core';
     }
 
     .close-btn {
-      background: none;
-      border: none;
-      padding: 4px;
-      cursor: pointer;
-      color: #6b7280;
-      border-radius: 4px;
+      background: transparent !important;
+      border: none !important;
+      padding: 4px !important;
+      cursor: pointer !important;
+      color: var(--kudzu-text-secondary) !important;
+      border-radius: 4px !important;
+      transition: all 0.2s !important;
     }
 
     .close-btn:hover {
-      background: #f3f4f6;
+      background: var(--kudzu-primary-light) !important;
+      color: var(--kudzu-primary) !important;
     }
 
     .modal.two-panel .modal-body {
@@ -1154,7 +1104,6 @@ import { ViewChild } from '@angular/core';
   padding: 6px 16px !important;     /* compact padding */
   font-size: 13px !important;
   font-weight: 500 !important;
-  background-color: #059669 !important;
   color: #fff !important;
   border: none !important;
   border-radius: 6px !important;
@@ -1166,7 +1115,6 @@ import { ViewChild } from '@angular/core';
 }
 
 .save-btn:hover:not(:disabled) {
-  background-color: #047857 !important;
   transform: translateY(-1px) !important;
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08) !important;
 }

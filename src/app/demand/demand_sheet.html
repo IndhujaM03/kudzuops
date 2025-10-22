@@ -1,7 +1,6 @@
 <div class="min-h-screen bg-gray-50 py-2 demand-sheet-page">
-  <div class="max-w-6xl mx-auto px-4">
+    <div class="max-w-6xl mx-auto px-4">
     <div class="flex items-center justify-between mb-6">
-      <button *ngIf="!showForm" (click)="openCreateModal()" class="glassy-cta px-4 py-2 rounded-lg">Create Demand</button>
       <div class="chrome-tabs">
         <button class="chrome-tab" [class.active]="activeTab==='unassigned'" (click)="setTab('unassigned')">Unassigned</button>
         <button class="chrome-tab" [class.active]="activeTab==='assigned'" (click)="setTab('assigned')">Assigned</button>
@@ -17,8 +16,8 @@
     <div *ngIf="successMsg()" class="mb-4 p-3 rounded border border-green-200 bg-green-50 text-green-700">{{ successMsg() }}</div>
 
     <!-- Create Demand Modal -->
-    <div *ngIf="showForm" class="modal-overlay">
-      <div class="modal-card">
+    <div *ngIf="showForm" class="modal-overlay" (click)="closeCreateModal()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <div class="modal-title">Create Demand</div>
           <button class="modal-close" (click)="closeCreateModal()">✕</button>
@@ -351,7 +350,12 @@
                 <td>{{ cv.recruiter_name || cv.recruiter_email || '-' }}</td>
                 <td>{{ cv.candidate_name || '-' }}</td>
                 <td>
-                  <button class="view-profile-btn" (click)="viewProfiles(cv)">View Details</button>
+                  <button class="jd-view-btn" (click)="viewProfiles(cv)" title="View Profile Information">
+                    <svg class="info-icon" viewBox="0 0 24 24" fill="black" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="12" cy="12" r="10" fill="#FFFFFF" stroke="none"/>
+                      <path d="M12 16V12M12 8H12.01" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -389,7 +393,12 @@
                 <td>{{ cv.recruiter_name || cv.recruiter_email || '-' }}</td>
                 <td>{{ cv.candidate_name || '-' }}</td>
                 <td>
-                  <button class="view-profile-btn" (click)="viewProfiles(cv)">View Details</button>
+                  <button class="jd-view-btn" (click)="viewProfiles(cv)" title="View Profile Information">
+                    <svg class="info-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="12" cy="12" r="10" fill="#FFFFFF" stroke="none"/>
+                      <path d="M12 16V12M12 8H12.01" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -617,7 +626,9 @@
 <div *ngIf="showProfileModal" class="modal-overlay">
   <div class="modal-card">
     <div class="modal-header">
-      <div class="modal-title">Submitted Profiles - Demand #{{ selectedDemand?.demand_id || selectedDemand?.id }}</div>
+      <div class="modal-title">
+        Submitted Profiles - Client: {{ selectedDemand?.client_name || 'N/A' }} | SPOC: {{ selectedDemand?.spoc_name || selectedDemand?.recruiter_name || 'N/A' }} | Demand: {{ selectedDemand?.demand_id || selectedDemand?.id || 'N/A' }}
+      </div>
       <button class="modal-close" (click)="closeProfileModal()">✕</button>
     </div>
     <div class="modal-body">
@@ -653,8 +664,8 @@
               </td>
               <td *ngIf="activeTab==='cv_received'">
                 <div class="tl-action glassy">
-                  <button class="glassy-btn accept" (click)="approveCv(selectedActivityId!, profile._cv_index, profile._cv_id)">✅ Accept</button>
-                  <button class="glassy-btn reject" (click)="rejectCv(selectedActivityId!, profile._cv_index, profile._cv_id)">❌ Reject</button>
+                  <button class="glassy-btn accept btn-approve" (click)="approveCv(selectedActivityId!, profile._cv_index, profile._cv_id)">✅ Accept</button>
+                  <button class="glassy-btn reject btn-reject" (click)="rejectCv(selectedActivityId!, profile._cv_index, profile._cv_id)">❌ Reject</button>
                 </div>
               </td>
             </tr>
