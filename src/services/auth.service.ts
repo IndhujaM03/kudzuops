@@ -85,11 +85,21 @@ export class AuthService {
   getCurrentUserId(): number | null {
     try {
       const token = localStorage.getItem('access_token');
+      console.log('Token exists:', !!token);
       if (!token) return null;
       
       const payload = JSON.parse(atob(token.split('.')[1]));
+      console.log('Token payload:', payload);
+      console.log('Available ID fields:', {
+        uid: payload.uid,
+        user_id: payload.user_id,
+        id: payload.id
+      });
+      
       // Backend encodes user id as `uid` (see _issue_token)
-      return payload.uid || payload.user_id || payload.id || null;
+      const userId = payload.uid || payload.user_id || payload.id || null;
+      console.log('Extracted user ID:', userId);
+      return userId;
     } catch (error) {
       console.error('Error parsing token for user ID:', error);
       return null;

@@ -410,8 +410,10 @@ def login(request: LoginRequest):
                 role_norm = (role or "").lower().replace(" ", "_")
                 if role_norm == "super_admin":
                     redirect_url = "/superadmin/dashboard"
-                elif role_norm in ("team_leader", "teamleader", "team_leadr"):
+                elif role_norm in ("team_leader", "teamleader", "team_leadr", "tl"):
                     redirect_url = "/teamleader/demand-sheet"
+                elif role_norm == "recruiter":
+                    redirect_url = "/recruiter/dashboard"
                 else:
                     redirect_url = "/dashboard"
                 return AuthResponse(access_token=token, message="Login successful", redirect_url=redirect_url)
@@ -793,7 +795,7 @@ def pending_users(_: Dict[str, Any] = Depends(require_super_admin)):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, first_name, last_name, email, role, approval_status FROM tbl_users WHERE approval_status = FALSE")
+                cur.execute("SELECT id, first_name, last_name, email, role, approval_status FROM tbl_users WHERE approval_status = FALSE OR is_approved = FALSE")
                 rows = cur.fetchall()
                 return [
                     {"id": r[0], "first_name": r[1], "last_name": r[2], "email": r[3], "role": r[4], "approval_status": r[5]}
@@ -807,7 +809,7 @@ def pending_approvals_count(_: Dict[str, Any] = Depends(require_super_admin)):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM tbl_users WHERE approval_status = FALSE")
+                cur.execute("SELECT COUNT(*) FROM tbl_users WHERE approval_status = FALSE OR is_approved = FALSE")
                 count = cur.fetchone()[0]
                 return {"count": int(count)}
     except Exception as e:
@@ -822,11 +824,11 @@ def approve_user(user_id: int, request: dict = Body(None), admin: Dict[str, Any]
                 reporting_to = request.get("reporting_to") if request else None
                 
                 if reporting_to:
-                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, approved_by=%s, reporting_to=%s WHERE id=%s", 
-                               (admin.get("uid"), reporting_to, user_id))
+                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, is_approved=TRUE, reporting_to=%s WHERE id=%s", 
+                               (reporting_to, user_id))
                 else:
-                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, approved_by=%s WHERE id=%s", 
-                               (admin.get("uid"), user_id))
+                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, is_approved=TRUE WHERE id=%s", 
+                               (user_id,))
                 conn.commit()
         return {"message": "User approved"}
     except Exception as e:

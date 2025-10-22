@@ -1,9 +1,10 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../services/auth.service';
+import { ToastService } from '../../../services/toast.service';
 import { environment } from '../../../environments/environment';
 
 interface AssignedDemand {
@@ -312,13 +313,14 @@ interface ViewDrawer {
           >
             Job Description
           </button>
-          <button 
+          <!-- AI Questions tab temporarily hidden -->
+          <!-- <button 
             class="tab" 
             [class.active]="viewDrawer.activeTab === 'questions'"
             (click)="switchTab('questions')"
           >
             AI Questions
-          </button>
+          </button> -->
           <button 
             class="tab" 
             [class.active]="viewDrawer.activeTab === 'upload'"
@@ -430,8 +432,8 @@ interface ViewDrawer {
                 <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h4>Upload CV Files</h4>
-                <p>Drag and drop CV files here, or click to browse</p>
+                <h4>Upload Multiple CV Files</h4>
+                <p>Drag and drop CV files here, or click to browse. You can upload multiple files at once.</p>
                 <input 
                   type="file" 
                   #fileInput 
@@ -445,10 +447,31 @@ interface ViewDrawer {
                 </button>
               </div>
               
+              <!-- Uploaded Files List -->
+              <div class="uploaded-files" *ngIf="uploadedFiles.length > 0">
+                <h5>Uploaded Files:</h5>
+                <div class="files-list">
+                  <div *ngFor="let file of uploadedFiles; let i = index" class="file-item">
+                    <div class="file-info">
+                      <svg class="file-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span class="file-name">{{ file.name }}</span>
+                      <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                    </div>
+                    <button class="remove-btn" (click)="removeUploadedFile(i)">
+                      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
               <!-- Form Actions -->
               <div class="form-actions">
-                <button class="btn btn-primary btn-save" (click)="submitUploadedFiles()">
-                  Save & Continue
+                <button class="btn btn-primary btn-save" (click)="submitUploadedFiles()" [disabled]="isUploadDisabled()">
+                  Upload {{ uploadedFiles.length }} File(s) & Complete
                 </button>
               </div>
               
@@ -529,8 +552,9 @@ interface ViewDrawer {
   styles: [`
     .demand-management-container {
       padding: 20px;
-      background: #f8fafc;
+      background: #F8FAFC;
       min-height: 100vh;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .header {
@@ -768,6 +792,22 @@ interface ViewDrawer {
     .btn-primary {
       background:var(--kudzu-primary);
       color: white;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
     }
 
     .btn-primary:hover:not(:disabled) {
@@ -1168,6 +1208,89 @@ interface ViewDrawer {
       color: #374151;
     }
 
+    .uploaded-files {
+      margin-top: 20px;
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .uploaded-files h5 {
+      margin: 0 0 12px 0;
+      color: #374151;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .files-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .file-item:hover {
+      border-color: #3b82f6;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+    }
+
+    .file-icon {
+      width: 20px;
+      height: 20px;
+      color: #6b7280;
+      flex-shrink: 0;
+    }
+
+    .file-name {
+      font-size: 14px;
+      color: #374151;
+      font-weight: 500;
+    }
+
+    .file-size {
+      font-size: 12px;
+      color: #6b7280;
+      margin-left: auto;
+    }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      padding: 4px;
+      cursor: pointer;
+      color: #6b7280;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .remove-btn:hover {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .remove-btn .icon {
+      width: 16px;
+      height: 16px;
+    }
+
     .upload-item {
       display: flex;
       align-items: center;
@@ -1295,6 +1418,7 @@ export class DemandManagementComponent implements OnInit {
   private http = inject(HttpClient);
   private router = inject(Router);
   private auth = inject(AuthService);
+  private toastService = inject(ToastService);
   api = environment.apiBase;
 
   demands: AssignedDemand[] = [];
@@ -1324,7 +1448,8 @@ export class DemandManagementComponent implements OnInit {
     selectedCVs: []
   };
 
-  // Upload
+  // Enhanced upload functionality
+  uploadedFiles: File[] = [];
   isDragOver = false;
   uploadingFiles: any[] = [];
   // Action menu state
@@ -1458,6 +1583,11 @@ export class DemandManagementComponent implements OnInit {
 
   switchTab(tab: 'jd' | 'questions' | 'upload' | 'cvs') {
     this.viewDrawer.activeTab = tab;
+    
+    // Clear uploaded files when switching to upload tab
+    if (tab === 'upload') {
+      this.uploadedFiles = [];
+    }
   }
 
   toggleActionMenu(demandId: number): void {
@@ -1488,7 +1618,7 @@ export class DemandManagementComponent implements OnInit {
         this.router.navigate(['/recruiter/activity', recruiterId, demand.id]);
         this.loadProcessingCount();
         // Show success message
-        alert('Process started successfully!');
+        this.toastService.success('✅ Process started successfully!');
       },
       error: (error) => {
         console.error('Error starting process:', error);
@@ -1508,7 +1638,7 @@ export class DemandManagementComponent implements OnInit {
         demand.activity_status = 'on_hold';
         this.loadProcessingCount();
         this.loadDemands();
-        alert('Process put on hold successfully!');
+        this.toastService.success('✅ Process put on hold successfully!');
       },
       error: (error) => {
         console.error('Error holding process:', error);
@@ -1526,7 +1656,7 @@ export class DemandManagementComponent implements OnInit {
         demand.activity_status = 'processing';
         this.loadProcessingCount();
         this.loadDemands();
-        alert('Process resumed successfully!');
+        this.toastService.success('✅ Process resumed successfully!');
       },
       error: (error) => {
         console.error('Error resuming process:', error);
@@ -1605,16 +1735,39 @@ export class DemandManagementComponent implements OnInit {
     this.isDragOver = false;
     
     const files = event.dataTransfer?.files;
+    console.log('Files dropped:', files?.length || 0);
     if (files && files.length > 0) {
-      this.uploadFiles(Array.from(files));
+      this.addFilesToUpload(Array.from(files));
     }
   }
 
   onFileSelect(event: Event) {
     const input = event.target as HTMLInputElement;
+    console.log('File input changed, files:', input.files?.length || 0);
     if (input.files && input.files.length > 0) {
-      this.uploadFiles(Array.from(input.files));
+      this.addFilesToUpload(Array.from(input.files));
+      // Clear the input so the same files can be selected again
+      input.value = '';
     }
+  }
+
+  addFilesToUpload(files: File[]) {
+    // Add files to the uploaded files list for preview
+    console.log('Adding files to upload:', files.length, 'files');
+    this.uploadedFiles.push(...files);
+    console.log('Total uploaded files:', this.uploadedFiles.length);
+  }
+
+  removeUploadedFile(index: number) {
+    this.uploadedFiles.splice(index, 1);
+  }
+
+  formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   uploadFiles(files: File[]) {
@@ -1677,9 +1830,29 @@ export class DemandManagementComponent implements OnInit {
 
     this.http.post<any>(`${this.api}/recruiter/submission/submit`, payload).subscribe({
       next: (response) => {
-        alert('CVs submitted successfully!');
-        this.viewDrawer.selectedCVs = [];
-        this.loadDemands();
+        // Update CV count after successful submission
+        const updatePayload = {
+          demand_id: this.viewDrawer.demand!.id,
+          recruiter_id: this.auth.getCurrentUserId(),
+          increment: this.viewDrawer.selectedCVs.length
+        };
+        
+        this.http.post<any>(`${this.api}/recruiter/update-cv-count-and-check`, updatePayload).subscribe({
+          next: (countResponse) => {
+            console.log('✅ CV count updated:', countResponse);
+            this.toastService.success('✅ Profile submitted successfully!');
+            this.viewDrawer.selectedCVs = [];
+            
+            // Auto-refresh the demands list to get latest data
+            this.loadDemands();
+          },
+          error: (countError) => {
+            console.error('Error updating CV count:', countError);
+            this.toastService.success('✅ Profile submitted successfully!');
+            this.viewDrawer.selectedCVs = [];
+            this.loadDemands();
+          }
+        });
       },
       error: (error) => {
         console.error('Error submitting CVs:', error);
@@ -1712,9 +1885,265 @@ export class DemandManagementComponent implements OnInit {
   }
 
   submitUploadedFiles() {
-    // Handle the save action for uploaded files
-    console.log('Saving uploaded files...');
-    // You can implement the actual save logic here
-    alert('Files saved successfully!');
+    if (!this.viewDrawer.demand || this.uploadedFiles.length === 0) return;
+
+    const recruiterId = this.auth.getCurrentUserId();
+    if (!recruiterId) {
+      console.error('No recruiter ID found');
+      return;
+    }
+
+    // Check quota before allowing upload
+    this.checkQuotaBeforeUpload(recruiterId, this.viewDrawer.demand.id);
+  }
+
+  checkQuotaBeforeUpload(recruiterId: number, demandId: number): void {
+    const payload = {
+      demand_id: demandId,
+      recruiter_id: recruiterId
+    };
+
+    this.http.post<any>(`${this.api}/recruiter/check-quota-before-submission`, payload, {
+      headers: new HttpHeaders({ 'Content-Type': 'application/json' })
+    }).subscribe({
+      next: (response) => {
+        if (response && response.success) {
+          if (response.quota_met) {
+            // Show quota exceeded popup and redirect
+            this.showQuotaExceededPopup();
+          } else {
+            // Allow upload to proceed
+            this.proceedWithUpload();
+          }
+        } else {
+          console.warn('Failed to check quota:', response?.message);
+          // Proceed anyway if check fails
+          this.proceedWithUpload();
+        }
+      },
+      error: (error) => {
+        console.error('Error checking quota:', error);
+        // Proceed anyway if check fails
+        this.proceedWithUpload();
+      }
+    });
+  }
+
+  proceedWithUpload(): void {
+    if (!this.viewDrawer.demand || this.uploadedFiles.length === 0) return;
+
+    const recruiterId = this.auth.getCurrentUserId();
+    if (!recruiterId) {
+      console.error('No recruiter ID found');
+      return;
+    }
+
+    // Upload all files
+    let uploadPromises = this.uploadedFiles.map(file => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('demand_id', this.viewDrawer.demand!.id.toString());
+      formData.append('recruiter_id', recruiterId.toString());
+
+      return this.http.post<any>(`${this.api}/recruiter/upload-cv`, formData).toPromise();
+    });
+
+    // Wait for all uploads to complete
+    Promise.all(uploadPromises).then(() => {
+      console.log('All files uploaded successfully');
+      
+      // Clear uploaded files list
+      this.uploadedFiles = [];
+      
+      // Show success message
+      this.toastService.success(`✅ Profile uploaded successfully! (${uploadPromises.length} file${uploadPromises.length > 1 ? 's' : ''})`);
+      
+      // Auto-refresh the demands list to get latest data
+      this.loadDemands();
+      
+      // Check if we need to auto-close the activity
+      this.checkAndAutoCloseActivity(recruiterId, this.viewDrawer.demand!.id);
+      
+    }).catch(error => {
+      console.error('Error uploading files:', error);
+      alert('Error uploading some files. Please try again.');
+    });
+  }
+
+  showQuotaExceededPopup(): void {
+    // Create and show quota exceeded popup
+    const popup = document.createElement('div');
+    popup.className = 'quota-exceeded-popup';
+    popup.innerHTML = `
+      <div class="popup-overlay">
+        <div class="popup-content">
+          <div class="popup-header">
+            <h3>⚠️ Quota Exceeded</h3>
+          </div>
+          <div class="popup-body">
+            <p>All required profiles have already been submitted for this demand.</p>
+          </div>
+          <div class="popup-footer">
+            <button class="btn btn-primary" onclick="this.closest('.quota-exceeded-popup').remove(); window.location.href='/recruiter/demands';">OK</button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = `
+      .quota-exceeded-popup {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10000;
+      }
+      .quota-exceeded-popup .popup-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .quota-exceeded-popup .popup-content {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 20px 25px rgba(0, 0, 0, 0.1);
+        max-width: 400px;
+        width: 90%;
+      }
+      .quota-exceeded-popup .popup-header {
+        padding: 20px 24px 0;
+        text-align: center;
+      }
+      .quota-exceeded-popup .popup-header h3 {
+        margin: 0;
+        color: #dc2626;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .quota-exceeded-popup .popup-body {
+        padding: 16px 24px;
+        text-align: center;
+      }
+      .quota-exceeded-popup .popup-body p {
+        margin: 0;
+        color: #374151;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .quota-exceeded-popup .popup-footer {
+        padding: 0 24px 20px;
+        text-align: center;
+      }
+      .quota-exceeded-popup .btn {
+        padding: 12px 24px !important;
+        border: none !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        min-width: 80px !important;
+        transition: all 0.2s ease !important;
+      }
+      .quota-exceeded-popup .btn-primary {
+        background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%) !important;
+        color: white !important;
+        box-shadow: 0 2px 4px rgba(24, 45, 23, 0.3) !important;
+        font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
+      }
+      .quota-exceeded-popup .btn-primary:hover {
+        background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%) !important;
+        box-shadow: 0 4px 8px rgba(24, 45, 23, 0.4) !important;
+        transform: translateY(-1px) !important;
+      }
+      .quota-exceeded-popup .btn-primary:active {
+        background: #1d4ed8 !important;
+        transform: translateY(0) !important;
+      }
+    `;
+    
+    document.head.appendChild(style);
+    document.body.appendChild(popup);
+    
+    // Auto-remove after 10 seconds if not manually closed
+    setTimeout(() => {
+      if (document.body.contains(popup)) {
+        popup.remove();
+        window.location.href = '/recruiter/demands';
+      }
+    }, 10000);
+  }
+
+  isUploadDisabled(): boolean {
+    // Disable if no files selected
+    if (this.uploadedFiles.length === 0) return true;
+    
+    // Upload button should always be visible when files are selected
+    // Quota checking is handled in the submitUploadedFiles method
+    return false;
+  }
+
+  checkAndAutoCloseActivity(recruiterId: number, demandId: number) {
+    // Get current activity status and counts
+    this.http.get<any>(`${this.api}/recruiter/activity/${recruiterId}/${demandId}`).subscribe({
+      next: (activity) => {
+        if (activity && activity.required_cv_count && activity.uploaded_cv_count) {
+          console.log(`Checking auto-close: required=${activity.required_cv_count}, uploaded=${activity.uploaded_cv_count}`);
+          
+          if (activity.required_cv_count === activity.uploaded_cv_count) {
+            console.log('Auto-closing activity - counts match');
+            
+            // Auto-close the activity using the correct endpoint
+            this.http.post<any>(`${this.api}/recruiter/close-activity-complete`, {
+              recruiter_id: recruiterId,
+              demand_id: demandId
+            }).subscribe({
+              next: () => {
+                console.log('Activity auto-closed successfully');
+                this.toastService.success('✅ Activity closed successfully!');
+                
+                // Redirect immediately after success toast is shown
+                setTimeout(() => {
+                  this.router.navigate(['/recruiter/demands']);
+                }, 1500); // Slightly longer delay to ensure toast is visible
+              },
+              error: (error) => {
+                console.error('Error closing activity:', error);
+                this.toastService.error('Failed to auto-close activity');
+                // Still redirect even if close fails
+                setTimeout(() => {
+                  this.router.navigate(['/recruiter/demands']);
+                }, 1500);
+              }
+            });
+          } else {
+            // Not enough CVs uploaded yet, just redirect
+            setTimeout(() => {
+              this.router.navigate(['/recruiter/demands']);
+            }, 1000);
+          }
+        } else {
+          // No activity data, just redirect
+          setTimeout(() => {
+            this.router.navigate(['/recruiter/demands']);
+          }, 1000);
+        }
+      },
+      error: (error) => {
+        console.error('Error checking activity status:', error);
+        // Redirect anyway
+        setTimeout(() => {
+          this.router.navigate(['/recruiter/demands']);
+        }, 1000);
+      }
+    });
   }
 }

@@ -130,7 +130,7 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
     
     const roleMapping: { [key: string]: string[] } = {
       'super_admin': ['super_admin'],
-      'team_leader': ['team_leader', 'teamleader', 'team_leadr'],
+      'team_leader': ['team_leader', 'teamleader', 'team_leadr', 'tl'],
       'recruiter': ['recruiter']
     };
     
@@ -146,7 +146,7 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
       if (userRole === 'super_admin') {
         console.log('🔄 Redirecting super admin to dashboard');
         return router.parseUrl('/superadmin/dashboard') as UrlTree;
-      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
         console.log('🔄 Redirecting team leader to demand sheet');
         return router.parseUrl('/teamleader/demand-sheet') as UrlTree;
       } else if (userRole === 'recruiter') {
@@ -194,7 +194,7 @@ const rootRedirectGuard: CanActivateFn = () => {
     // Redirect based on role
     if (userRole === 'super_admin') {
       return router.parseUrl('/superadmin/dashboard') as UrlTree;
-    } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
+    } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
       return router.parseUrl('/teamleader/demand-sheet') as UrlTree;
     } else if (userRole === 'recruiter') {
       return router.parseUrl('/recruiter/dashboard') as UrlTree;
@@ -216,6 +216,7 @@ const routes: Routes = [
   { path: 'verify', component: VerifyComponent },
   { path: 'reset-password', component: ResetPasswordComponent },
   { path: 'verify-reset', component: VerifyResetComponent },
+  { path: 'debug-auth', loadComponent: () => import('./components/debug-auth.component').then(m => m.DebugAuthComponent) },
   { path: 'dashboard', component: DashboardComponent, canActivate: [rootRedirectGuard] },
   { path: 'demand/create', loadComponent: () => import('./app/demand/demand_sheet').then(m => m.DemandSheetComponent), canActivate: [authGuard] },
   {
@@ -249,7 +250,7 @@ const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       {
         path: 'dashboard',
-        loadComponent: () => import('./components/recruiter/dashboard/dashboard.component').then(m => m.DashboardComponent)
+        loadComponent: () => import('./components/recruiter/recruiter-dashboard/recruiter-dashboard.component').then(m => m.RecruiterDashboardComponent)
       },
       {
         path: 'demands',

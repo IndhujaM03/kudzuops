@@ -1,25 +1,49 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 /* Import Super Admin Styles */
 @import './styles/superadmin.css';
 /* Import Kudzu Theme */
 @import './styles/kudzu-theme.css';
 
-/* Global theme - Kudzu Infotech color palette and typography */
+/* Kudzu Theme - Global Kudzu Infotech color palette and typography */
 :root {
+  /* Kudzu Brand Colors */
   --kudzu-primary: rgb(24, 45, 23);
-  --kudzu-primary-light: rgba(24, 45, 23, 0.1);
-  --kudzu-primary-dark: rgb(18, 35, 18);
-  --white: #FFFFFFff;
-
-  --text-primary: #000000;
-  --text-secondary: #4a5568;
-  --border-color: #e2e8f0;
-  --shadow: 0 10px 30px rgba(0,0,0,0.06);
-  --radius: 12px;
-  --transition: all .2s ease;
+  --kudzu-accent: rgb(73, 214, 144);
+  --kudzu-gradient: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
+  
+  /* Extended Color Palette */
+  --kudzu-dark: #182E17;
+  --kudzu-light: #49D690;
+  --kudzu-success: #00F2A6;
+  --kudzu-text: #182E17;
+  --kudzu-text-light: #6B7280;
+  --kudzu-bg: #F8FAFC;
+  --kudzu-card-bg: #FFFFFF;
+  --kudzu-border: #E5E7EB;
+  
+  /* Typography */
+  --font-family: "Manrope", "Manrope Placeholder", sans-serif;
+  
+  /* Shadows and Effects */
+  --shadow-sm: 0 1px 2px rgba(24, 45, 23, 0.05);
+  --shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+  --shadow-lg: 0 10px 15px rgba(24, 45, 23, 0.1);
+  --shadow-xl: 0 20px 25px rgba(24, 45, 23, 0.15);
+  
+  /* Transitions */
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: all 0.15s ease;
 }
 
-html, body { font-family: "Manrope", "Manrope Placeholder", sans-serif; background: var(--white); color: var(--text-primary); }
+html, body { 
+  font-family: var(--font-family); 
+  background: var(--kudzu-bg); 
+  color: var(--kudzu-text); 
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
 
 /* Shared building blocks */
 .center-fullpage { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -38,9 +62,49 @@ html, body { font-family: "Manrope", "Manrope Placeholder", sans-serif; backgrou
 .form-input { width: 100%; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 8px; background: #fff; font-size: 14px; transition: var(--transition); }
 .form-input.error { border-color: #fca5a5; }
 
-.btn-primary { width: 100%; background: var(--kudzu-primary); color: #fff; padding: 12px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; transition: var(--transition); }
-.btn-primary:hover { background: var(--kudzu-primary-dark); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(24,45,23,.2); }
-.btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; box-shadow: none; }
+/* Kudzu Theme Buttons */
+.btn-primary { 
+  width: 100%; 
+  background: var(--kudzu-gradient); 
+  color: white; 
+  padding: 12px 16px; 
+  border-radius: 12px; 
+  font-weight: 600; 
+  font-family: var(--font-family);
+  cursor: pointer; 
+  border: none; 
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-primary:hover:not(:disabled) { 
+  transform: translateY(-2px); 
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-primary:hover:not(:disabled)::before {
+  left: 100%;
+}
+
+.btn-primary:disabled { 
+  opacity: 0.6; 
+  cursor: not-allowed; 
+  transform: none; 
+  box-shadow: var(--shadow-sm); 
+}
 
 .link { font-size: 13px; color: #2563eb; text-decoration: none; }
 .divider { display: flex; align-items: center; gap: 10px; margin: 10px 0 12px; }
@@ -93,8 +157,8 @@ body {
   margin: 0;
   padding: 0;
   font-family: "Manrope", "Manrope Placeholder", sans-serif;
-  background: var(--primary-bg);
-  color: var(--text-primary);
+  background: var(--kudzu-bg);
+  color: var(--kudzu-text);
 }
 
 /* Professional Login Container Styles */
@@ -103,10 +167,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
   position: relative;
   padding: 1rem;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
 }
 
 .login-background {
@@ -264,12 +328,13 @@ body {
 .login-button {
   width: 100%;
   padding: 1.125rem 1.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--kudzu-gradient);
   color: white;
   border: none;
   border-radius: 16px;
   font-size: 1rem;
   font-weight: 600;
+  font-family: var(--font-family);
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
@@ -278,7 +343,7 @@ body {
   gap: 0.75rem;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  box-shadow: var(--shadow);
 }
 
 .login-button::before {
@@ -294,7 +359,7 @@ body {
 
 .login-button:hover:not(:disabled) {
   transform: translateY(-3px);
-  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+  box-shadow: var(--shadow-xl);
 }
 
 .login-button:hover:not(:disabled)::before {

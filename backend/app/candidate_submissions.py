@@ -280,15 +280,8 @@ def submit_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
                     (recruiter_id, demand_id, json.dumps({"submission_id": submission_id, "candidate_name": candidate_name}))
                 )
 
-                # Update uploaded_cv_count for all recruiters with same demand_id
-                cur.execute(
-                    """
-                    UPDATE tbl_recruiter_activity 
-                    SET uploaded_cv_count = uploaded_cv_count + 1, updated_at = NOW()
-                    WHERE demand_id = %s
-                    """,
-                    (demand_id,)
-                )
+                # Note: CV count will be updated by the frontend via update-cv-count-and-check endpoint
+                # This prevents double increment
                 
                 # Check if uploaded_cv_count equals required_cv_count and close if needed
                 demand_closed = _check_and_close_activity_on_submission(demand_id, cur)

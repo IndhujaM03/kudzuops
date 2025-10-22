@@ -76,8 +76,8 @@ import { ViewChild } from '@angular/core';
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            <input #fileInput type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" (change)="onFilesSelected($event)">
-            <button class="btn btn-sm btn-outline" (click)="triggerFilePicker()" title="Upload resume">📤</button>
+            <input #fileInput type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" (change)="onFilesSelected($event)">
+            <button class="btn btn-sm btn-outline" (click)="triggerFilePicker()" [disabled]="isUploadDisabled()" title="Upload resume">📤</button>
           </div>
         </div>
         <div class="resume-list-scroll">
@@ -114,7 +114,9 @@ import { ViewChild } from '@angular/core';
             <h1 class="title">Demand Details</h1>
           </div>
           <div class="header-right">
-            <!-- Buttons removed as requested -->
+            <div class="mode-indicator" [ngClass]="'mode-' + mode">
+              {{ mode === 'view' ? 'View Mode' : 'Process Mode' }}
+            </div>         
           </div>
         </div>
 
@@ -252,7 +254,15 @@ import { ViewChild } from '@angular/core';
            [style]="getModalStyle()">
         <div class="modal-header draggable-header">
           <h3>Resume Verification</h3>
-          <button class="close-btn" (click)="closeResumeViewModal()" title="Close">❌</button>
+          <div class="modal-actions">
+            <button class="btn btn-outline btn-sm" (click)="downloadResume()" title="Download Resume">
+              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download
+            </button>
+            <button class="close-btn" (click)="closeResumeViewModal()" title="Close">❌</button>
+          </div>
         </div>
         <div class="modal-body">
           <div class="panel-left">
@@ -274,6 +284,17 @@ import { ViewChild } from '@angular/core';
           </div>
           <div class="vertical-divider"></div>
           <div class="panel-right">
+            <!-- Quota Exceeded Alert -->
+            <div *ngIf="quotaExceeded" class="quota-alert">
+              <div class="alert-content">
+                <div class="alert-icon">⚠️</div>
+                <div class="alert-text">
+                  <strong>All required profiles have already been submitted for this demand.</strong>
+                </div>
+              </div>
+              <button class="btn btn-primary" (click)="handleQuotaExceeded()">OK</button>
+            </div>
+
             <form [formGroup]="resumeForm" *ngIf="selectedResume" class="candidate-form">
               <div class="form-group">
                 <label>Candidate Name *</label>
@@ -315,7 +336,8 @@ import { ViewChild } from '@angular/core';
     .activity-container {
       display: flex;
       min-height: 100vh;
-      background: #f8fafc;
+      background: #F8FAFC;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .resume-sidebar {
@@ -461,12 +483,33 @@ import { ViewChild } from '@angular/core';
     }
 
     .btn-primary {
-      background: var(--kudzu-primary);
+      background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
       color: white;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
     }
 
     .btn-primary:hover:not(:disabled) {
-      background: var(--kudzu-primary-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px rgba(24, 45, 23, 0.1);
+    }
+
+    .btn-primary:hover:not(:disabled)::before {
+      left: 100%;
     }
 
     .btn-secondary {
@@ -990,6 +1033,40 @@ import { ViewChild } from '@angular/core';
       margin: 0;
     }
 
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .quota-alert {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .alert-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .alert-icon {
+      font-size: 20px;
+    }
+
+    .alert-text {
+      flex: 1;
+      color: #92400e;
+    }
+
+    .alert-text strong {
+      font-weight: 600;
+    }
+
     .close-btn {
       background: transparent !important;
       border: none !important;
@@ -1474,6 +1551,9 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   resumeForm: FormGroup;
   @ViewChild('fileInput') fileInput!: any;
   
+  // Quota validation
+  quotaExceeded = false;
+  
   // Drag functionality for modal
   isDragging = false;
   dragOffset = { x: 0, y: 0 };
@@ -1698,6 +1778,13 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
       cv_path: cv.cv_path || cv.file_path || '',
       status: cv.status || 'underverification'
     });
+    
+    // Re-fetch latest counts before opening modal
+    this.reFetchLatestCounts();
+    
+    // Check if quota is exceeded
+    this.checkQuotaInModal();
+    
     this.showResumeViewModal = true;
     // Cache viewer URL for PDF to prevent continuous reloads
     const name = (cv as any).file_name || '';
@@ -1735,42 +1822,255 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   }
 
   triggerFilePicker(): void {
+    // Check quota before allowing file selection
+    if (this.checkQuotaBeforeUpload()) {
+      return;
+    }
     (this.fileInput?.nativeElement as HTMLInputElement)?.click();
+  }
+
+  // Enhanced method to check quota before file upload
+  checkQuotaBeforeUpload(): boolean {
+    if (this.mockMode) return false;
+    
+    const uploadedCount = this.activity?.uploaded_cv_count || 0;
+    const requiredCount = this.activity?.required_cv_count || 0;
+    
+    if (uploadedCount >= requiredCount && requiredCount > 0) {
+      this.showQuotaExceededPopup();
+      return true;
+    }
+    return false;
+  }
+
+  // Check quota before submission with backend validation
+  checkQuotaBeforeSubmissionWithBackend(): void {
+    if (!this.activity) {
+      console.log('❌ No activity found');
+      return;
+    }
+
+    // Use demandId from component if activity.demand_id is not available
+    const demandId = this.activity.demand_id || this.demandId;
+    
+    if (!demandId) {
+      console.log('❌ No demand_id found in activity or component');
+      return;
+    }
+
+    const payload = {
+      demand_id: demandId,
+      recruiter_id: this.recruiterId
+    };
+
+    this.http.post<any>(`${this.api}/recruiter/check-quota-and-update-status`, payload, {
+      headers: new HttpHeaders({ 'Content-Type': 'application/json' })
+    }).subscribe({
+      next: (response) => {
+        if (response && response.success) {
+          if (response.quota_met) {
+            // Show quota exceeded popup and redirect
+            this.showQuotaExceededPopup();
+          } else {
+            // Allow submission to proceed with form data
+            const formData = this.resumeForm.value;
+            this.proceedWithSubmission(formData);
+          }
+        } else {
+          console.warn('Failed to check quota:', response?.message);
+          // Proceed anyway if check fails
+          const formData = this.resumeForm.value;
+          this.proceedWithSubmission(formData);
+        }
+      },
+      error: (error) => {
+        console.error('Error checking quota:', error);
+        // Proceed anyway if check fails
+        const formData = this.resumeForm.value;
+        this.proceedWithSubmission(formData);
+      }
+    });
+  }
+
+  proceedWithSubmission(formData?: any): void {
+    // This method will be called when quota check passes
+    if (formData) {
+      this.proceedWithResumeSubmission(formData);
+    } else {
+      console.log('Proceeding with submission - quota check passed');
+    }
+  }
+
+  proceedWithResumeSubmission(formData: any): void {
+    const statusTitle = (formData.status === 'submitted') ? 'Submitted' : (formData.status === 'hold') ? 'Hold' : (formData.status === 'discard') ? 'Discard' : '';
+    const payload = {
+      candidate_name: formData.candidate_name,
+      email: formData.email,
+      phone: formData.phone,
+      remarks: formData.remarks,
+      status: statusTitle
+    };
+    const id = (this.selectedResume as any).id;
+    this.http.put<any>(`${this.api}/recruiter/update_resume_status/${id}`, payload, {
+      headers: new HttpHeaders({ 'Content-Type': 'application/json' })
+    }).subscribe({
+      next: (resp) => {
+        if (resp && resp.success) {
+          this.toastService.success('Resume details saved successfully');
+          this.closeResumeViewModal();
+          this.refreshResumeList();
+          
+          // Update CV count and check for auto-close
+          this.updateCVCountAndCheck();
+        } else {
+          const msg = (resp && resp.message) ? resp.message : 'Failed to save CV details.';
+          this.toastService.error(msg);
+        }
+      },
+      error: (error) => {
+        console.error('Error saving resume details:', error);
+        const msg = error?.error?.message || 'Failed to save CV details. Please try again.';
+        this.toastService.error(msg);
+      }
+    });
+  }
+
+  isUploadDisabled(): boolean {
+    // Only disable upload when activity_status is 'closed'
+    if (!this.activity) return false;
+    
+    return this.activity.activity_status === 'closed';
   }
 
   onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
-    const file = input.files[0];
+    
+    const files = Array.from(input.files);
+    console.log('Selected files:', files.length);
+    
     if (this.mockMode) {
-      const url = URL.createObjectURL(file);
-      const item = {
-        id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now()),
-        fileName: file.name,
-        uploadedAt: new Date().toISOString(),
-        status: '',
-        url
-      };
-      this.mockResumes = [item, ...this.mockResumes];
+      files.forEach(file => {
+        const url = URL.createObjectURL(file);
+        const item = {
+          id: (crypto as any).randomUUID ? (crypto as any).randomUUID() : String(Date.now()),
+          fileName: file.name,
+          uploadedAt: new Date().toISOString(),
+          status: '',
+          url
+        };
+        this.mockResumes = [item, ...this.mockResumes];
+      });
       this.saveMockResumes();
-      this.toastService.success('Resume uploaded');
+      this.toastService.success(`${files.length} resume(s) uploaded`);
       input.value = '';
       return;
     }
-    const form = new FormData();
-    form.append('file', file);
+    
+    // Upload all files
+    this.uploadMultipleFiles(files);
+    input.value = '';
+  }
+
+  uploadMultipleFiles(files: File[]): void {
+    // Check quota before allowing upload
+    if (this.checkQuotaBeforeUpload()) {
+      return;
+    }
+
     this.cvLoading = true;
-    this.http.post<any>(`${this.api}/recruiter/upload_resume/${this.recruiterId}/${this.demandId}`, form).subscribe({
-      next: () => {
-        this.toastService.success('Resume uploaded');
+    let uploadCount = 0;
+    const totalFiles = files.length;
+    
+    files.forEach((file, index) => {
+      const form = new FormData();
+      form.append('file', file);
+      
+      this.http.post<any>(`${this.api}/recruiter/upload_resume/${this.recruiterId}/${this.demandId}`, form).subscribe({
+        next: () => {
+          uploadCount++;
+          console.log(`Uploaded ${uploadCount}/${totalFiles}: ${file.name}`);
+          
+          if (uploadCount === totalFiles) {
+            this.toastService.success(`✅ Profile uploaded successfully! (${totalFiles} file${totalFiles > 1 ? 's' : ''})`);
+            
+            // Auto-refresh the activity data to get latest counts and CV submissions
+            this.refreshActivityData();
+            this.cvLoading = false;
+            
+            // Check for auto-close after all uploads complete
+            this.checkAndAutoCloseActivity();
+          }
+        },
+        error: (error) => {
+          console.error(`Upload failed for ${file.name}:`, error);
+          uploadCount++;
+          
+          if (uploadCount === totalFiles) {
+            this.toastService.error('Some uploads failed. Please check and retry.');
+            this.refreshResumeList();
+            this.cvLoading = false;
+          }
+        }
+      });
+    });
+  }
+
+  refreshActivityData(): void {
+    // Refresh the activity data to get latest counts and status
+    this.http.get<any>(`${this.api}/recruiter/activity/${this.recruiterId}/${this.demandId}`).subscribe({
+      next: (activity) => {
+        this.activity = activity;
         this.refreshResumeList();
-        input.value = '';
-        this.cvLoading = false;
+        // Also refresh CV submissions to show newly uploaded CVs immediately
+        this.refreshCvSubmissions();
+        console.log('Activity data refreshed:', activity);
       },
-      error: () => {
-        this.toastService.error('Upload failed');
-        input.value = '';
-        this.cvLoading = false;
+      error: (error) => {
+        console.error('Error refreshing activity data:', error);
+      }
+    });
+  }
+
+  checkAndAutoCloseActivity(): void {
+    if (!this.activity) return;
+    
+    // Get updated activity data to check counts
+    this.http.get<any>(`${this.api}/recruiter/activity/${this.recruiterId}/${this.demandId}`).subscribe({
+      next: (activity) => {
+        if (activity && activity.required_cv_count && activity.uploaded_cv_count) {
+          console.log(`Checking auto-close: required=${activity.required_cv_count}, uploaded=${activity.uploaded_cv_count}`);
+          
+          if (activity.required_cv_count === activity.uploaded_cv_count) {
+            console.log('Auto-closing activity - counts match');
+            
+            // Auto-close the activity
+            this.http.post<any>(`${this.api}/recruiter/close-activity-complete`, {
+              recruiter_id: this.recruiterId,
+              demand_id: this.demandId
+            }).subscribe({
+              next: () => {
+                this.toastService.success('✅ Activity closed successfully!');
+                
+                // Redirect immediately after success toast is shown
+                setTimeout(() => {
+                  this.router.navigate(['/recruiter/demands']);
+                }, 1500); // Slightly longer delay to ensure toast is visible
+              },
+              error: (error) => {
+                console.error('Error auto-closing activity:', error);
+                this.toastService.error('Failed to auto-close activity');
+                // Still redirect even if close fails
+                setTimeout(() => {
+                  this.router.navigate(['/recruiter/demands']);
+                }, 1500);
+              }
+            });
+          }
+        }
+      },
+      error: (error) => {
+        console.error('Error checking activity status:', error);
       }
     });
   }
@@ -1884,6 +2184,15 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     this.showResumeViewModal = false;
     this.selectedResume = null;
     this.resumeForm.reset();
+    this.quotaExceeded = false;
+  }
+
+  downloadResume(): void {
+    if (!this.selectedResume) return;
+    
+    // Open the file in a new tab for download
+    const downloadUrl = this.getFileApiUrlString(this.selectedResume);
+    window.open(downloadUrl, '_blank');
   }
 
   saveResumeDetails(): void {
@@ -1902,38 +2211,102 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
       this.closeResumeViewModal();
       return;
     }
-    const statusTitle = (formData.status === 'submitted') ? 'Submitted' : (formData.status === 'hold') ? 'Hold' : (formData.status === 'discard') ? 'Discard' : '';
-    const payload = {
-      candidate_name: formData.candidate_name,
-      email: formData.email,
-      phone: formData.phone,
-      remarks: formData.remarks,
-      status: statusTitle
-    };
-    const id = (this.selectedResume as any).id;
-    this.http.put<any>(`${this.api}/recruiter/update_resume_status/${id}`, payload, {
-      headers: new HttpHeaders({ 'Content-Type': 'application/json' })
-    }).subscribe({
-      next: (resp) => {
-        if (resp && resp.success) {
-          this.toastService.success('Resume details saved successfully');
-          this.closeResumeViewModal();
-          this.refreshResumeList();
-          
-          // Update CV count and check for auto-close
-          this.updateCVCountAndCheck();
-        } else {
-          const msg = (resp && resp.message) ? resp.message : 'Failed to save CV details.';
-          this.toastService.error(msg);
+
+    // Check quota before submission if status is 'submitted'
+    if (formData.status === 'submitted') {
+      this.checkQuotaBeforeSubmissionWithBackend();
+    } else {
+      this.proceedWithSubmission(formData);
+    }
+  }
+
+  // Re-fetch latest counts before any action
+  reFetchLatestCounts(): void {
+    if (!this.activity) return;
+
+    this.http.get<any>(`${this.api}/recruiter/activity/${this.demandId}?recruiter_id=${this.recruiterId}`).subscribe({
+      next: (response) => {
+        if (response && this.activity) {
+          this.activity.uploaded_cv_count = response.uploaded_cv_count || 0;
+          this.activity.required_cv_count = response.required_cv_count || 0;
+          this.activity.activity_status = response.activity_status;
         }
       },
       error: (error) => {
-        console.error('Error saving resume details:', error);
-        const msg = error?.error?.message || 'Failed to save CV details. Please try again.';
-        this.toastService.error(msg);
+        console.error('Error fetching latest counts:', error);
       }
     });
   }
+
+  // Check quota inside modal
+  checkQuotaInModal(): void {
+    if (!this.activity) return;
+    
+    const uploadedCount = this.activity.uploaded_cv_count || 0;
+    const requiredCount = this.activity.required_cv_count || 0;
+    
+    this.quotaExceeded = uploadedCount >= requiredCount && requiredCount > 0;
+  }
+
+  // Handle quota exceeded in modal
+  handleQuotaExceeded(): void {
+    if (!this.activity) return;
+    
+    // Update activity_status to 'closed' in database
+    const payload = {
+      demand_id: this.demandId,
+      recruiter_id: this.recruiterId
+    };
+    
+    this.http.post<any>(`${this.api}/recruiter/check-quota-and-update-status`, payload).subscribe({
+      next: (response) => {
+        if (response && response.success) {
+          // Close modal and redirect
+          this.closeResumeViewModal();
+          window.location.href = '/recruiter/demands';
+        }
+      },
+      error: (error) => {
+        console.error('Error updating activity status:', error);
+        // Still close modal and redirect even if update fails
+        this.closeResumeViewModal();
+        window.location.href = '/recruiter/demands';
+      }
+    });
+  }
+
+  checkQuotaBeforeSubmission(callback: () => void): void {
+    if (!this.activity) return;
+
+    const payload = {
+      demand_id: this.demandId,
+      recruiter_id: this.recruiterId
+    };
+
+    this.http.post<any>(`${this.api}/recruiter/check-quota-and-update-status`, payload).subscribe({
+      next: (response) => {
+        if (response && response.success) {
+          if (response.quota_met) {
+            // Show quota exceeded popup
+            this.showQuotaExceededPopup();
+          } else {
+            // Proceed with submission
+            callback();
+          }
+        } else {
+          console.warn('Failed to check quota:', response?.message);
+          // Proceed anyway if check fails
+          callback();
+        }
+      },
+      error: (error) => {
+        console.error('Error checking quota:', error);
+        // Proceed anyway if check fails
+        callback();
+      }
+    });
+  }
+
 
   // Lightweight refresh of activity cv_list without blocking the page
   refreshCvSubmissions(): void {
@@ -2066,7 +2439,7 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   closeActivity(): void {
     if (!this.activity) return;
 
-    this.http.post<any>(`${this.api}/recruiter/${this.recruiterId}/demand/${this.activity.demand_id}/close`, {}).subscribe({
+    this.http.post<any>(`${this.api}/recruiter/${this.recruiterId}/demand/${this.demandId}/close`, {}).subscribe({
       next: (response) => {
         this.toastService.success('Activity closed successfully');
         this.goBack();
@@ -2159,7 +2532,7 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     if (!this.activity) return;
     
     // Get fresh activity data from backend
-    this.http.get<any>(`${this.api}/recruiter/activity/${this.activity.demand_id}?recruiter_id=${this.recruiterId}`).subscribe({
+    this.http.get<any>(`${this.api}/recruiter/activity/${this.demandId}?recruiter_id=${this.recruiterId}`).subscribe({
       next: (response) => {
         if (response) {
           const freshUploadedCount = response.uploaded_cv_count || 0;
@@ -2186,22 +2559,32 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     if (!this.activity) return;
 
     const payload = {
-      demand_id: this.activity.demand_id,
+      demand_id: this.demandId,
       recruiter_id: this.recruiterId,
       increment: 1
     };
 
+    console.log('🔄 Calling update-cv-count-and-check with payload:', payload);
+
     this.http.post<any>(`${this.api}/recruiter/update-cv-count-and-check`, payload).subscribe({
       next: (response) => {
+        console.log('✅ update-cv-count-and-check response:', response);
         if (response && response.success) {
           if (response.closed) {
-            // Show popup message for demand closure
+            // Show success toast for completion
+            this.toastService.success('✅ All required profiles submitted successfully.');
+            
+            // Show popup message for demand closure and navigate to demands page
             this.showDemandClosedPopup();
+            
             // Update local activity status
             if (this.activity) {
               this.activity.activity_status = 'closed';
+              this.activity.uploaded_cv_count = response.uploaded_count;
             }
           } else {
+            // Show success toast for partial submission
+            this.toastService.success('✅ Profile submitted successfully.');
             // Just refresh the activity data
             this.loadActivity();
           }
@@ -2210,10 +2593,125 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
         }
       },
       error: (error) => {
-        console.error('Error updating CV count:', error);
+        console.error('❌ Error updating CV count:', error);
+        console.error('Error details:', error.error);
+        console.error('Error status:', error.status);
         // Don't show error to user as this is automatic
       }
     });
+  }
+
+  showQuotaExceededPopup(): void {
+    // Create and show quota exceeded popup
+    const popup = document.createElement('div');
+    popup.className = 'quota-exceeded-popup';
+    popup.innerHTML = `
+      <div class="popup-overlay">
+        <div class="popup-content">
+          <div class="popup-header">
+            <h3>⚠️ All Required Profiles Submitted</h3>
+          </div>
+          <div class="popup-body">
+            <p>All required profiles have already been submitted for this demand.</p>
+            <p>The activity has been automatically closed.</p>
+          </div>
+          <div class="popup-footer">
+            <button class="btn btn-primary" onclick="this.closest('.quota-exceeded-popup').remove(); window.location.href='/recruiter/demands';">OK</button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add styles
+    const style = document.createElement('style');
+    style.textContent = `
+      .quota-exceeded-popup {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10000;
+      }
+      .quota-exceeded-popup .popup-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .quota-exceeded-popup .popup-content {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 20px 25px rgba(0, 0, 0, 0.1);
+        max-width: 400px;
+        width: 90%;
+      }
+      .quota-exceeded-popup .popup-header {
+        padding: 20px 24px 0;
+        text-align: center;
+      }
+      .quota-exceeded-popup .popup-header h3 {
+        margin: 0;
+        color: #dc2626;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .quota-exceeded-popup .popup-body {
+        padding: 16px 24px;
+        text-align: center;
+      }
+      .quota-exceeded-popup .popup-body p {
+        margin: 0;
+        color: #374151;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .quota-exceeded-popup .popup-footer {
+        padding: 0 24px 20px;
+        text-align: center;
+      }
+      .quota-exceeded-popup .btn {
+        padding: 12px 24px !important;
+        border: none !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        min-width: 80px !important;
+        transition: all 0.2s ease !important;
+      }
+      .quota-exceeded-popup .btn-primary {
+        background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%) !important;
+        color: white !important;
+        box-shadow: 0 2px 4px rgba(24, 45, 23, 0.3) !important;
+        font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
+      }
+      .quota-exceeded-popup .btn-primary:hover {
+        background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%) !important;
+        box-shadow: 0 4px 8px rgba(24, 45, 23, 0.4) !important;
+        transform: translateY(-1px) !important;
+      }
+      .quota-exceeded-popup .btn-primary:active {
+        background: #1d4ed8 !important;
+        transform: translateY(0) !important;
+      }
+    `;
+    
+    document.head.appendChild(style);
+    document.body.appendChild(popup);
+    
+    // Auto-remove after 10 seconds if not manually closed
+    setTimeout(() => {
+      if (document.body.contains(popup)) {
+        popup.remove();
+        window.location.href = '/recruiter/demands';
+      }
+    }, 10000);
   }
 
   showDemandClosedPopup(): void {
@@ -2224,13 +2722,14 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
       <div class="popup-overlay">
         <div class="popup-content">
           <div class="popup-header">
-            <h3>Demand Closed</h3>
+            <h3>✅ Demand Completed</h3>
           </div>
           <div class="popup-body">
-            <p>The demand is closed.</p>
+            <p>All required profiles have been submitted successfully.</p>
+            <p>The demand is now closed and you will be redirected to the demands page.</p>
           </div>
           <div class="popup-footer">
-            <button class="btn btn-primary" onclick="this.closest('.demand-closed-popup').remove(); window.location.href='/recruiter/dashboard';">Close</button>
+            <button class="btn btn-primary" onclick="this.closest('.demand-closed-popup').remove(); window.location.href='/recruiter/demands';">OK</button>
           </div>
         </div>
       </div>
@@ -2289,8 +2788,27 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
         justify-content: flex-end;
       }
       .popup-footer .btn {
-        padding: 8px 16px;
-        font-size: 14px;
+        padding: 12px 24px !important;
+        border: none !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
+        min-width: 80px !important;
+        transition: all 0.2s ease !important;
+        background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%) !important;
+        color: white !important;
+        box-shadow: 0 2px 4px rgba(24, 45, 23, 0.3) !important;
+      }
+      .popup-footer .btn:hover {
+        background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%) !important;
+        box-shadow: 0 4px 8px rgba(24, 45, 23, 0.4) !important;
+        transform: translateY(-1px) !important;
+      }
+      .popup-footer .btn:active {
+        background: #1d4ed8 !important;
+        transform: translateY(0) !important;
       }
     `;
     
@@ -2303,7 +2821,7 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
 
     const payload = {
       activity_id: this.activity.id,
-      demand_id: this.activity.demand_id,
+      demand_id: this.demandId,
       recruiter_id: this.recruiterId
     };
 

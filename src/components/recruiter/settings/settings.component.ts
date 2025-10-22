@@ -1,6 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
+import { ReactiveFormsModule, FormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../../services/auth.service';
 import { environment } from '../../../environments/environment';
@@ -8,7 +8,7 @@ import { environment } from '../../../environments/environment';
 @Component({
   selector: 'app-recruiter-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule],
   styles: [`
     .recruiter-settings-wrapper {
       min-height: 100vh;
@@ -312,15 +312,36 @@ export class SettingsComponent implements OnInit {
   
   cvForm: FormGroup;
   passwordForm: FormGroup;
+  profileForm: FormGroup;
+  preferencesForm: FormGroup;
   loading = false;
   toasts: { id: number; text: string; type: string }[] = [];
+  
+  notifications = {
+    email: true,
+    cvStatus: true,
+    demandAssignments: true,
+    weeklyReports: false
+  };
 
   constructor() {
     this.cvForm = this.fb.group({ 
       cv_folder_path: ['', [Validators.required]] 
     });
     this.passwordForm = this.fb.group({ 
-      new_password: ['', [Validators.required, Validators.minLength(8)]] 
+      current_password: ['', [Validators.required]],
+      new_password: ['', [Validators.required, Validators.minLength(8)]],
+      confirm_password: ['', [Validators.required]]
+    });
+    this.profileForm = this.fb.group({
+      first_name: ['', [Validators.required]],
+      last_name: ['', [Validators.required]],
+      email: ['', [Validators.required, Validators.email]]
+    });
+    this.preferencesForm = this.fb.group({
+      theme: ['light'],
+      itemsPerPage: ['25'],
+      defaultDateRange: ['30']
     });
   }
 
@@ -414,6 +435,121 @@ export class SettingsComponent implements OnInit {
 
   removeToast(id: number): void {
     this.toasts = this.toasts.filter(t => t.id !== id);
+  }
+
+  // Profile methods
+  getInitials(): string {
+    const firstName = this.profileForm.get('first_name')?.value || 'R';
+    const lastName = this.profileForm.get('last_name')?.value || 'U';
+    return (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
+  }
+
+  getFullName(): string {
+    const firstName = this.profileForm.get('first_name')?.value || 'Recruiter';
+    const lastName = this.profileForm.get('last_name')?.value || 'User';
+    return `${firstName} ${lastName}`;
+  }
+
+  getEmail(): string {
+    return this.profileForm.get('email')?.value || 'recruiter@example.com';
+  }
+
+  updateProfile(): void {
+    if (this.profileForm.invalid) {
+      this.showToast('Please fill in all required fields', 'warning');
+      return;
+    }
+
+    const id = this.auth.getCurrentUserId();
+    if (!id) {
+      this.showToast('Authentication error. Please login again.', 'error');
+      return;
+    }
+
+    this.loading = true;
+    this.http.put(`${this.api}/user/${id}/profile`, this.profileForm.value).subscribe({
+      next: (response) => {
+        this.showToast('Profile updated successfully', 'success');
+        this.loading = false;
+      },
+      error: (error) => {
+        console.error('Error updating profile:', error);
+        this.showToast('Failed to update profile. Please try again.', 'error');
+        this.loading = false;
+      }
+    });
+  }
+
+  // Notification methods
+  updateNotifications(): void {
+    const id = this.auth.getCurrentUserId();
+    if (!id) return;
+
+    this.http.put(`${this.api}/user/${id}/notifications`, this.notifications).subscribe({
+      next: (response) => {
+        this.showToast('Notification preferences updated', 'success');
+      },
+      error: (error) => {
+        console.error('Error updating notifications:', error);
+        this.showToast('Failed to update notifications', 'error');
+      }
+    });
+  }
+
+  // Preferences methods
+  savePreferences(): void {
+    if (this.preferencesForm.invalid) {
+      this.showToast('Please fill in all required fields', 'warning');
+      return;
+    }
+
+    const id = this.auth.getCurrentUserId();
+    if (!id) {
+      this.showToast('Authentication error. Please login again.', 'error');
+      return;
+    }
+
+    this.loading = true;
+    this.http.put(`${this.api}/user/${id}/preferences`, this.preferencesForm.value).subscribe({
+      next: (response) => {
+        this.showToast('Preferences saved successfully', 'success');
+        this.loading = false;
+      },
+      error: (error) => {
+        console.error('Error saving preferences:', error);
+        this.showToast('Failed to save preferences. Please try again.', 'error');
+        this.loading = false;
+      }
+    });
+  }
+
+  // Danger zone methods
+  confirmDeleteAccount(): void {
+    if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+      this.deleteAccount();
+    }
+  }
+
+  deleteAccount(): void {
+    const id = this.auth.getCurrentUserId();
+    if (!id) {
+      this.showToast('Authentication error. Please login again.', 'error');
+      return;
+    }
+
+    this.loading = true;
+    this.http.delete(`${this.api}/user/${id}`).subscribe({
+      next: (response) => {
+        this.showToast('Account deleted successfully', 'success');
+        this.auth.logout();
+        this.loading = false;
+      },
+      error: (error) => {
+        console.error('Error deleting account:', error);
+        this.showToast('Failed to delete account. Please try again.', 'error');
+        this.loading = false;
+      }
+    });
   }
 }
 

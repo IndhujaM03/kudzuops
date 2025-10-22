@@ -317,6 +317,22 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
     .superadmin-btn-approve {
       background: var(--kudzu-primary);
       color: white;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      font-weight: 600;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+    }
+
+    .superadmin-btn-approve::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
     }
 
     .superadmin-btn-approve:hover {
