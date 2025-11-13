@@ -79,6 +79,40 @@ def decode_token(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     except Exception as e:
         return None, str(e)
 
+def extract_recruiter_id_from_request(request: Request, query_param: Optional[int] = None) -> Optional[int]:
+    """
+    Extract recruiter_id with multiple fallback options:
+    1. Query parameter (explicit)
+    2. JWT token (uid field)
+    3. Request body (x-recruiter-id header)
+    """
+    # Priority 1: Explicit query parameter
+    if query_param:
+        return query_param
+    
+    # Priority 2: Extract from JWT token
+    try:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            payload, err = decode_token(token)
+            if not err and payload:
+                user_id = payload.get('uid')
+                if user_id:
+                    return int(user_id)
+    except Exception:
+        pass
+    
+    # Priority 3: Extract from custom header
+    try:
+        recruiter_id_header = request.headers.get('X-Recruiter-ID')
+        if recruiter_id_header:
+            return int(recruiter_id_header)
+    except Exception:
+        pass
+    
+    return None
+
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)) -> Dict[str, Any]:
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -328,8 +362,8 @@ class SsoRequest(BaseModel):
 # -----------------------------
 # Router & Endpoints
 # -----------------------------
-router = APIRouter(prefix="/auth", tags=["auth"])
-super_router = APIRouter(prefix="/superadmin", tags=["superadmin"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+super_router = APIRouter(prefix="/api/superadmin", tags=["superadmin"])
 
 # -- Authentication Endpoints --
 
@@ -343,6 +377,21 @@ def register(request: RegisterRequest):
                 cur.execute("SELECT id FROM tbl_users WHERE email=%s", (request.email,))
                 if cur.fetchone():
                     raise HTTPException(status_code=400, detail="User already exists")
+                
+                # Ensure sequence is in sync with actual data (prevents duplicate key errors)
+                try:
+                    cur.execute("""
+                        SELECT setval('tbl_users_id_seq', 
+                            GREATEST(
+                                (SELECT MAX(id) FROM tbl_users), 
+                                1
+                            ), 
+                            true
+                        )
+                    """)
+                except Exception:
+                    # If sequence doesn't exist or has issues, continue - PostgreSQL will handle it
+                    pass
                 
                 # Hash password and create user
                 password_hash = _hash_password(request.password)
@@ -580,7 +629,7 @@ def verify_reset_alias(request: ResetPasswordConfirmPayload):
 @router.get("/google/login")
 def google_login():
     client_id = _get_env("GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID")
-    redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+    redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/auth/google/callback")
     if not client_id:
         raise HTTPException(status_code=400, detail="Google OAuth not configured. Missing: GOOGLE_CLIENT_ID (or OAUTH_CLIENT_ID)")
     base = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -629,7 +678,7 @@ def google_callback(request: Request):
 
         client_id = _get_env("GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID")
         client_secret = _get_env("GOOGLE_CLIENT_SECRET", "OAUTH_CLIENT_SECRET")
-        redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
+        redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/auth/google/callback")
         frontend_redirect = _get_env("FRONTEND_REDIRECT_AFTER_LOGIN", default="http://localhost:4200/dashboard")
 
         def mask_sensitive(value: str) -> str:
@@ -735,6 +784,20 @@ def google_callback(request: Request):
                             cur.execute("UPDATE tbl_users SET is_verified=true WHERE id=%s", (user_id,))
                             logger.debug("✅ User verification status updated")
                     else:
+                        # Ensure sequence is in sync before inserting
+                        try:
+                            cur.execute("""
+                                SELECT setval('tbl_users_id_seq', 
+                                    GREATEST(
+                                        (SELECT MAX(id) FROM tbl_users), 
+                                        1
+                                    ), 
+                                    true
+                                )
+                            """)
+                        except Exception:
+                            pass
+                        
                         cur.execute(
                             "INSERT INTO tbl_users (email, password_hash, is_verified, user_type, approval_status, role) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
                             (email, None, True, "candidate", False, "candidate"),
@@ -795,7 +858,7 @@ def pending_users(_: Dict[str, Any] = Depends(require_super_admin)):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, first_name, last_name, email, role, approval_status FROM tbl_users WHERE approval_status = FALSE OR is_approved = FALSE")
+                cur.execute("SELECT id, first_name, last_name, email, role, approval_status FROM tbl_users WHERE approval_status = FALSE")
                 rows = cur.fetchall()
                 return [
                     {"id": r[0], "first_name": r[1], "last_name": r[2], "email": r[3], "role": r[4], "approval_status": r[5]}
@@ -809,44 +872,62 @@ def pending_approvals_count(_: Dict[str, Any] = Depends(require_super_admin)):
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM tbl_users WHERE approval_status = FALSE OR is_approved = FALSE")
+                cur.execute("SELECT COUNT(*) FROM tbl_users WHERE approval_status = FALSE")
                 count = cur.fetchone()[0]
                 return {"count": int(count)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch pending count: {str(e)}")
 
 @super_router.post("/approve/{user_id}")
-def approve_user(user_id: int, request: dict = Body(None), admin: Dict[str, Any] = Depends(require_super_admin)):
+def approve_user(user_id: int, admin: Dict[str, Any] = Depends(require_super_admin), payload: Optional[Dict[str, Any]] = Body(default=None)) -> Dict[str, str]:
+    import traceback
     try:
+        print(f"DEBUG: Approving user {user_id}, payload={payload}")
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 # Get reporting_to from request body if provided
-                reporting_to = request.get("reporting_to") if request else None
+                reporting_to = None
+                if payload:
+                    reporting_to = payload.get("reporting_to")
                 
+                print(f"DEBUG: reporting_to={reporting_to}")
                 if reporting_to:
-                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, is_approved=TRUE, reporting_to=%s WHERE id=%s", 
+                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, reporting_to=%s WHERE id=%s", 
                                (reporting_to, user_id))
                 else:
-                    cur.execute("UPDATE tbl_users SET approval_status=TRUE, is_approved=TRUE WHERE id=%s", 
+                    cur.execute("UPDATE tbl_users SET approval_status=TRUE WHERE id=%s", 
                                (user_id,))
+                
+                print(f"DEBUG: rowcount={cur.rowcount}")
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="User not found")
                 conn.commit()
-        return {"message": "User approved"}
+        print("DEBUG: User approved successfully")
+        return {"message": "User approved successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"DEBUG ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Approval failed: {str(e)}")
 
 @super_router.post("/reject/{user_id}")
-def reject_user(user_id: int, _: Dict[str, Any] = Depends(require_super_admin)):
+def reject_user(user_id: int, _: Dict[str, Any] = Depends(require_super_admin)) -> Dict[str, str]:
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM tbl_users WHERE id=%s", (user_id,))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="User not found")
                 conn.commit()
-        return {"message": "User rejected"}
+        return {"message": "User rejected successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rejection failed: {str(e)}")
 
 @super_router.post("/set-role/{user_id}")
-def set_role(user_id: int, payload: Dict[str, str], _: Dict[str, Any] = Depends(require_super_admin)):
+def set_role(user_id: int, payload: Dict[str, str], _: Dict[str, Any] = Depends(require_super_admin)) -> Dict[str, str]:
     role = payload.get("role")
     if not role:
         raise HTTPException(status_code=400, detail="Role is required")
@@ -854,7 +935,34 @@ def set_role(user_id: int, payload: Dict[str, str], _: Dict[str, Any] = Depends(
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute("UPDATE tbl_users SET role=%s WHERE id=%s", (role, user_id))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="User not found")
                 conn.commit()
-        return {"message": "Role updated"}
+        return {"message": "Role updated successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Set role failed: {str(e)}")
+
+@super_router.post("/update-user-reporting-to")
+def update_user_reporting_to(payload: Dict[str, Any], _: Dict[str, Any] = Depends(require_super_admin)) -> Dict[str, str]:
+    """Update the reporting_to field for a user"""
+    user_id = payload.get("user_id")
+    reporting_to = payload.get("reporting_to")
+    
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id is required")
+    
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Update reporting_to (can be None to clear it)
+                cur.execute("UPDATE tbl_users SET reporting_to=%s WHERE id=%s", (reporting_to, user_id))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="User not found")
+                conn.commit()
+        return {"message": "Reporting To updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update Reporting To: {str(e)}")

@@ -43,7 +43,7 @@ export interface DashboardData {
 })
 export class DashboardService {
   private http = inject(HttpClient);
-  private apiUrl = environment.apiBase || 'http://localhost:8000';
+  private apiUrl = environment.apiBase;
 
   private getAuthHeaders(): HttpHeaders {
     const token = localStorage.getItem('access_token');

@@ -1,0 +1,369 @@
+/* Import styles from demand_sheet */
+@import url('../../app/demand/demand_sheet.css');
+
+/* CV Modal Styles */
+.cv-modal-content {
+  background: white !important;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  max-width: 90vw;
+  width: 90vw;
+  max-height: 90vh;
+  height: 90vh;
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative !important;
+  z-index: 10001 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.cv-modal-header {
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
+}
+
+.cv-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: white;
+}
+
+.cv-modal-body {
+  padding: 0;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f9fafb;
+}
+
+.cv-iframe {
+  width: 100%;
+  height: 70vh;
+  min-height: 500px;
+  border: none;
+  background: white;
+}
+
+.cv-error {
+  padding: 40px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 16px;
+}
+
+.cv-modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-download,
+.btn-close {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-download {
+  background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%);
+  color: white;
+}
+
+.btn-download:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-close {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.btn-close:hover {
+  background: #d1d5db;
+}
+
+.modal-overlay,
+.cv-modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 10000 !important;
+  backdrop-filter: blur(4px);
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Profile modal close button - visible on light background */
+.modal-card .modal-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: #334155;
+  padding: 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-weight: bold;
+}
+
+.modal-card .modal-close:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #1e293b;
+}
+
+/* CV modal close button - visible on dark background */
+.cv-modal-header .modal-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  color: white;
+  font-size: 20px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.cv-modal-header .modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Action buttons in Submitted Profiles modal */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-accept,
+.btn-reject {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-accept {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.btn-accept:hover {
+  background: #bbf7d0;
+  color: #14532d;
+}
+
+.btn-reject {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-reject:hover {
+  background: #fecaca;
+  color: #b91c1c;
+}
+
+.w-4 {
+  width: 1rem;
+  height: 1rem;
+}
+
+.w-5 {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Status Cell and Badge Styles */
+.status-cell {
+  cursor: pointer !important;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  padding: 8px !important;
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+.edit-hint {
+  margin-left: 6px;
+  opacity: 0.3;
+  font-size: 12px;
+  transition: opacity 0.2s;
+  display: inline-block;
+}
+
+.status-cell:hover .edit-hint {
+  opacity: 0.7;
+}
+
+.status-cell:hover {
+  background-color: rgba(24, 45, 23, 0.05) !important;
+  border-radius: 4px;
+}
+
+.status-cell:hover .status-badge {
+  opacity: 0.9;
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Ensure Status column header is visible */
+.glassy-table th:last-child,
+.glassy-table td:last-child {
+  min-width: 140px !important;
+  display: table-cell !important;
+  visibility: visible !important;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.status-open {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-hold {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.status-closed {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* Status Edit Form Styles */
+.status-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.form-control {
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+  transition: all 0.2s;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--kudzu-primary, #182D17);
+  box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1);
+}
+
+.form-control select {
+  cursor: pointer;
+}
+
+.form-control textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.btn-save,
+.btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-save {
+  background: var(--kudzu-primary, #182D17);
+  color: #FFFFFF;
+}
+
+.btn-save:hover {
+  background: var(--kudzu-primary-dark, #0f1a0f);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 45, 23, 0.2);
+}
+
+.btn-cancel {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.btn-cancel:hover {
+  background: #d1d5db;
+  transform: translateY(-1px);
+}
+
+/* Modal Footer Styles */
+.modal-footer {
+  padding: 18px;
+  border-top: 1px solid #eef2f7;
+  background: rgba(255, 255, 255, 0.6);
+  display: flex;
+  justify-content: flex-end;
+}

@@ -1,11 +1,11 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterOutlet } from '@angular/router';
+import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 
 @Component({
   selector: 'app-teamleader-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="tl-dashboard">
       <div class="tl-sidebar">
@@ -14,23 +14,18 @@ import { Router, RouterOutlet } from '@angular/router';
           <div class="tl-sidebar-subtitle">Operations</div>
         </div>
         <nav class="tl-sidebar-nav">
-          <div class="tl-nav-item" (click)="toggleDemandSheet()">
-            <svg class="tl-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <a routerLink="/teamleader/dashboard" routerLinkActive="active" class="tl-nav-item">
+            <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span>Dashboard</span>
+          </a>
+          <a routerLink="/teamleader/demand-sheet" routerLinkActive="active" class="tl-nav-item">
+            <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h8M8 12h8M8 17h8" />
             </svg>
             <span>Demand Sheet</span>
-            <svg class="tl-nav-arrow" [class.rotated]="demandSheetOpen" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-          <nav *ngIf="demandSheetOpen" class="tl-submenu">
-            <div class="tl-submenu-item" (click)="openCreateDemand()">
-              <svg class="tl-submenu-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-              </svg>
-              <span>Create Demand</span>
-            </div>
-          </nav>
+          </a>
         </nav>
         <div class="tl-sidebar-footer">
           <button (click)="logout()" class="tl-logout-button">
@@ -96,25 +91,36 @@ import { Router, RouterOutlet } from '@angular/router';
       display:flex; 
       align-items:center; 
       padding:12px 24px; 
-      color:rgba(255, 255, 255, 0.9); 
+      color: #ffffff !important; 
       text-decoration:none; 
       transition:all 0.2s ease;
       position: relative;
     }
+    .tl-nav-item span {
+      color: #ffffff !important;
+    }
     .tl-nav-item:hover { 
       background: rgba(255, 255, 255, 0.1); 
-      color:#fff; 
+      color:#ffffff !important; 
+    }
+    .tl-nav-item:hover span {
+      color: #ffffff !important;
     }
     .tl-nav-item.active { 
       background: rgba(255, 255, 255, 0.15); 
-      color:#fff; 
-      border-right:3px solid #fff; 
+      color:#ffffff !important; 
+      border-right:3px solid #ffffff; 
+    }
+    .tl-nav-item.active span {
+      color: #ffffff !important;
     }
     .tl-nav-icon { 
       width:20px; 
       height:20px; 
       margin-right:12px; 
       flex-shrink: 0;
+      color: #ffffff !important;
+      stroke: #ffffff !important;
     }
     .tl-nav-arrow {
       width:16px;
@@ -122,6 +128,8 @@ import { Router, RouterOutlet } from '@angular/router';
       margin-left:auto;
       transition: transform 0.2s ease;
       transform: rotate(0deg);
+      color: #ffffff !important;
+      stroke: #ffffff !important;
     }
     .tl-nav-arrow.rotated {
       transform: rotate(180deg);
@@ -136,20 +144,36 @@ import { Router, RouterOutlet } from '@angular/router';
       display: flex;
       align-items: center;
       padding: 10px 20px;
-      color: rgba(255, 255, 255, 0.8);
+      color: #ffffff !important;
       cursor: pointer;
       transition: all 0.2s ease;
       font-size: 14px;
+      text-decoration: none;
+    }
+    .tl-submenu-item span {
+      color: #ffffff !important;
     }
     .tl-submenu-item:hover {
       background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      color: #ffffff !important;
+    }
+    .tl-submenu-item:hover span {
+      color: #ffffff !important;
+    }
+    .tl-submenu-item.active {
+      background: rgba(255, 255, 255, 0.15);
+      color: #ffffff !important;
+    }
+    .tl-submenu-item.active span {
+      color: #ffffff !important;
     }
     .tl-submenu-icon {
       width: 16px;
       height: 16px;
       margin-right: 12px;
       flex-shrink: 0;
+      color: #ffffff !important;
+      stroke: #ffffff !important;
     }
     .tl-sidebar-footer { 
       padding:20px 24px; 
@@ -290,7 +314,6 @@ import { Router, RouterOutlet } from '@angular/router';
 })
 export class TeamLeaderLayoutComponent implements OnInit {
   private router = inject(Router);
-  demandSheetOpen = false;
   currentUser = { name: 'Indhuja' };
 
   ngOnInit(): void {
@@ -303,17 +326,6 @@ export class TeamLeaderLayoutComponent implements OnInit {
         console.error('Error parsing user info:', e);
       }
     }
-  }
-
-  toggleDemandSheet(): void {
-    this.demandSheetOpen = !this.demandSheetOpen;
-  }
-  
-  openCreateDemand(): void {
-    // Navigate to the demand sheet with create modal open
-    this.router.navigate(['/teamleader/demand-sheet'], { 
-      queryParams: { create: 'true' } 
-    });
   }
 
   getUserInitials(): string {

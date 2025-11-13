@@ -1,5 +1,6 @@
 import { Component, signal, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { TeamLeaderService } from '../../services/teamleader.service';
 import { ToastService } from '../../services/toast.service';
 import { Subject } from 'rxjs';
@@ -10,12 +11,13 @@ interface DemandItem {
   title: string;
   client?: string;
   createdAt?: string;
+  status?: string;
 }
 
 @Component({
   selector: 'app-teamleader-demand-sheet',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="tl-demand-wrapper">
       <div class="tl-tabs">
@@ -32,6 +34,11 @@ interface DemandItem {
               <div class="tl-item-content">
                 <div class="tl-item-title">{{ d.title }}</div>
                 <div class="tl-item-sub">{{ d.client || '—' }} • {{ d.createdAt || '' }}</div>
+                <div class="tl-item-status" (dblclick)="handleStatusDoubleClick($event, d.id, d.status || 'open')" title="Double-click to edit status">
+                  <span class="status-badge" [ngClass]="getStatusBadgeClass(d.status || 'open')">
+                    {{ formatStatus(d.status || 'open') }}
+                  </span>
+                </div>
               </div>
               <div class="tl-item-actions">
                 <button (click)="assignDemand(d.id)" class="btn-assign" title="Assign Demand">
@@ -62,6 +69,11 @@ interface DemandItem {
               <div class="tl-item-recruiters" *ngIf="d.assignedRecruiters && d.assignedRecruiters.length > 0">
                 <span class="recruiter-label">Assigned to:</span>
                 <span class="recruiter-names">{{ d.assignedRecruiters.join(', ') }}</span>
+              </div>
+              <div class="tl-item-status" (dblclick)="handleStatusDoubleClick($event, d.id, d.status || 'open')" title="Double-click to edit status">
+                <span class="status-badge" [ngClass]="getStatusBadgeClass(d.status || 'open')">
+                  {{ formatStatus(d.status || 'open') }}
+                </span>
               </div>
             </div>
           </div>
@@ -131,8 +143,10 @@ interface DemandItem {
                           </svg>
                         </button>
                       </td>
-                      <td class="status">
-                        <span class="status-badge status-waiting">Waiting</span>
+                      <td class="status" (dblclick)="handleStatusDoubleClick($event, cvData.demand_id, cvData.demand_status || cvData.status || 'open')" title="Double-click to edit status" style="cursor: pointer;">
+                        <span class="status-badge" [ngClass]="getStatusBadgeClass(cvData.demand_status || cvData.status || 'open')">
+                          {{ formatStatus(cvData.demand_status || cvData.status || 'open') }}
+                        </span>
                       </td>
                       <td class="actions">
                         <div class="action-buttons">
@@ -346,108 +360,56 @@ interface DemandItem {
       </div>
     </div>
 
-    <!-- CV Review Modal -->
-    <div class="modal-overlay" *ngIf="showCvModal" (click)="closeCvModal()">
+    <!-- Status Edit Modal -->
+    <div class="modal-overlay" *ngIf="showStatusModal()" (click)="closeStatusModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h3 class="modal-title">CV Review - {{ selectedCv?.candidate_name || 'Unknown Candidate' }}</h3>
-          <button class="modal-close" (click)="closeCvModal()">
+          <h3 class="modal-title">Edit Demand Status</h3>
+          <button class="modal-close" (click)="closeStatusModal()">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
           </button>
         </div>
         
-        <div class="modal-body" *ngIf="selectedCv && selectedCvData">
-          <div class="cv-details">
-            <div class="detail-section">
-              <h4>Candidate Information</h4>
-              <div class="detail-grid">
-                <div class="detail-item">
-                  <label>Name:</label>
-                  <span>{{ selectedCv.candidate_name || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Email:</label>
-                  <span>{{ selectedCv.candidate_email || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Phone:</label>
-                  <span>{{ selectedCv.candidate_phone || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Experience:</label>
-                  <span>{{ selectedCv.experience_years || 'N/A' }} years</span>
-                </div>
-              </div>
+        <div class="modal-body">
+          <div class="status-edit-form">
+            <div class="form-group">
+              <label for="status-select">Status</label>
+              <select id="status-select" class="form-control" [(ngModel)]="selectedStatus">
+                <option value="open">Open</option>
+                <option value="hold">Hold</option>
+                <option value="close">Closed</option>
+                <option value="cancel">Cancel</option>
+              </select>
             </div>
-
-            <div class="detail-section" *ngIf="selectedCv.skills && selectedCv.skills.length > 0">
-              <h4>Skills</h4>
-              <div class="skills-container">
-                <span class="skill-tag" *ngFor="let skill of selectedCv.skills">{{ skill }}</span>
-              </div>
-            </div>
-
-            <div class="detail-section">
-              <h4>CV Document</h4>
-              <div class="cv-document">
-                <a [href]="selectedCv.cv_url" target="_blank" class="cv-link" *ngIf="selectedCv.cv_url">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                  </svg>
-                  View CV Document
-                </a>
-                <span *ngIf="!selectedCv.cv_url" class="no-cv">CV not available</span>
-              </div>
-            </div>
-
-            <div class="detail-section">
-              <h4>Demand Information</h4>
-              <div class="detail-grid">
-                <div class="detail-item">
-                  <label>Demand ID:</label>
-                  <span>{{ selectedCvData.demand_id || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Recruiter:</label>
-                  <span>{{ selectedCvData.recruiter_name || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Client:</label>
-                  <span>{{ selectedCvData.client_name || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Skill:</label>
-                  <span>{{ selectedCvData.skill || 'N/A' }}</span>
-                </div>
-                <div class="detail-item">
-                  <label>Upload Date:</label>
-                  <span>{{ formatDate(selectedCv.upload_date) }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="detail-section" *ngIf="selectedCv.remark">
-              <h4>Recruiter Remarks</h4>
-              <div class="remark-text">{{ selectedCv.remark }}</div>
+            
+            <div class="form-group">
+              <label for="status-remark">Remark</label>
+              <textarea 
+                id="status-remark" 
+                class="form-control" 
+                rows="4" 
+                placeholder="Enter remark (optional)"
+                [(ngModel)]="statusRemark"
+              ></textarea>
             </div>
           </div>
         </div>
 
         <div class="modal-footer">
           <div class="action-buttons">
-            <button (click)="acceptCvFromModal()" class="btn-accept" title="Accept CV">
+            <button (click)="saveStatus()" class="btn-save" title="Save Status">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
               </svg>
-              Accept
+              Save
             </button>
-            <button (click)="rejectCvFromModal()" class="btn-reject" title="Reject CV">
+            <button (click)="closeStatusModal()" class="btn-cancel" title="Cancel">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
-              Reject
+              Cancel
             </button>
           </div>
         </div>
@@ -599,6 +561,39 @@ interface DemandItem {
       background: #dcfce7; 
       color: #166534; 
     }
+    .status-open { 
+      background: #dcfce7; 
+      color: #166534; 
+    }
+    .status-hold { 
+      background: #fef3c7; 
+      color: #d97706; 
+    }
+    .status-closed { 
+      background: #fee2e2; 
+      color: #dc2626; 
+    }
+    .tl-item-status { 
+      margin-top: 8px; 
+      cursor: pointer; 
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .tl-item-status:hover .status-badge { 
+      opacity: 0.8; 
+      transform: scale(1.05); 
+    }
+    .tl-item-status .status-badge {
+      pointer-events: none;
+    }
+    .status {
+      cursor: pointer !important;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .status .status-badge {
+      pointer-events: none;
+    }
     .action-buttons { 
       display: flex; 
       gap: 8px; 
@@ -723,11 +718,78 @@ interface DemandItem {
     .btn-accept:hover { background: #bbf7d0; color: #14532d; }
     .btn-reject { background: #fee2e2; color: #dc2626; }
     .btn-reject:hover { background: #fecaca; color: #b91c1c; }
+    
+    /* Status Edit Form Styles */
+    .status-edit-form { 
+      display: flex; 
+      flex-direction: column; 
+      gap: 20px; 
+    }
+    .form-group { 
+      display: flex; 
+      flex-direction: column; 
+      gap: 8px; 
+    }
+    .form-group label { 
+      font-size: 14px; 
+      font-weight: 600; 
+      color: #374151; 
+    }
+    .form-control { 
+      padding: 10px 12px; 
+      border: 1px solid #e5e7eb; 
+      border-radius: 6px; 
+      font-size: 14px; 
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      transition: all 0.2s; 
+    }
+    .form-control:focus { 
+      outline: none; 
+      border-color: var(--kudzu-primary); 
+      box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1); 
+    }
+    .form-control select { 
+      cursor: pointer; 
+    }
+    .form-control textarea { 
+      resize: vertical; 
+      min-height: 100px; 
+    }
+    .btn-save, .btn-cancel { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 8px; 
+      padding: 10px 20px; 
+      border-radius: 8px; 
+      font-size: 14px; 
+      font-weight: 600; 
+      cursor: pointer; 
+      transition: all 0.2s; 
+      border: none; 
+    }
+    .btn-save { 
+      background: var(--kudzu-primary); 
+      color: #FFFFFF; 
+    }
+    .btn-save:hover { 
+      background: var(--kudzu-primary-dark); 
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(24, 45, 23, 0.2);
+    }
+    .btn-cancel { 
+      background: #e5e7eb; 
+      color: #374151; 
+    }
+    .btn-cancel:hover { 
+      background: #d1d5db; 
+      transform: translateY(-1px);
+    }
   `]
 })
 export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   private teamLeaderService = inject(TeamLeaderService);
   private toastService = inject(ToastService);
+  private destroy$ = new Subject<void>();
   
   // Modal state
   showCvModal = signal(false);
@@ -735,6 +797,13 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   selectedCvData: any = null;
   selectedActivityId: number | null = null;
   selectedCvIndex: number | null = null;
+  
+  // Status edit modal state
+  showStatusModal = signal(false);
+  selectedDemandId: number | null = null;
+  selectedDemandStatus: string = '';
+  statusRemark: string = '';
+  selectedStatus: string = 'open';
   
   activeTab = signal<'unassigned' | 'assigned' | 'cv-received' | 'submitted'>('unassigned');
 
@@ -803,7 +872,8 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
             id: item.id,
             title: item.skill || item.job_title || `Demand #${item.id}`,
             client: item.client_name || 'Unknown Client',
-            createdAt: item.created_at || item.updated_at
+            createdAt: item.created_at || item.updated_at,
+            status: item.status || 'open'
           }));
           this.unassigned.set(demands);
         },
@@ -836,7 +906,8 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
               client: item.client_name || 'Unknown Client',
               createdAt: item.created_at || item.updated_at,
               assignedRecruiters: item.assigned_recruiter_names || [],
-              cvCount: cvCount
+              cvCount: cvCount,
+              status: item.status || 'open'
             };
           });
           this.assigned.set(demands);
@@ -1158,6 +1229,106 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
     console.log('Assigning demand:', demandId);
     // TODO: Implement assign demand logic
     alert('Demand assignment functionality will be implemented');
+  }
+
+  // Status editing methods
+  handleStatusDoubleClick(event: Event, demandId: number, currentStatus: string) {
+    event.stopPropagation();
+    event.preventDefault();
+    this.openStatusModal(demandId, currentStatus);
+  }
+
+  openStatusModal(demandId: number, currentStatus: string) {
+    console.log('Opening status modal for demand:', demandId, 'with status:', currentStatus);
+    this.selectedDemandId = demandId;
+    this.selectedDemandStatus = currentStatus;
+    // Map database status to UI status
+    const statusMap: { [key: string]: string } = {
+      'open': 'open',
+      'in_progress': 'open',
+      'on_hold': 'hold',
+      'closed': 'close'
+    };
+    this.selectedStatus = statusMap[currentStatus?.toLowerCase()] || 'open';
+    this.statusRemark = '';
+    this.showStatusModal.set(true);
+    console.log('Status modal signal set to:', this.showStatusModal());
+  }
+
+  closeStatusModal() {
+    this.showStatusModal.set(false);
+    this.selectedDemandId = null;
+    this.selectedDemandStatus = '';
+    this.statusRemark = '';
+    this.selectedStatus = 'open';
+  }
+
+  saveStatus() {
+    if (!this.selectedDemandId) {
+      this.toastService.error('No demand selected');
+      return;
+    }
+
+    // Map UI status to database status
+    const statusMap: { [key: string]: string } = {
+      'open': 'open',
+      'hold': 'on_hold',
+      'close': 'closed',
+      'cancel': 'closed'
+    };
+
+    const dbStatus = statusMap[this.selectedStatus] || 'open';
+
+    this.teamLeaderService.updateDemandStatus(
+      this.selectedDemandId,
+      dbStatus,
+      this.statusRemark || undefined
+    ).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (response) => {
+        this.toastService.success('Status updated successfully');
+        this.closeStatusModal();
+        
+        // Refresh the current tab data
+        if (this.activeTab() === 'unassigned') {
+          this.loadUnassignedDemands();
+        } else if (this.activeTab() === 'assigned') {
+          this.loadAssignedDemands();
+        } else if (this.activeTab() === 'cv-received') {
+          this.loadCvReceived();
+        }
+      },
+      error: (error) => {
+        console.error('Failed to update status:', error);
+        this.toastService.error(`Failed to update status: ${error.error?.detail || error.message}`);
+      }
+    });
+  }
+
+  formatStatus(status: string): string {
+    if (!status) return 'Open';
+    const statusMap: { [key: string]: string } = {
+      'open': 'Open',
+      'in_progress': 'In Progress',
+      'on_hold': 'Hold',
+      'hold': 'Hold',
+      'closed': 'Closed',
+      'close': 'Close',
+      'cancel': 'Cancel'
+    };
+    return statusMap[status.toLowerCase()] || status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  getStatusBadgeClass(status: string): string {
+    if (!status) return 'status-open';
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'open' || statusLower === 'in_progress') {
+      return 'status-open';
+    } else if (statusLower === 'on_hold' || statusLower === 'hold') {
+      return 'status-hold';
+    } else if (statusLower === 'closed' || statusLower === 'close' || statusLower === 'cancel') {
+      return 'status-closed';
+    }
+    return 'status-open';
   }
 
 }

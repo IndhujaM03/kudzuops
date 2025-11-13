@@ -2,6 +2,18 @@
 
 A complete authentication system for the Kudzu recruitment platform, built with FastAPI backend and Angular frontend.
 
+## 📦 Remote Server Deployment
+
+**For deployment to production server, see:**
+- **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - Complete guide for connecting and deploying
+- **[DEPLOYMENT_RULES.md](./DEPLOYMENT_RULES.md)** - Quick reference and checklist
+
+**Quick Facts:**
+- Server: `34.171.111.14`
+- Production Directory: `/opt/kudzuops/`
+- No hardcoding of localhost allowed
+- Single source of truth: `/opt/kudzuops/` only
+
 ## 🚀 Features
 
 ### Authentication Flow

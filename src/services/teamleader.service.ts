@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, switchMap } from 'rxjs';
+import { environment } from '../environments/environment';
 
 export interface TeamLeaderAuthResponse {
   access_token: string;
@@ -11,7 +12,7 @@ export interface TeamLeaderAuthResponse {
 @Injectable({ providedIn: 'root' })
 export class TeamLeaderService {
   private http = inject(HttpClient);
-  private api = 'http://localhost:8000';
+  private api = environment.apiBase;
 
   private getAuthHeaders(): HttpHeaders {
     const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
@@ -82,6 +83,124 @@ export class TeamLeaderService {
       demand_id: demandId,
       recruiter_ids: recruiterIds
     }, { headers: this.getAuthHeaders() });
+  }
+
+  // Dashboard methods (no filters)
+  getKeyHighlights(): Observable<{ total_submissions: number; current_demand: number; number_of_recruiters: number }> {
+    return this.http.get<{ total_submissions: number; current_demand: number; number_of_recruiters: number }>(
+      `${this.api}/teamleader/dashboard/key-highlights`, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getDailySubmissionsTrend(startDate?: string, endDate?: string): Observable<{ daily_trend: Array<{ date: string; count: number; recruiters?: Array<{ recruiter_name: string; count: number }> }> }> {
+    let url = `${this.api}/teamleader/dashboard/daily-submissions-trend`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ daily_trend: Array<{ date: string; count: number; recruiters?: Array<{ recruiter_name: string; count: number }> }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getDemandByRecruiters(startDate?: string, endDate?: string): Observable<{ distribution: Array<{ recruiter_id: number; recruiter_name: string; count: number; percentage: number }> }> {
+    let url = `${this.api}/teamleader/dashboard/demand-by-recruiters`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ distribution: Array<{ recruiter_id: number; recruiter_name: string; count: number; percentage: number }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getDemandByStatus(startDate?: string, endDate?: string): Observable<{ status_counts: Array<{ status: string; count: number }> }> {
+    let url = `${this.api}/teamleader/dashboard/demand-by-status`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ status_counts: Array<{ status: string; count: number }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getDemandBySkill(startDate?: string, endDate?: string): Observable<{ skill_distribution: Array<{ skill: string; count: number; percentage: number }> }> {
+    let url = `${this.api}/teamleader/dashboard/demand-by-skill`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ skill_distribution: Array<{ skill: string; count: number; percentage: number }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getSubmissionsByRecruiters(startDate?: string, endDate?: string): Observable<{ recruiter_submissions: Array<{ recruiter_id: number; recruiter_name: string; count: number }> }> {
+    let url = `${this.api}/teamleader/dashboard/submissions-by-recruiters`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ recruiter_submissions: Array<{ recruiter_id: number; recruiter_name: string; count: number }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getDemandBySpocs(startDate?: string, endDate?: string): Observable<{ distribution: Array<{ spoc_id: number; spoc_name: string; count: number; percentage: number }> }> {
+    let url = `${this.api}/teamleader/dashboard/demand-by-spocs`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ distribution: Array<{ spoc_id: number; spoc_name: string; count: number; percentage: number }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getSubmissionsBySpocs(startDate?: string, endDate?: string): Observable<{ spoc_submissions: Array<{ spoc_id: number; spoc_name: string; count: number }> }> {
+    let url = `${this.api}/teamleader/dashboard/submissions-by-spocs`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    return this.http.get<{ spoc_submissions: Array<{ spoc_id: number; spoc_name: string; count: number }> }>(
+      url, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getAvailableYears(): Observable<{ years: number[] }> {
+    return this.http.get<{ years: number[] }>(
+      `${this.api}/teamleader/dashboard/available-years`, 
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  // Update demand status with spoc_remark
+  updateDemandStatus(demandId: number, status: string, spocRemark?: string): Observable<any> {
+    return this.http.post<any>(
+      `${this.api}/demand/${demandId}/status`,
+      {
+        status: status,
+        spoc_remark: spocRemark || null
+      },
+      { headers: this.getAuthHeaders() }
+    );
   }
 }
 

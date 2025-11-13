@@ -40,13 +40,22 @@ import { environment } from '../../environments/environment';
               <a routerLink="/superadmin/client-settings/spoc" routerLinkActive="active" class="superadmin-nav-subitem">SPOCs</a>
             </nav>
           </div>
-          <a routerLink="/superadmin/pending-approvals" routerLinkActive="active" class="superadmin-nav-item">
-            <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-            </svg>
-            Pending Approvals
-            <span *ngIf="pendingCount > 0" class="superadmin-nav-badge">{{ pendingCount }}</span>
-          </a>
+          <div class="superadmin-nav-dropdown">
+            <button (click)="userManagementOpen = !userManagementOpen" class="superadmin-nav-dropdown-button">
+              <svg class="superadmin-nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+              <span>User Management</span>
+              <span *ngIf="pendingCount > 0" class="superadmin-nav-badge">{{ pendingCount }}</span>
+              <svg class="superadmin-nav-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" [attr.d]="userManagementOpen ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7'" />
+              </svg>
+            </button>
+            <nav *ngIf="userManagementOpen" class="superadmin-nav-submenu">
+              <a routerLink="/superadmin/pending-approvals" routerLinkActive="active" class="superadmin-nav-subitem">Pending Approval</a>
+              <a routerLink="/superadmin/users" routerLinkActive="active" class="superadmin-nav-subitem">Users</a>
+            </nav>
+          </div>
         </nav>
         <div class="superadmin-sidebar-footer">
           <button (click)="logout()" class="superadmin-logout-button">
@@ -381,6 +390,7 @@ export class SuperAdminLayoutComponent implements OnInit {
   
   pendingCount = 0;
   clientSettingsOpen = false;
+  userManagementOpen = false;
   userInfo: any = null;
   apiBase = environment.apiBase || '';
 
@@ -394,8 +404,8 @@ export class SuperAdminLayoutComponent implements OnInit {
 
   loadPendingCount(): void {
     this.superAdminService.getPendingCount().subscribe({
-      next: (res) => this.pendingCount = res?.count ?? 0,
-      error: (err) => {
+      next: (res: any) => this.pendingCount = res?.count ?? 0,
+      error: (err: any) => {
         console.error('Failed to load pending count:', err);
         this.pendingCount = 0;
       }

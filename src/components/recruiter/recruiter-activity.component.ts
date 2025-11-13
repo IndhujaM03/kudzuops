@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ViewChild, HostListener, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -8,6 +8,7 @@ import { AuthService } from '../../services/auth.service';
 import { DataService } from '../../services/data.service';
 import { ToastService } from '../../services/toast.service';
 import { environment } from '../../environments/environment';
+// PDF and DOCX viewing temporarily disabled
 
 interface Demand {
   id: number;
@@ -20,6 +21,9 @@ interface Demand {
   no_of_positions: number;
   priority: string;
   status: string;
+  spoc_name?: string;
+  spoc_email?: string;
+  spoc_phone?: string;
 }
 
 interface Activity {
@@ -58,8 +62,6 @@ interface CandidateForm {
   remarks: string;
 }
 
-import { ViewChild } from '@angular/core';
-
 @Component({
   selector: 'app-recruiter-activity',
   standalone: true,
@@ -76,8 +78,12 @@ import { ViewChild } from '@angular/core';
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            <input #fileInput type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" (change)="onFilesSelected($event)">
-            <button class="btn btn-sm btn-outline" (click)="triggerFilePicker()" [disabled]="isUploadDisabled()" title="Upload resume">📤</button>
+            <input #fileInput type="file" multiple accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" (change)="onFilesSelected($event)">
+            <button class="btn btn-sm btn-outline" (click)="triggerFilePicker()" [disabled]="isUploadDisabled()" title="Upload Resume">
+              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </button>
           </div>
         </div>
         <div class="resume-list-scroll">
@@ -155,24 +161,34 @@ import { ViewChild } from '@angular/core';
           <div class="section-header">
             <h2>Demand Details</h2>
           </div>
-          <div class="demand-details-grid compact">
-            <div class="detail-item">
-              <label>Job Title:</label>
-              <span>{{ demand.job_title || 'N/A' }}</span>
+          <div class="demand-details-card">
+            <!-- Row 1: Job Title, Client, SPOC -->
+            <div class="demand-row-1">
+              <div class="demand-item">
+                <span class="demand-label">Job Title:</span>
+                <span class="demand-value">{{ demand.job_title || demand.skill || 'N/A' }}</span>
+              </div>
+              <div class="demand-item">
+                <span class="demand-label">Client:</span>
+                <span class="demand-value">{{ demand.client_name || 'N/A' }}</span>
+              </div>
+              <div class="demand-item">
+                <span class="demand-label">SPOC:</span>
+                <span class="demand-value">{{ demand.spoc_name || 'N/A' }}</span>
+              </div>
             </div>
-            <div class="detail-item">
-              <label>Position:</label>
-              <span>{{ demand.skill || 'N/A' }}</span>
-            </div>
-            <div class="detail-item">
-              <label>Client:</label>
-              <span>{{ demand.client_name || 'N/A' }}</span>
-            </div>
-            <div class="detail-item">
-              <label>Priority:</label>
-              <span class="priority-badge" [ngClass]="'priority-' + demand.priority">
-                {{ demand.priority | titlecase }}
-              </span>
+            <!-- Row 2: Position, Priority -->
+            <div class="demand-row-2">
+              <div class="demand-item">
+                <span class="demand-label">Position:</span>
+                <span class="demand-value">{{ demand.no_of_positions || 0 }}</span>
+              </div>
+              <div class="demand-item">
+                <span class="demand-label">Priority:</span>
+                <span class="demand-value priority-value" [class]="'priority-' + (demand.priority || 'medium')">
+                  {{ (demand.priority || 'medium') | titlecase }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -227,7 +243,12 @@ import { ViewChild } from '@angular/core';
                   <td>{{ row.phone }}</td>
                   <td>{{ mapNumericStatus(row.status) }}</td>
                   <td>
-                    <button class="btn btn-sm btn-outline" *ngIf="row.file_path" (click)="openInNewTab(row.file_path)">Open</button>
+                    <button class="btn btn-sm btn-outline" *ngIf="row.file_path" (click)="viewCV(row.file_path)" title="View CV">
+                      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -255,12 +276,6 @@ import { ViewChild } from '@angular/core';
         <div class="modal-header draggable-header">
           <h3>Resume Verification</h3>
           <div class="modal-actions">
-            <button class="btn btn-outline btn-sm" (click)="downloadResume()" title="Download Resume">
-              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Download
-            </button>
             <button class="close-btn" (click)="closeResumeViewModal()" title="Close">❌</button>
           </div>
         </div>
@@ -271,10 +286,20 @@ import { ViewChild } from '@angular/core';
               <div *ngIf="isDocx(sr.file_name)" class="docx-container">
                 <div #docxHost class="docx-host"></div>
                 <div *ngIf="docxLoading" class="docx-loading">Loading document...</div>
-                <div *ngIf="docxError" class="docx-error">Unable to preview this DOCX. You can still open in a new tab.</div>
+                <div *ngIf="docxError" class="docx-error">
+                  <p>Unable to preview document.</p>
+                  <button class="btn btn-primary" (click)="openFileInNewTab(sr)">Open Document</button>
+                </div>
               </div>
               <!-- PDF Preview -->
-              <iframe *ngIf="isPdf(sr.file_name) && viewerUrl" [src]="viewerUrl" class="doc-frame"></iframe>
+              <div *ngIf="isPdf(sr.file_name)" class="pdf-container">
+                <canvas #pdfCanvas class="pdf-canvas"></canvas>
+                <div *ngIf="pdfLoading" class="pdf-loading">Loading PDF document...</div>
+                <div *ngIf="pdfError" class="pdf-error">
+                  <p>Unable to preview PDF file.</p>
+                  <button class="btn btn-primary" (click)="openFileInNewTab(sr)">Open PDF File</button>
+                </div>
+              </div>
               <!-- Fallback for unsupported formats (e.g., .doc) -->
               <div *ngIf="!isDocx(sr.file_name) && !isPdf(sr.file_name)" class="docx-helper">
                 <div class="docx-message">This file type cannot be previewed in the browser.</div>
@@ -327,6 +352,21 @@ import { ViewChild } from '@angular/core';
               </div>
             </form>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CV View Popup Modal -->
+    <div class="modal-overlay" *ngIf="showCVViewModal" (click)="closeCVViewModal()">
+      <div class="cv-view-modal" (click)="$event.stopPropagation()">
+        <div class="cv-view-header">
+          <h3>View CV</h3>
+          <button class="close-btn" (click)="closeCVViewModal()" title="Close">❌</button>
+        </div>
+        <div class="cv-view-body">
+          <!-- PDF uses iframe; DOCX renders into the host below -->
+          <iframe *ngIf="cvViewUrl" [src]="cvViewUrl" class="cv-iframe" (error)="onIframeError($event)"></iframe>
+          <div *ngIf="!cvViewUrl" #cvDocxHost class="cv-docx-host"></div>
         </div>
       </div>
     </div>
@@ -604,6 +644,101 @@ import { ViewChild } from '@angular/core';
       margin-bottom: 0;
     }
 
+    /* New Demand Details Card Structure */
+    .demand-details-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 8px;
+    }
+
+    .demand-row-1,
+    .demand-row-2 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+
+    .demand-row-2 {
+      margin-bottom: 0;
+    }
+
+    .demand-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .demand-label {
+      font-weight: 600;
+      color: var(--kudzu-primary);
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    .demand-value {
+      color: #374151;
+      font-size: 14px;
+      font-weight: 500;
+      word-break: break-word;
+    }
+
+    .demand-value.priority-value {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .demand-value.priority-value.priority-high {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .demand-value.priority-value.priority-medium {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .demand-value.priority-value.priority-low {
+      background: #f0fdf4;
+      color: #16a34a;
+    }
+
+    /* Responsive Design for Demand Details */
+    @media (max-width: 1024px) {
+      .demand-row-1,
+      .demand-row-2 {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .demand-row-1,
+      .demand-row-2 {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .demand-label {
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+
+      .demand-value {
+        font-size: 13px;
+      }
+
+      .demand-row-2 {
+        margin-bottom: 0;
+      }
+    }
+
     .detail-item {
       display: flex;
       flex-direction: column;
@@ -632,7 +767,7 @@ import { ViewChild } from '@angular/core';
 
     .priority-low { background: #d1fae5; color: #065f46; }
     .priority-medium { background: #fef3c7; color: #92400e; }
-    .priority-high { background: #fed7d7; color: #991b1b; }
+    .priority-high { background: #fecaca; color: #dc2626; }
     .priority-urgent { background: #fecaca; color: #7f1d1d; }
 
     .status-badge {
@@ -1086,15 +1221,129 @@ import { ViewChild } from '@angular/core';
       padding: 0;
       height: calc(95vh - 120px) !important;
       display: grid;
-      grid-template-columns: 1fr 1px 1fr;
+      grid-template-columns: 2fr 1px 1fr;
     }
     .panel-left, .panel-right {
       height: 100%;
       overflow: auto;
     }
     .panel-left { background: #0b0b0b; }
-    .doc-frame { width: 100%; height: 100%; border: 0; background: #111827; }
+    .doc-frame { 
+      width: 100%; 
+      height: 100%; 
+      border: 0; 
+      background: #ffffff;
+      min-height: 600px;
+    }
     .vertical-divider { width: 1px; background: #e5e7eb; }
+    
+    /* DOCX Preview Styles */
+    .docx-container {
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .docx-host {
+      width: 100%;
+      height: 100%;
+      padding: 20px;
+      background: #ffffff;
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
+      cursor: text;
+    }
+    
+    .docx-host:hover {
+      cursor: grab;
+    }
+    
+    .docx-host:active {
+      cursor: grabbing;
+    }
+    
+    /* Ensure docx content respects margins */
+    .docx-host ::ng-deep img,
+    .docx-host ::ng-deep table {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+    
+    /* Add proper margins to paragraphs */
+    .docx-host ::ng-deep p {
+      margin: 8px 0;
+      line-height: 1.6;
+    }
+    
+    /* Wrap table if it's too wide */
+    .docx-host ::ng-deep table {
+      margin: 10px 0;
+    }
+    
+    .docx-loading, .pdf-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #6b7280;
+      font-size: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .docx-error, .pdf-error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #dc2626;
+      font-size: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    
+    .docx-error .btn, .pdf-error .btn {
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .docx-error .btn:hover, .pdf-error .btn:hover {
+      background: #2563eb;
+    }
+    
+    /* PDF Preview Styles */
+    .pdf-container {
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      overflow: auto;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px;
+    }
+    
+    .pdf-canvas {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
     .candidate-form { 
       padding: 16px; 
       display: flex; 
@@ -1329,7 +1578,7 @@ import { ViewChild } from '@angular/core';
 
     .form-row {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 2fr 1fr;
       gap: 16px;
       margin-bottom: 16px;
     }
@@ -1518,6 +1767,95 @@ import { ViewChild } from '@angular/core';
         margin: 20px;
       }
     }
+
+    /* CV View Modal Styles */
+    .cv-view-modal {
+      width: 92%;
+      height: 92%;
+      max-width: 1400px;
+      max-height: 900px;
+      background: #111827; /* slightly darker around edges */
+      border-radius: 10px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .cv-view-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .cv-view-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .cv-view-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: auto; /* allow scroll inside the modal */
+      padding: 0 0 16px 0; /* bottom padding for breathing room */
+      background: #1f2937; /* remove white gaps */
+    }
+
+    .cv-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #1f2937;
+    }
+
+    /* DOCX render host inside the view-only modal */
+    .cv-docx-host {
+      flex: 1;
+      min-height: 100%;
+      overflow: auto; /* ensure docx content scrolls */
+      background: #1f2937;
+      padding: 0 12px 24px; /* small side and bottom padding */
+    }
+
+    .cv-error-message {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      background: #f9fafb;
+      color: #6b7280;
+      font-size: 16px;
+    }
+
+    .cv-error-message p {
+      margin: 0;
+      text-align: center;
+    }
+
+    /* Eye icon button styling */
+    .btn .icon {
+      width: 16px;
+      height: 16px;
+      margin-right: 4px;
+    }
+
+    .btn:not(:has(.icon)) {
+      padding-left: 12px;
+    }
+
+    @media (max-width: 768px) {
+      .cv-view-modal {
+        width: 98%;
+        height: 96%;
+        margin: 10px;
+      }
+    }
   `]
 })
 export class RecruiterActivityComponent implements OnInit, OnDestroy {
@@ -1549,7 +1887,14 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   showResumeViewModal = false;
   selectedResume: CVEntry | null = null;
   resumeForm: FormGroup;
+  
+  // CV View Modal
+  showCVViewModal = false;
+  cvViewUrl: SafeResourceUrl | null = null;
   @ViewChild('fileInput') fileInput!: any;
+  @ViewChild('docxHost') docxHostRef!: ElementRef;
+  @ViewChild('cvDocxHost') cvDocxHostRef!: ElementRef;
+  @ViewChild('pdfCanvas') pdfCanvasRef!: ElementRef;
   
   // Quota validation
   quotaExceeded = false;
@@ -1558,9 +1903,10 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   isDragging = false;
   dragOffset = { x: 0, y: 0 };
   modalPosition = { x: 0, y: 0 };
-  @ViewChild('docxHost') docxHostRef: any;
   docxLoading = false;
   docxError = false;
+  pdfLoading = false;
+  pdfError = false;
   // Cached viewer URL to avoid reloads on change detection
   viewerUrl: SafeResourceUrl | null = null;
   submissionsLoading = false;
@@ -1625,19 +1971,32 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
       if (this.mockMode) this.loadMockResumes();
       
       // Always load local CV list (from recruiter_folder_path/recruiterId/demandId)
-      this.loadCVFolder();
+      // Commented out because it overrides the CV list from loadActivity()
+      // this.loadCVFolder();
       
       // Auto-refresh only in process mode
       if (this.mode === 'process') {
         this.startAutoRefresh();
       }
     });
-    // Lazy-load docx-preview for in-browser DOCX rendering (no download)
-    this.ensureDocxPreviewLoaded();
+    // DOCX files will show fallback message
   }
 
   ngOnDestroy(): void {
     this.stopAutoRefresh();
+    this.enableBodyScroll();
+  }
+
+  private disableBodyScroll(): void {
+    try {
+      document.body.style.overflow = 'hidden';
+    } catch {}
+  }
+
+  private enableBodyScroll(): void {
+    try {
+      document.body.style.overflow = '';
+    } catch {}
   }
 
   loadActivity(): void {
@@ -1650,7 +2009,9 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
         next: (response) => {
           if (response) {
             this.activity = response;
+            // Set the CV list from the activity response
             this.cvList = response.cv_list || [];
+            console.log('🔍 CV list from activity:', this.cvList);
             this.loadDemandDetails();
             
             // If activity_status is 'open', show a message that process needs to be started
@@ -1769,6 +2130,9 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   }
 
   openResumeViewModal(cv: CVEntry): void {
+    console.log('🔍 openResumeViewModal called with CV:', cv);
+    console.log('🔍 Current showResumeViewModal state:', this.showResumeViewModal);
+    
     this.selectedResume = cv;
     this.resumeForm.patchValue({
       candidate_name: cv.candidate_name || '',
@@ -1785,17 +2149,35 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     // Check if quota is exceeded
     this.checkQuotaInModal();
     
+    console.log('🔍 Setting showResumeViewModal to true');
     this.showResumeViewModal = true;
-    // Cache viewer URL for PDF to prevent continuous reloads
+    this.disableBodyScroll();
+    console.log('🔍 showResumeViewModal is now:', this.showResumeViewModal);
+    
+    // Check if modal element exists in DOM
+    setTimeout(() => {
+      const modalElement = document.querySelector('.modal-overlay');
+      console.log('🔍 Modal element in DOM:', modalElement);
+      if (modalElement) {
+        console.log('🔍 Modal element styles:', window.getComputedStyle(modalElement));
+        console.log('🔍 Modal element display:', window.getComputedStyle(modalElement).display);
+        console.log('🔍 Modal element visibility:', window.getComputedStyle(modalElement).visibility);
+        console.log('🔍 Modal element z-index:', window.getComputedStyle(modalElement).zIndex);
+      } else {
+        console.log('❌ Modal element not found in DOM');
+      }
+    }, 100);
+    // Render the document based on file type
     const name = (cv as any).file_name || '';
     if (this.isPdf(name)) {
-      this.viewerUrl = this.getFileApiUrl(cv);
+      setTimeout(() => this.renderPdf(cv), 50);
+    } else if (this.isDocx(name)) {
+      setTimeout(() => this.renderDocx(cv), 50);
     } else {
-      this.viewerUrl = null;
-    }
-    // If DOCX, render it using docx-preview
-    if (this.isDocx(name)) {
-      setTimeout(() => this.renderDocx(cv), 0);
+      // Fallback attempt: try docx renderer, else open in new tab
+      setTimeout(async () => {
+        try { await this.renderDocx(cv); } catch { this.openFileInNewTab(cv); }
+      }, 50);
     }
     // Focus first input for better cursor behavior
     setTimeout(() => {
@@ -1911,17 +2293,40 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
       status: statusTitle
     };
     const id = (this.selectedResume as any).id;
+    const selectedFileName = (this.selectedResume as any).file_name;
+    
     this.http.put<any>(`${this.api}/recruiter/update_resume_status/${id}`, payload, {
       headers: new HttpHeaders({ 'Content-Type': 'application/json' })
     }).subscribe({
       next: (resp) => {
         if (resp && resp.success) {
+          // Immediately update local cvList to remove submitted resume from view
+          if (formData.status === 'submitted' || formData.status === 'discard') {
+            this.cvList = (this.cvList || []).filter((cv: any) => {
+              // Remove by matching ID or filename
+              return cv.id !== id && cv.file_name !== selectedFileName;
+            });
+          } else {
+            // For 'hold' status, update the status in the list
+            const cvIndex = this.cvList.findIndex((cv: any) => cv.id === id || cv.file_name === selectedFileName);
+            if (cvIndex !== -1) {
+              this.cvList[cvIndex] = { ...this.cvList[cvIndex], status: 'hold' };
+              this.cvList = [...this.cvList]; // Trigger change detection
+            }
+          }
+          
           this.toastService.success('Resume details saved successfully');
           this.closeResumeViewModal();
-          this.refreshResumeList();
+          
+          // Refresh from backend after a short delay to ensure DB is updated
+          setTimeout(() => {
+            this.refreshResumeList();
+          }, 300);
           
           // Update CV count and check for auto-close
-          this.updateCVCountAndCheck();
+          // Increment only when status selected is 'submitted'
+          const shouldIncrement = (formData.status === 'submitted');
+          this.updateCVCountAndCheck(shouldIncrement ? 1 : 0);
         } else {
           const msg = (resp && resp.message) ? resp.message : 'Failed to save CV details.';
           this.toastService.error(msg);
@@ -2039,38 +2444,69 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     this.http.get<any>(`${this.api}/recruiter/activity/${this.recruiterId}/${this.demandId}`).subscribe({
       next: (activity) => {
         if (activity && activity.required_cv_count && activity.uploaded_cv_count) {
-          console.log(`Checking auto-close: required=${activity.required_cv_count}, uploaded=${activity.uploaded_cv_count}`);
+          console.log(`Checking auto-close: required=${activity.required_cv_count}, uploaded=${activity.uploaded_cv_count}, status=${activity.activity_status}`);
           
-          if (activity.required_cv_count === activity.uploaded_cv_count) {
-            console.log('Auto-closing activity - counts match');
+          // Only auto-close if:
+          // 1. Counts match exactly
+          // 2. Activity is in 'processing' status (not already closed)
+          // 3. Activity ID exists
+          if (activity.required_cv_count === activity.uploaded_cv_count 
+              && activity.id 
+              && activity.activity_status === 'processing'
+              && activity.activity_status !== 'closed') {
+            console.log('Auto-closing activity - counts match and status is processing');
             
             // Auto-close the activity
             this.http.post<any>(`${this.api}/recruiter/close-activity-complete`, {
+              activity_id: activity.id,
               recruiter_id: this.recruiterId,
               demand_id: this.demandId
             }).subscribe({
-              next: () => {
-                this.toastService.success('✅ Activity closed successfully!');
-                
-                // Redirect immediately after success toast is shown
-                setTimeout(() => {
-                  this.router.navigate(['/recruiter/demands']);
-                }, 1500); // Slightly longer delay to ensure toast is visible
+              next: (response) => {
+                // Check if the response indicates success
+                if (response && response.success === true) {
+                  this.toastService.success('✅ Activity closed successfully!');
+                  
+                  // Redirect only when activity is successfully closed
+                  setTimeout(() => {
+                    this.router.navigate(['/recruiter/demands']);
+                  }, 1500); // Slightly longer delay to ensure toast is visible
+                } else {
+                  // CV count mismatch or other failure - don't redirect
+                  const message = response?.message || 'Cannot close activity';
+                  console.log('⚠️ Auto-close skipped:', message);
+                  // Don't show error toast for count mismatch - it's expected behavior
+                  if (response?.message && !response.message.includes('CV count mismatch')) {
+                    this.toastService.error(message);
+                  }
+                }
               },
               error: (error) => {
                 console.error('Error auto-closing activity:', error);
-                this.toastService.error('Failed to auto-close activity');
-                // Still redirect even if close fails
-                setTimeout(() => {
-                  this.router.navigate(['/recruiter/demands']);
-                }, 1500);
+                // Don't show error if activity is already closed (404)
+                if (error.status !== 404) {
+                  this.toastService.error('Failed to auto-close activity');
+                }
+                // Don't redirect on error
               }
+            });
+          } else {
+            console.log('Skipping auto-close:', {
+              countsMatch: activity.required_cv_count === activity.uploaded_cv_count,
+              hasId: !!activity.id,
+              isProcessing: activity.activity_status === 'processing',
+              isNotClosed: activity.activity_status !== 'closed'
             });
           }
         }
       },
       error: (error) => {
-        console.error('Error checking activity status:', error);
+        // If activity doesn't exist (404), that's okay - just skip auto-close
+        if (error.status === 404) {
+          console.log('No activity found - skipping auto-close check');
+        } else {
+          console.error('Error checking activity status:', error);
+        }
       }
     });
   }
@@ -2111,41 +2547,170 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   private getFileApiUrlString(cv: any): string {
     const name = String(cv.file_name || '').trim();
     const safeName = encodeURIComponent(name);
-    return `${this.api}/recruiter/file/${this.recruiterId}/${this.demandId}/${safeName}`;
+    return `/recruiter/file/${this.recruiterId}/${this.demandId}/${safeName}`;
   }
 
-  private ensureDocxPreviewLoaded(): void {
-    const w = window as any;
-    if (w.docx) return;
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/docx-preview@0.4.3/dist/docx-preview.min.js';
-    document.head.appendChild(s);
+  // Initialize PDF.js
+  // Initialize PDF.js - temporarily disabled
+  private async initializePdfJs(): Promise<void> {
+    console.log('🔍 PDF.js initialization disabled');
   }
 
-  private async renderDocx(cv: any): Promise<void> {
-    this.docxError = false;
-    this.docxLoading = true;
+  // Render PDF using iframe
+  private async renderPdf(cv: any): Promise<void> {
     try {
-      const url = this.getFileApiUrlString(cv);
-      const resp = await fetch(url);
-      const blob = await resp.blob();
-      const arrayBuffer = await blob.arrayBuffer();
-      const w = window as any;
-      if (!w.docx) throw new Error('docx-preview not loaded');
-      const host: HTMLElement | null = this.docxHostRef ? this.docxHostRef.nativeElement : null;
-      if (!host) throw new Error('host missing');
+      this.pdfLoading = true;
+      this.pdfError = false;
+      
+      const canvas = this.pdfCanvasRef?.nativeElement;
+      if (!canvas) {
+        console.error('PDF canvas element not found');
+        this.pdfError = true;
+        this.pdfLoading = false;
+        return;
+      }
+      
+      const fileUrl = this.api + this.getFileApiUrlString(cv);
+      console.log('🔍 Loading PDF from:', fileUrl);
+      
+      // Use iframe to display PDF without native viewer controls
+      const container = canvas.parentElement;
+      if (container) {
+        container.innerHTML = `<iframe src="${fileUrl}#toolbar=0&navpanes=0&scrollbar=1" style="width: 100%; height: 100%; border: none;"></iframe>`;
+      }
+      
+      console.log('✅ PDF rendered successfully');
+      this.pdfLoading = false;
+    } catch (error) {
+      console.error('Error rendering PDF:', error);
+      this.pdfError = true;
+      this.pdfLoading = false;
+    }
+  }
+
+  // Render DOCX/DOC using docx-preview client-side library
+  private async renderDocx(cv: any): Promise<void> {
+    try {
+      this.docxLoading = true;
+      this.docxError = false;
+      
+      // Prefer the view-only host if present (view icon path)
+      const host = (this.cvDocxHostRef?.nativeElement || this.docxHostRef?.nativeElement);
+      if (!host) {
+        console.error('Document host element not found');
+        this.docxError = true;
+        this.docxLoading = false;
+        return;
+      }
+      
+      const fileName = cv.file_name || '';
+      const isOldDoc = fileName.toLowerCase().endsWith('.doc');
+      const fileApiUrl = this.api + this.getFileApiUrlString(cv);
+      
+      console.log('🔍 Loading document from:', fileApiUrl);
+      
+      if (isOldDoc) {
+        // .doc files can't be previewed by browsers
+        this.docxLoading = false;
+        this.docxError = true;
+        return;
+      }
+      
+      // Fetch the file for .docx
+      const response = await fetch(fileApiUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      
+      // Use docx-preview for .docx files
+      const docx = await import('docx-preview');
+      
       host.innerHTML = '';
-      await w.docx.renderAsync(arrayBuffer, host, { inWrapper: false, ignoreWidth: true, ignoreHeight: true });
-    } catch (e) {
+      
+      await docx.renderAsync(arrayBuffer, host, undefined, {
+        inWrapper: true,
+        ignoreWidth: true,
+        ignoreHeight: false,
+        className: 'docx'
+      });
+      
+      // Add styling
+      host.querySelectorAll('table').forEach((table: any) => {
+        table.style.maxWidth = '100%';
+        table.style.margin = '10px auto';
+      });
+      
+      console.log('✅ Document rendered successfully');
+      this.docxLoading = false;
+    } catch (error) {
+      console.error('Error rendering document:', error);
       this.docxError = true;
-    } finally {
       this.docxLoading = false;
     }
   }
 
-  isDocx(path?: string | null): boolean {
-    const p = String(path || '').toLowerCase();
-    return p.endsWith('.docx');
+  // Wait for DOM element to be available
+  private async waitForElement(selector: string, timeout: number = 5000): Promise<Element> {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      
+      const checkElement = () => {
+        // Try multiple selectors for the same element
+        const selectors = [
+          selector,
+          `[ng-reflect-ng-if="true"] ${selector}`,
+          `.modal-overlay ${selector}`,
+          `app-recruiter-activity ${selector}`
+        ];
+        
+        let element: Element | null = null;
+        for (const sel of selectors) {
+          element = document.querySelector(sel);
+          if (element) break;
+        }
+        
+        if (element) {
+          console.log(`✅ Found element with selector: ${selector}`);
+          resolve(element);
+        } else if (Date.now() - startTime > timeout) {
+          console.error(`❌ Element ${selector} not found within ${timeout}ms`);
+          console.log('Available elements in modal:', document.querySelectorAll('.modal-overlay *'));
+          reject(new Error(`Element ${selector} not found within ${timeout}ms`));
+        } else {
+          setTimeout(checkElement, 100);
+        }
+      };
+      
+      checkElement();
+    });
+  }
+
+  // Render fallback for unknown file types
+  private async renderFallback(cv: any): Promise<void> {
+    console.log('🔍 renderFallback called with CV:', cv);
+    
+    try {
+      // Wait for DOM element to be available
+      await this.waitForElement('#docxHost');
+      const host = this.docxHostRef?.nativeElement;
+      if (!host) {
+        throw new Error('Host element not found');
+      }
+      
+      host.innerHTML = `
+        <div style="padding: 20px; text-align: center; color: #6b7280;">
+          <h3>File Preview Not Available</h3>
+          <p>This file type cannot be previewed in the browser.</p>
+          <button onclick="window.open('${this.getFileApiUrlString(cv)}', '_blank')" 
+                  style="background: #3b82f6; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+            Open File
+          </button>
+        </div>
+      `;
+      
+      console.log('✅ Fallback rendered successfully');
+      
+    } catch (e) {
+      console.error('❌ Fallback rendering error:', e);
+    }
   }
 
   mapNumericStatus(value: any): string {
@@ -2166,7 +2731,9 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     } else if (!url.startsWith('/')) {
       url = '/' + url;
     }
-    window.open(url, '_blank');
+    // Ensure absolute API URL so the Angular router doesn't intercept
+    const absolute = url.startsWith('http') ? url : `${this.api}${url}`;
+    window.open(absolute, '_blank');
   }
 
   // Explicit PDF check to simplify template conditions
@@ -2175,9 +2742,20 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     return p.endsWith('.pdf');
   }
 
+  isDocx(path?: string | null): boolean {
+    const p = String(path || '').toLowerCase();
+    return p.endsWith('.docx') || p.endsWith('.doc');
+  }
+
   // Open API-served file directly in a new tab
   openFileInNewTab(cv: any): void {
-    window.open(this.getFileApiUrlString(cv), '_blank');
+    window.open(`${this.api}${this.getFileApiUrlString(cv)}`, '_blank');
+  }
+
+  // View CV in popup modal
+  viewCV(filePath: string): void {
+    console.log('🔍 viewCV called with filePath:', filePath);
+    this.openCVViewModal(filePath);
   }
 
   closeResumeViewModal(): void {
@@ -2185,13 +2763,68 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     this.selectedResume = null;
     this.resumeForm.reset();
     this.quotaExceeded = false;
+    this.enableBodyScroll();
+  }
+
+  // CV View Modal Methods
+  openCVViewModal(filePath: string): void {
+    // Extract filename from file path
+    const fileName = filePath.split('/').pop() || '';
+    const lower = fileName.toLowerCase();
+    const cv: any = { file_name: fileName, file_path: filePath, status: '' };
+
+    console.log('🔍 CV View Debug:', {
+      originalFilePath: filePath,
+      extractedFileName: fileName,
+      recruiterId: this.recruiterId,
+      demandId: this.demandId
+    });
+
+    // Show view-only modal
+    this.showCVViewModal = true;
+    this.disableBodyScroll();
+
+    if (lower.endsWith('.pdf')) {
+      // PDF via iframe
+      this.cvViewUrl = this.getFileApiUrl(cv);
+    } else if (lower.endsWith('.docx')) {
+      // DOCX via docx-preview into host
+      this.cvViewUrl = null;
+      setTimeout(() => this.renderDocx(cv), 0);
+    } else if (lower.endsWith('.doc')) {
+      // .doc not supported → prompt to download
+      this.cvViewUrl = null;
+      this.docxError = true;
+    } else {
+      // Unknown type → try docx renderer
+      this.cvViewUrl = null;
+      setTimeout(() => this.renderDocx(cv), 0);
+    }
+  }
+
+  closeCVViewModal(): void {
+    this.showCVViewModal = false;
+    this.cvViewUrl = null;
+    this.enableBodyScroll();
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  onEscapeKey(event: KeyboardEvent): void {
+    if (this.showCVViewModal) {
+      this.closeCVViewModal();
+    }
+  }
+
+  onIframeError(event: any): void {
+    console.error('❌ Iframe failed to load CV file:', event);
+    this.toastService.error('Failed to load CV file. Please check if the file exists.');
   }
 
   downloadResume(): void {
     if (!this.selectedResume) return;
     
     // Open the file in a new tab for download
-    const downloadUrl = this.getFileApiUrlString(this.selectedResume);
+    const downloadUrl = `${this.api}${this.getFileApiUrlString(this.selectedResume)}`;
     window.open(downloadUrl, '_blank');
   }
 
@@ -2555,13 +3188,15 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
     });
   }
 
-  updateCVCountAndCheck(): void {
+  updateCVCountAndCheck(increment: number = 0): void {
     if (!this.activity) return;
 
+    // Only update count if there are actually submitted CVs
+    // The backend will recalculate the count based on cv_list status
     const payload = {
       demand_id: this.demandId,
       recruiter_id: this.recruiterId,
-      increment: 1
+      increment: increment
     };
 
     console.log('🔄 Calling update-cv-count-and-check with payload:', payload);

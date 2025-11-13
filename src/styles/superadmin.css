@@ -212,14 +212,20 @@
 
 .superadmin-nav-badge {
   margin-left: auto;
-  background: #e53e3e;
-  color: white;
-  font-size: 12px;
+  background: white;
+  color: var(--kudzu-primary);
+  font-size: 11px;
   font-weight: 600;
-  padding: 4px 8px;
-  border-radius: 12px;
-  min-width: 20px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  min-width: 18px;
   text-align: center;
+  line-height: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--kudzu-primary);
 }
 
 .superadmin-sidebar-footer {
