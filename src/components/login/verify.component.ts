@@ -4,6 +4,7 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-verify',
@@ -62,7 +63,7 @@ export class VerifyComponent implements OnInit {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private auth = inject(AuthService);
-  api = 'http://localhost:8000/auth';
+  api = environment.authBase || `${environment.apiBase}/auth`;
 
   email = '';
   cooldown = 0;
@@ -105,6 +106,18 @@ export class VerifyComponent implements OnInit {
           if (response.expires_at) {
             localStorage.setItem('expires_at', response.expires_at);
           }
+          
+          // CRITICAL: Extract and store recruiter_id from JWT token
+          try {
+            const payload = JSON.parse(atob(response.access_token.split('.')[1]));
+            const recruiterId = payload.uid || payload.user_id || payload.id;
+            if (recruiterId) {
+              localStorage.setItem('recruiter_id', recruiterId.toString());
+              console.log('Recruiter ID stored in localStorage from verify:', recruiterId);
+            }
+          } catch (error) {
+            console.error('Error extracting recruiter_id from token:', error);
+          }
         }
         // Redirect based on role or default dashboard
         setTimeout(() => {
@@ -116,7 +129,7 @@ export class VerifyComponent implements OnInit {
               if (userRole === 'super_admin') {
                 this.router.navigate(['/superadmin/dashboard']);
               } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
-                this.router.navigate(['/teamleader/demand-sheet']);
+                this.router.navigate(['/teamleader/dashboard']);
               } else {
                 this.router.navigate(['/dashboard']);
               }

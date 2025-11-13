@@ -1,0 +1,54 @@
+# Production Requirements for Kudzu Operations Backend
+# Install with: pip install -r requirements.txt
+
+# Core FastAPI and web server dependencies
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+starlette==0.38.6
+
+# Environment and configuration
+python-dotenv==1.0.1
+
+# Database dependencies
+psycopg[binary]==3.2.10
+SQLAlchemy==2.0.35
+
+# Caching and session storage
+redis==5.0.7
+
+# Authentication and security
+PyJWT==2.9.0
+bcrypt==4.1.2
+
+# Data validation and serialization
+pydantic==2.9.2
+pydantic_core==2.23.4
+email-validator==2.1.1
+
+# HTTP client and external API calls
+requests==2.32.3
+urllib3==2.5.0
+certifi==2025.10.5
+charset-normalizer==3.4.4
+idna==3.11
+
+# File system monitoring (for CV uploads)
+watchdog==6.0.0
+
+# Additional utilities
+python-multipart==0.0.20
+PyYAML==6.0.3
+click==8.3.0
+typing-extensions==4.15.0
+annotated-types==0.7.0
+dnspython==2.8.0
+
+# Development and monitoring
+watchfiles==1.1.1
+httptools==0.7.1
+uvloop==0.22.1
+websockets==15.0.1
+sniffio==1.3.1
+anyio==4.11.0
+h11==0.16.0
+typing-inspection==0.4.2

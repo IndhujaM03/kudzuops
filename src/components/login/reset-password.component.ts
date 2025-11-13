@@ -24,7 +24,7 @@ import { environment } from '../../environments/environment';
             <label style="display:block;margin-bottom:6px;font-weight:600;color:#111827;font-size:13px;">Email</label>
             <input type="email" formControlName="email" placeholder="you@example.com"
                    [class.error]="submitted && form.controls['email'].invalid"
-                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" />
+                   style="width:100%;padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font-size:14px;" autocomplete="username" />
             <div *ngIf="submitted && form.controls['email'].invalid" style="color:#b91c1c;font-size:12px;margin-top:6px;">
               Valid email required
             </div>

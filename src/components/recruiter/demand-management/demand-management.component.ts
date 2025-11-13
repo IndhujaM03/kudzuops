@@ -84,10 +84,6 @@ interface ViewDrawer {
             <span class="stat-label">Total Assigned:</span>
             <span class="stat-value">{{ demands.length }}</span>
           </div>
-          <div class="stat-item">
-            <span class="stat-label">Processing:</span>
-            <span class="stat-value">{{ processingCount }}</span>
-          </div>
         </div>
       </div>
 
@@ -188,7 +184,7 @@ interface ViewDrawer {
                       Start Process
                     </button>
                     
-                    <!-- Process: Only visible if status = 'processing' -->
+                    <!-- Process: Only for 'processing' status -->
                     <button 
                       class="action-item" 
                       (click)="activeMenuId=null; navigateToRecruiterActivity(demand)"
@@ -198,6 +194,18 @@ interface ViewDrawer {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                       Process
+                    </button>
+                    
+                    <!-- Start Process: For 'hold' status (same as 'open') -->
+                    <button 
+                      class="action-item" 
+                      (click)="activeMenuId=null; startProcess(demand)"
+                      *ngIf="demand.activity_status === 'hold'"
+                    >
+                      <svg class="action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Start Process
                     </button>
                     
                     <!-- Hold: Only if status = 'processing' -->
@@ -212,17 +220,6 @@ interface ViewDrawer {
                       Hold
                     </button>
                     
-                    <!-- Resume: Only if status = 'hold' -->
-                    <button 
-                      class="action-item" 
-                      (click)="activeMenuId=null; resumeProcess(demand)"
-                      *ngIf="demand.activity_status === 'hold'"
-                    >
-                      <svg class="action-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Resume
-                    </button>
                     
                   </div>
                 </div>
@@ -653,6 +650,7 @@ interface ViewDrawer {
       background: #f8fafc;
     }
 
+
     .serial-number {
       font-weight: 600;
       color: #6b7280;
@@ -675,7 +673,7 @@ interface ViewDrawer {
 
     .priority-low { background: #dcfce7; color: #166534; }
     .priority-medium { background: #fef3c7; color: #92400e; }
-    .priority-high { background: #fed7aa; color: #c2410c; }
+    .priority-high { background: #fecaca; color: #dc2626; }
     .priority-urgent { background: #fecaca; color: #dc2626; }
 
     .status-assigned { background: #dbeafe; color: #1e40af; }
@@ -1423,8 +1421,8 @@ export class DemandManagementComponent implements OnInit {
 
   demands: AssignedDemand[] = [];
   filteredDemands: AssignedDemand[] = [];
-  processingCount = 0;
   loading = false;
+  error = '';
   // Pagination
   Math = Math;
   currentPage = 1;
@@ -1456,24 +1454,113 @@ export class DemandManagementComponent implements OnInit {
   activeMenuId: number | null = null;
 
   ngOnInit() {
-    this.loadDemands();
-    this.loadProcessingCount();
+    console.log('🚀 ngOnInit called');
+    console.log('📦 localStorage.recruiter_id:', localStorage.getItem('recruiter_id'));
+    console.log('📦 localStorage.access_token:', localStorage.getItem('access_token'));
+    
+    // CRITICAL: Read credentials IMMEDIATELY from localStorage, no delay
+    const savedRecruiterId = localStorage.getItem('recruiter_id');
+    if (savedRecruiterId) {
+      console.log('✅ Found recruiter_id in localStorage immediately:', savedRecruiterId);
+      this.loadDemands();
+    } else {
+      console.warn('⚠️ No recruiter_id in localStorage, waiting...');
+      setTimeout(() => {
+        this.loadDemands();
+      }, 1000);
+    }
   }
 
   loadDemands() {
     this.loading = true;
-    const recruiterId = this.auth.getCurrentUserId();
     
-    if (!recruiterId) {
-      console.error('No recruiter ID found');
+    // Check if we have auth token first
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      console.error('No auth token found. User might not be logged in.');
       this.loading = false;
+      this.error = 'Please log in to view your demands.';
+      return;
+    }
+    
+    let recruiterId = this.auth.getCurrentUserId();
+    
+    // If no recruiter ID yet, wait for it to be ready
+    if (!recruiterId) {
+      console.warn('Recruiter ID not ready yet, waiting...');
+      let retryCount = 0;
+      const maxRetries = 5;
+      
+      const retry = setInterval(() => {
+        retryCount++;
+        recruiterId = this.auth.getCurrentUserId();
+        
+        if (recruiterId && typeof recruiterId === 'number' && recruiterId > 0) {
+          console.log('✅ Recruiter ID ready after', retryCount, 'retries:', recruiterId);
+          clearInterval(retry);
+          this.loadDemandsWithId(recruiterId);
+        } else if (retryCount >= maxRetries) {
+          console.error('❌ Failed to get recruiter ID after', maxRetries, 'retries');
+          clearInterval(retry);
+          this.loading = false;
+          this.error = 'Unable to authenticate. Please refresh the page.';
+        }
+      }, 300); // Check every 300ms
+      
+      return;
+    }
+    
+    this.loadDemandsWithId(recruiterId);
+  }
+
+  private loadDemandsWithId(recruiterId: number) {
+    // Double-check that we have a valid recruiter ID
+    if (!recruiterId || isNaN(recruiterId) || recruiterId <= 0) {
+      console.error('Invalid recruiter ID provided:', recruiterId);
+      this.loading = false;
+      this.error = 'Invalid recruiter ID. Please refresh the page.';
+      return;
+    }
+
+    // CRITICAL: Check that recruiterId is not a string or undefined
+    if (typeof recruiterId !== 'number') {
+      console.error('Recruiter ID is not a number:', typeof recruiterId, recruiterId);
+      this.loading = false;
+      this.error = 'Authentication error. Please refresh the page.';
       return;
     }
 
     const params: any = { page: this.currentPage, size: this.pageSize };
-    console.log(`🔍 Fetching assigned demands for recruiter ID: ${recruiterId}`);
+    console.log(`🔍 Fetching assigned demands for recruiter ID: ${recruiterId} (type: ${typeof recruiterId})`);
     
-    this.http.get<any>(`${this.api}/recruiter/${recruiterId}/demands`, { params }).subscribe({
+    // Build URL with proper validation and EXTENSIVE logging
+    console.log('🔨 Building URL with recruiterId:', recruiterId);
+    console.log('🔨 recruiterId type:', typeof recruiterId);
+    console.log('🔨 recruiterId value:', recruiterId);
+    console.log('🔨 this.api:', this.api);
+    
+    // CRITICAL: DO NOT proceed if recruiterId is invalid
+    if (!recruiterId || isNaN(recruiterId) || recruiterId <= 0) {
+      console.error('❌ FATAL: Invalid recruiterId when building URL:', recruiterId);
+      this.loading = false;
+      this.error = 'Invalid authentication. Please log out and log back in.';
+      return;
+    }
+    
+    const url = `${this.api}/recruiter/${recruiterId}/demands`;
+    console.log(`🌐 Full URL: ${url}`);
+    console.log(`🌐 URL length: ${url.length}`);
+    console.log(`🌐 URL includes recruiterId: ${url.includes(String(recruiterId))}`);
+    
+    // DOUBLE CHECK: Verify the URL contains the recruiter ID
+    if (!url.includes(String(recruiterId))) {
+      console.error('❌ FATAL: URL does not contain recruiterId!', url);
+      this.loading = false;
+      this.error = 'URL construction error. Please refresh.';
+      return;
+    }
+    
+    this.http.get<any>(url, { params }).subscribe({
       next: (response) => {
         console.log('📊 Assigned demands response:', response);
         this.demands = response.items || [];
@@ -1493,22 +1580,15 @@ export class DemandManagementComponent implements OnInit {
     });
   }
 
-  loadProcessingCount() {
-    const userId = this.auth.getCurrentUserId();
-    if (!userId) return;
-    this.http.get<any>(`${this.api}/recruiter/${userId}/process-count`).subscribe({
-      next: (response) => {
-        this.processingCount = response?.count ?? this.processingCount;
-      },
-      error: () => {
-        // ignore
-      }
-    });
-  }
 
   goToPage(page: number) {
     this.currentPage = page;
-    this.loadDemands();
+    const recruiterId = this.auth.getCurrentUserId();
+    if (recruiterId) {
+      this.loadDemandsWithId(recruiterId);
+    } else {
+      this.loadDemands(); // This will handle the retry logic
+    }
   }
 
   applyFilters() {
@@ -1611,19 +1691,30 @@ export class DemandManagementComponent implements OnInit {
   startProcess(demand: AssignedDemand) {
     const recruiterId = this.auth.getCurrentUserId();
     
+    console.log('🚀 Starting process for demand:', demand.id, 'recruiter:', recruiterId);
+    console.log('🔗 API URL:', `${this.api}/recruiter/${recruiterId}/demand/${demand.id}/open`);
+    
     // Start the activity process using the new API
     this.http.post<any>(`${this.api}/recruiter/${recruiterId}/demand/${demand.id}/open`, {}).subscribe({
       next: (response) => {
+        console.log('✅ API Response:', response);
+        console.log('🧭 Navigating to:', `/recruiter/activity/${recruiterId}/${demand.id}`);
+        
         // Navigate to the new activity page
-        this.router.navigate(['/recruiter/activity', recruiterId, demand.id]);
-        this.loadProcessingCount();
-        // Show success message
-        this.toastService.success('✅ Process started successfully!');
+        this.router.navigate(['/recruiter/activity', recruiterId, demand.id]).then(success => {
+          console.log('🧭 Navigation result:', success);
+          if (success) {
+            this.toastService.success('✅ Process started successfully!');
+          } else {
+            console.error('❌ Navigation failed');
+            this.toastService.error('Failed to navigate to activity page');
+          }
+        });
       },
       error: (error) => {
-        console.error('Error starting process:', error);
+        console.error('❌ Error starting process:', error);
         const errorMessage = error.error?.detail || 'Failed to start process. Please try again.';
-        alert(errorMessage);
+        this.toastService.error(errorMessage);
       }
     });
   }
@@ -1636,7 +1727,6 @@ export class DemandManagementComponent implements OnInit {
     this.http.post<any>(`${this.api}/recruiter/${recruiterId}/demand/${demand.id}/hold`, {}).subscribe({
       next: (response) => {
         demand.activity_status = 'on_hold';
-        this.loadProcessingCount();
         this.loadDemands();
         this.toastService.success('✅ Process put on hold successfully!');
       },
@@ -1654,7 +1744,6 @@ export class DemandManagementComponent implements OnInit {
     this.http.post<any>(`${this.api}/recruiter/${recruiterId}/demand/${demand.id}/resume`, {}).subscribe({
       next: (response) => {
         demand.activity_status = 'processing';
-        this.loadProcessingCount();
         this.loadDemands();
         this.toastService.success('✅ Process resumed successfully!');
       },
@@ -2098,37 +2187,60 @@ export class DemandManagementComponent implements OnInit {
         if (activity && activity.required_cv_count && activity.uploaded_cv_count) {
           console.log(`Checking auto-close: required=${activity.required_cv_count}, uploaded=${activity.uploaded_cv_count}`);
           
-          if (activity.required_cv_count === activity.uploaded_cv_count) {
-            console.log('Auto-closing activity - counts match');
+          // Only auto-close if:
+          // 1. Counts match exactly
+          // 2. Activity is in 'processing' status (not already closed)
+          // 3. Activity ID exists
+          if (activity.required_cv_count === activity.uploaded_cv_count 
+              && activity.id 
+              && activity.activity_status === 'processing'
+              && activity.activity_status !== 'closed') {
+            console.log('Auto-closing activity - counts match and status is processing');
             
             // Auto-close the activity using the correct endpoint
             this.http.post<any>(`${this.api}/recruiter/close-activity-complete`, {
+              activity_id: activity.id,
               recruiter_id: recruiterId,
               demand_id: demandId
             }).subscribe({
-              next: () => {
-                console.log('Activity auto-closed successfully');
-                this.toastService.success('✅ Activity closed successfully!');
-                
-                // Redirect immediately after success toast is shown
-                setTimeout(() => {
-                  this.router.navigate(['/recruiter/demands']);
-                }, 1500); // Slightly longer delay to ensure toast is visible
+              next: (response) => {
+                // Check if the response indicates success
+                if (response && response.success === true) {
+                  console.log('Activity auto-closed successfully');
+                  this.toastService.success('✅ Activity closed successfully!');
+                  
+                  // Redirect only when activity is successfully closed
+                  setTimeout(() => {
+                    this.router.navigate(['/recruiter/demands']);
+                  }, 1500); // Slightly longer delay to ensure toast is visible
+                } else {
+                  // CV count mismatch or other failure - don't redirect
+                  const message = response?.message || 'Cannot close activity';
+                  console.log('⚠️ Auto-close skipped:', message);
+                  // Don't show error toast for count mismatch - it's expected behavior
+                  if (response?.message && !response.message.includes('CV count mismatch')) {
+                    this.toastService.error(message);
+                  }
+                }
               },
               error: (error) => {
                 console.error('Error closing activity:', error);
-                this.toastService.error('Failed to auto-close activity');
-                // Still redirect even if close fails
-                setTimeout(() => {
-                  this.router.navigate(['/recruiter/demands']);
-                }, 1500);
+                // Don't show error if activity is already closed (404)
+                if (error.status !== 404) {
+                  this.toastService.error('Failed to auto-close activity');
+                }
+                // Don't redirect on error
               }
             });
           } else {
-            // Not enough CVs uploaded yet, just redirect
-            setTimeout(() => {
-              this.router.navigate(['/recruiter/demands']);
-            }, 1000);
+            console.log('Skipping auto-close:', {
+              countsMatch: activity.required_cv_count === activity.uploaded_cv_count,
+              hasId: !!activity.id,
+              isProcessing: activity.activity_status === 'processing',
+              isNotClosed: activity.activity_status !== 'closed'
+            });
+            // Not enough CVs uploaded yet or activity is already closed - don't redirect
+            // Only redirect when activity is successfully closed
           }
         } else {
           // No activity data, just redirect
@@ -2138,11 +2250,14 @@ export class DemandManagementComponent implements OnInit {
         }
       },
       error: (error) => {
-        console.error('Error checking activity status:', error);
-        // Redirect anyway
-        setTimeout(() => {
-          this.router.navigate(['/recruiter/demands']);
-        }, 1000);
+        // If activity doesn't exist (404), that's okay - just skip auto-close
+        // This can happen when CV is rejected and recruiter hasn't reopened activity yet
+        if (error.status === 404) {
+          console.log('No activity found - skipping auto-close check. Recruiter can still process resumes.');
+        } else {
+          console.error('Error checking activity status:', error);
+        }
+        // Don't redirect - allow recruiter to continue processing
       }
     });
   }

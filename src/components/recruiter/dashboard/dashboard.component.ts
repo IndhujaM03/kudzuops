@@ -356,7 +356,7 @@ interface SubmissionStats {
     }
 
     .status-assigned { background: #dbeafe; color: #1e40af; }
-    .status-processing { background: #fef3c7; color: #92400e; }
+    .status-processing { background: #d1fae5; color: #065f46; }
     .status-in_progress { background: #fef3c7; color: #92400e; }
     .status-completed { background: #d1fae5; color: #065f46; }
     .status-closed { background: #f3f4f6; color: #6b7280; }
@@ -728,7 +728,10 @@ export class DashboardComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.loadDashboardData();
+    // Add a longer delay to ensure token and credentials are available after hard refresh
+    setTimeout(() => {
+      this.loadDashboardData();
+    }, 1000); // Increased to 1000ms to ensure localStorage is ready
     
     // Close action menu when clicking outside
     document.addEventListener('click', (event) => {
@@ -742,12 +745,57 @@ export class DashboardComponent implements OnInit {
     this.loading = true;
     this.error = null;
     
-    const recruiterId = this.authService.getCurrentUserId();
-    if (!recruiterId) {
-      this.error = 'Unable to identify recruiter ID';
+    // Check if we have auth token first
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      console.error('No auth token found. User might not be logged in.');
       this.loading = false;
+      this.error = 'Please log in to view your dashboard.';
+      setTimeout(() => {
+        this.router.navigate(['/signin']);
+      }, 2000);
       return;
     }
+    
+    let recruiterId = this.authService.getCurrentUserId();
+    
+    // If no recruiter ID yet, wait for it to be ready
+    if (!recruiterId) {
+      console.warn('Recruiter ID not ready yet, waiting...');
+      let retryCount = 0;
+      const maxRetries = 5;
+      
+      const retry = setInterval(() => {
+        retryCount++;
+        recruiterId = this.authService.getCurrentUserId();
+        
+        if (recruiterId && typeof recruiterId === 'number' && recruiterId > 0) {
+          console.log('✅ Recruiter ID ready after', retryCount, 'retries:', recruiterId);
+          clearInterval(retry);
+          this.loadDashboardDataInternal(recruiterId);
+        } else if (retryCount >= maxRetries) {
+          console.error('❌ Failed to get recruiter ID after', maxRetries, 'retries');
+          clearInterval(retry);
+          this.loading = false;
+          this.error = 'Unable to authenticate. Redirecting to login...';
+          setTimeout(() => {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('token_type');
+            localStorage.removeItem('expires_at');
+            this.router.navigate(['/signin']);
+          }, 2000);
+        }
+      }, 300); // Check every 300ms
+      
+      return;
+    }
+    
+    this.loadDashboardDataInternal(recruiterId);
+  }
+
+  private loadDashboardDataInternal(recruiterId: number): void {
+    this.loading = true;
+    this.error = null;
 
     // Load process count and demands in parallel
     Promise.all([
@@ -760,18 +808,26 @@ export class DashboardComponent implements OnInit {
 
   loadProcessCount(recruiterId: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.http.get<ProcessCount>(`${this.api}/recruiter/${recruiterId}/process-count`).subscribe({
+      // CRITICAL: Always use path param with recruiter_id for compatibility
+      this.http.get<ProcessCount>(`${this.api}/recruiter/${recruiterId}/dashboard`).subscribe({
         next: (data) => {
-          this.processCount = data;
+          // Extract process count from dashboard data if available
+          if (data && (data as any).summary) {
+            this.processCount = {
+              total_assigned: (data as any).summary.total_demands || 0,
+              current_processes: (data as any).activities?.filter((a: any) => a.activity_status === 'processing').length || 0,
+              completed_processes: (data as any).activities?.filter((a: any) => a.activity_status === 'closed').length || 0
+            };
+          }
           resolve();
         },
         error: (error) => {
           console.error('Error loading process count:', error);
           // Set mock values for development
           this.processCount = {
-            total_assigned: 2,
-            current_processes: 1,
-            completed_processes: 1
+            total_assigned: 0,
+            current_processes: 0,
+            completed_processes: 0
           };
           resolve();
         }

@@ -10,11 +10,14 @@
 
 
     <meta charset="UTF-8" />
+    <meta http-equiv="Permissions-Policy" content="fullscreen=(self), fullscreen=*">
     <base href="/">
     <script>
-      window.__env__apiBase = window.__env__apiBase || '';
-      window.__env__authBase = window.__env__authBase || (window.__env__apiBase ? window.__env__apiBase + '/auth' : '');
-      window.__env__superAdminBase = window.__env__superAdminBase || (window.__env__apiBase ? window.__env__apiBase + '/superadmin' : '');
+      // Environment variables will be injected at build time
+      // These should be provided via .env file or build configuration
+      window.__env__apiBase = window.__env__apiBase || undefined;
+      window.__env__authBase = window.__env__authBase || undefined;
+      window.__env__superAdminBase = window.__env__superAdminBase || undefined;
     </script>
   </head>
   <body>

@@ -16,7 +16,7 @@ except Exception:
         "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops",
     )
 
-router = APIRouter(tags=["candidate-submissions"])
+router = APIRouter(prefix="/api", tags=["candidate-submissions"])
 
 
 def _ensure_tables():

@@ -4,23 +4,28 @@ import threading
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime, timedelta
 
-import psycopg
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form
-from fastapi import Body
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from fastapi import Depends
+import psycopg  # type: ignore[reportMissingImports]
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form  # type: ignore[reportMissingImports]
+from fastapi import Request  # type: ignore[reportMissingImports]
+from fastapi import Body  # type: ignore[reportMissingImports]
+from fastapi.responses import FileResponse, JSONResponse  # type: ignore[reportMissingImports]
+from pydantic import BaseModel  # type: ignore[reportMissingImports]
+from fastapi import Depends  # type: ignore[reportMissingImports]
 import shutil
 import traceback
 
 try:
-    from ..models.config import settings  # fixed import path
+    from .config import settings  # correct import path within app package
     DATABASE_DSN = settings.database_url
 except Exception:
     DATABASE_DSN = os.getenv(
         "DATABASE_URL",
         "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops",
     )
+
+# Thread-safe flag to ensure tables are created only once
+_tables_ensured = False
+_tables_lock = threading.Lock()
 
 # Optional listener service
 try:
@@ -29,7 +34,7 @@ except Exception:
     cv_listener_service = None
 
 
-router = APIRouter(tags=["recruiter"])
+router = APIRouter(prefix="/api/recruiter", tags=["recruiter"])
 
 class QuotaCheckRequest(BaseModel):
     demand_id: Any
@@ -48,8 +53,40 @@ _listeners_lock = threading.RLock()
 _active_listeners: Dict[int, Dict[str, Any]] = {}
 
 
+def _serialize_value(value: Any) -> Any:
+    """Serialize a value to be JSON-compatible"""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, timedelta):
+        return str(value)
+    if isinstance(value, dict):
+        # Recursively serialize dictionaries
+        return {k: _serialize_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        # Recursively serialize lists
+        return [_serialize_value(item) for item in value]
+    # Handle psycopg-specific types that might come from PostgreSQL
+    try:
+        # Try to convert to native Python types
+        if hasattr(value, '__dict__'):
+            return str(value)
+    except:
+        pass
+    # For everything else, return as-is
+    return value
+
+
 def _rows_to_dicts(columns: List[str], rows: List[tuple]) -> List[Dict[str, Any]]:
-    return [dict(zip(columns, row)) for row in rows]
+    """Convert database rows to dictionaries with proper JSON serialization"""
+    result = []
+    for row in rows:
+        row_dict = {}
+        for col, val in zip(columns, row):
+            row_dict[col] = _serialize_value(val)
+        result.append(row_dict)
+    return result
 
 
 def _recalculate_uploaded_cv_count(cv_list: list, activity_id: int, cur) -> None:
@@ -128,14 +165,14 @@ def _check_and_close_activity_on_submission(demand_id: int, cur) -> bool:
 def _ensure_tables() -> None:
     # Comprehensive table creation and migration
     with psycopg.connect(DATABASE_DSN) as conn:
-        with conn.cursor() as cur:
-            # 1. Clients table
-            cur.execute(
+        try:
+            with conn.cursor() as cur:
+                # 1. Clients table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_clients (
                     id SERIAL PRIMARY KEY,
                     client_name VARCHAR(255) NOT NULL,
-                    client_code VARCHAR(50),
                     industry VARCHAR(100),
                     email VARCHAR(255),
                     contact_person VARCHAR(255),
@@ -145,8 +182,8 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # 2. Demand sheet table with all columns
-            cur.execute(
+                # 2. Demand sheet table with all columns
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_demand_sheet (
                     id SERIAL PRIMARY KEY,
@@ -168,8 +205,8 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # 3. Recruiter activity table
-            cur.execute(
+                # 3. Recruiter activity table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_recruiter_activity (
                     id SERIAL PRIMARY KEY,
@@ -187,18 +224,21 @@ def _ensure_tables() -> None:
                 );
                 """
             )
-            # Ensure new columns exist on older DBs
-            try:
-                cur.execute("ALTER TABLE tbl_recruiter_activity ADD COLUMN IF NOT EXISTS required_cv_count INTEGER")
-            except Exception:
-                pass
-            try:
-                cur.execute("ALTER TABLE tbl_recruiter_activity ADD COLUMN IF NOT EXISTS uploaded_cv_count INTEGER DEFAULT 0")
-            except Exception:
-                pass
             
-            # 4. Recruiter settings table
-            cur.execute(
+                # Ensure new columns exist on older DBs
+                try:
+                    cur.execute("ALTER TABLE tbl_recruiter_activity ADD COLUMN IF NOT EXISTS required_cv_count INTEGER")
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                try:
+                    cur.execute("ALTER TABLE tbl_recruiter_activity ADD COLUMN IF NOT EXISTS uploaded_cv_count INTEGER DEFAULT 0")
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+            
+                # 4. Recruiter settings table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_recruiter_settings (
                     id SERIAL PRIMARY KEY,
@@ -211,8 +251,8 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # 5. Audit trail table
-            cur.execute(
+                # 5. Audit trail table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_audit_trail (
                     id SERIAL PRIMARY KEY,
@@ -227,8 +267,8 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # 6. Candidate submissions table
-            cur.execute(
+                # 6. Candidate submissions table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_candidate_submissions (
                     id SERIAL PRIMARY KEY,
@@ -247,8 +287,8 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # 7. CV uploads table
-            cur.execute(
+                # 7. CV uploads table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_cv_uploads (
                     id SERIAL PRIMARY KEY,
@@ -261,8 +301,8 @@ def _ensure_tables() -> None:
                 """
             )
 
-            # 7b. CV downloads table for recruiter-managed uploads (resume list)
-            cur.execute(
+                # 7b. CV downloads table for recruiter-managed uploads (resume list)
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_cv_downloads (
                     id SERIAL PRIMARY KEY,
@@ -277,8 +317,13 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # 8. Recruiter submissions table
-            cur.execute(
+                # Create indexes for tbl_cv_downloads to speed up queries
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_cv_downloads_recruiter_demand ON tbl_cv_downloads(recruiter_id, demand_id);")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_cv_downloads_status ON tbl_cv_downloads(status) WHERE status IS NOT NULL;")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_cv_downloads_created_at ON tbl_cv_downloads(created_at DESC);")
+            
+                # 8. Recruiter submissions table
+                cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tbl_recruiter_submissions (
                     id BIGSERIAL PRIMARY KEY,
@@ -296,34 +341,46 @@ def _ensure_tables() -> None:
                 """
             )
             
-            # Add missing columns to existing tables
-            try:
+                # Add missing columns to existing tables
                 cur.execute("ALTER TABLE tbl_recruiter_activity ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP")
-            except Exception:
-                pass
-                
-            try:
                 cur.execute("ALTER TABLE tbl_demand_sheet ADD COLUMN IF NOT EXISTS job_description_url TEXT")
-            except Exception:
-                pass
-                
-            try:
                 cur.execute("ALTER TABLE tbl_demand_sheet ADD COLUMN IF NOT EXISTS assigned_to JSONB DEFAULT '[]'::jsonb")
-            except Exception:
-                pass
                 
-            # Create indexes for better performance
-            try:
+                # Create indexes for better performance  
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_recruiter_activity_recruiter_demand ON tbl_recruiter_activity(recruiter_id, demand_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_recruiter_activity_status ON tbl_recruiter_activity(activity_status)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_trail_recruiter ON tbl_audit_trail(recruiter_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_trail_demand ON tbl_audit_trail(demand_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_demand_sheet_assigned_to ON tbl_demand_sheet USING GIN(assigned_to)")
-            except Exception:
-                pass  # Indexes might already exist
-                
-        conn.commit()
+            
+            conn.commit()
+        except Exception as e:
+            print(f"Error in _ensure_tables: {e}")
+            conn.rollback()
+            raise
 
+
+# Define literal routes BEFORE parameterized routes to prevent path matching conflicts
+@router.get("/activity/{recruiter_id}/{demand_id}")
+def get_activity_detail_route(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
+    """Get activity status - literal route to prevent /recruiter/activity/9/31 from matching /{recruiter_id}/..."""
+    return get_activity_status(recruiter_id, demand_id)
+
+@router.get("/demands")
+async def recruiter_demands_no_path_param(
+    request: Request,
+    page: int = 1,
+    size: int = 10,
+    recruiter_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """Demands endpoint - extracts recruiter_id from multiple sources"""
+    from .login import extract_recruiter_id_from_request
+    recruiter_id = extract_recruiter_id_from_request(request, recruiter_id)
+    
+    if not recruiter_id:
+        raise HTTPException(status_code=400, detail="recruiter_id required (query param, JWT token, or X-Recruiter-ID header)")
+    
+    return recruiter_demands(recruiter_id, page, size)
 
 @router.get("/{recruiter_id}/demands")
 def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[str, Any]:
@@ -360,15 +417,16 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                 
                 try:
                         # First try JSON format (new format) - check for recruiter_id in array
+                        search_json = json.dumps([{"recruiter_id": int(recruiter_id)}])
                         cur.execute(
                             """
                             SELECT COUNT(1)
                             FROM tbl_demand_sheet ds
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
-                            WHERE ds.assigned_to::text LIKE %s
+                            WHERE COALESCE(ds.assigned_to,'[]'::jsonb) @> %s::jsonb
                             AND COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             """,
-                            (recruiter_id, f"%{recruiter_id}%")
+                            (recruiter_id, search_json)
                         )
                         total = int(cur.fetchone()[0])
                         print(f"Recruiter API Debug - Total demands found (JSON format): {total}")
@@ -403,6 +461,7 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                 # page items - include activity_status from tbl_recruiter_activity
                 try:
                         # First try JSON format (new format) - check for recruiter_id in array
+                        search_json = json.dumps([{"recruiter_id": int(recruiter_id)}])
                         cur.execute(
                             """
                             SELECT 
@@ -420,12 +479,12 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                             FROM tbl_demand_sheet ds
                             LEFT JOIN tbl_clients c ON c.id = ds.client_id
                             LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = ds.id AND ra.recruiter_id = %s
-                            WHERE ds.assigned_to::text LIKE %s
+                            WHERE COALESCE(ds.assigned_to,'[]'::jsonb) @> %s::jsonb
                             AND COALESCE(ra.activity_status, 'open') IN ('open','processing','hold')
                             ORDER BY ds.updated_at DESC NULLS LAST, ds.id DESC
                             OFFSET %s LIMIT %s
                             """,
-                            (recruiter_id, f"%{recruiter_id}%", (page-1)*size, size)
+                            (recruiter_id, search_json, (page-1)*size, size)
                         )
                 except Exception as query_error:
                     print(f"Recruiter API Debug - JSON query failed: {query_error}")
@@ -483,7 +542,9 @@ def recruiter_demands(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[
                         )
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
-                return {"items": _rows_to_dicts(cols, rows), "total": total, "page": page, "size": size}
+                items = _rows_to_dicts(cols, rows)
+                response_data = {"items": items, "total": total, "page": page, "size": size}
+                return JSONResponse(content=response_data)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch demands: {e}")
 
@@ -595,6 +656,7 @@ def recruiter_demand_detail(recruiter_id: int, demand_id: int) -> Dict[str, Any]
                         SELECT 
                           ds.id,
                           ds.client_id,
+                          ds.spoc_id,
                           ds.skill AS job_title,
                           COALESCE(c.client_name, '') AS client_name,
                           ds.skill,
@@ -604,9 +666,13 @@ def recruiter_demand_detail(recruiter_id: int, demand_id: int) -> Dict[str, Any]
                           ds.status,
                           ds.assigned_to,
                           ds.created_at,
-                          ds.updated_at
+                          ds.updated_at,
+                          COALESCE(spoc.spoc_name, '') AS spoc_name,
+                          COALESCE(spoc.email, '') AS spoc_email,
+                          COALESCE(spoc.phone_number, '') AS spoc_phone
                         FROM tbl_demand_sheet ds
                         LEFT JOIN tbl_clients c ON ds.client_id = c.id
+                        LEFT JOIN tbl_client_spocs spoc ON ds.spoc_id = spoc.id
                         WHERE ds.id=%s
                         """,
                         (demand_id,)
@@ -615,7 +681,8 @@ def recruiter_demand_detail(recruiter_id: int, demand_id: int) -> Dict[str, Any]
                     if not row:
                         raise HTTPException(status_code=404, detail="Demand not found")
                     cols = [d[0] for d in cur.description]
-                    return dict(zip(cols, row))
+                    result = dict(zip(cols, row))
+                    return result
                 except Exception:
                     # Fallback without clients join; rollback any aborted transaction first
                     try:
@@ -628,6 +695,7 @@ def recruiter_demand_detail(recruiter_id: int, demand_id: int) -> Dict[str, Any]
                         SELECT 
                           id,
                           client_id,
+                          spoc_id,
                           skill AS job_title,
                           '' AS client_name,
                           skill,
@@ -637,12 +705,15 @@ def recruiter_demand_detail(recruiter_id: int, demand_id: int) -> Dict[str, Any]
                           status,
                           assigned_to,
                           created_at,
-                          updated_at
-                        FROM tbl_demand_sheet 
+                          updated_at,
+                          '' AS spoc_name,
+                          '' AS spoc_email,
+                          '' AS spoc_phone
+                        FROM tbl_demand_sheet
                         WHERE id=%s
                         """,
-                            (demand_id,)
-                        )
+                        (demand_id,)
+                    )
                         row = cur2.fetchone()
                         if not row:
                             raise HTTPException(status_code=404, detail="Demand not found")
@@ -1138,6 +1209,27 @@ def get_dashboard_summary(recruiter_id: int) -> Dict[str, Any]:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch dashboard summary: {e}")
 
+
+# Define literal route for /recruiter/dashboard before parameterized routes
+@router.get("/dashboard")
+async def recruiter_dashboard_no_path_param(
+    request: Request,
+    recruiter_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """Dashboard endpoint - extracts recruiter_id from multiple sources"""
+    from .login import extract_recruiter_id_from_request
+    
+    # Debug: Log all headers
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Request headers: {dict(request.headers)}")
+    
+    recruiter_id = extract_recruiter_id_from_request(request, recruiter_id)
+    
+    if not recruiter_id:
+        raise HTTPException(status_code=400, detail="recruiter_id required (query param, JWT token, or X-Recruiter-ID header)")
+    
+    return get_recruiter_dashboard(recruiter_id)
 
 @router.get("/{recruiter_id}/dashboard")
 def get_recruiter_dashboard(recruiter_id: int) -> Dict[str, Any]:
@@ -1706,7 +1798,7 @@ def reset_recruiter_password(user_id: int, payload: Dict[str, Any]) -> Dict[str,
         raise HTTPException(status_code=400, detail="new_password is required")
     # Reuse hashing from login module
     try:
-        from ..login import _hash_password
+        from .login import _hash_password
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute("UPDATE tbl_users SET password_hash=%s WHERE id=%s", (_hash_password(new_password), user_id))
@@ -1766,6 +1858,20 @@ def activity_update_cv(payload: Dict[str, Any]) -> Dict[str, Any]:
                 entry = {"file": filename, "time": timestamp or None}
                 if file_path:
                     entry["path"] = file_path
+                # Add recruiter_date field for date filtering (use current date if timestamp not provided)
+                if timestamp:
+                    try:
+                        # Try to extract date from timestamp
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        entry["recruiter_date"] = dt.date().isoformat()
+                    except:
+                        # Fallback to current date
+                        from datetime import date
+                        entry["recruiter_date"] = date.today().isoformat()
+                else:
+                    from datetime import date
+                    entry["recruiter_date"] = date.today().isoformat()
                 current.append(entry)
                 cur.execute(
                     "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at = NOW() WHERE id=%s",
@@ -1813,17 +1919,39 @@ def activity_update_cv_list(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if result is None:
                     raise HTTPException(status_code=404, detail="Activity not found")
                 _, demand_id = result
+                # Ensure all CV entries have recruiter_date field
+                from datetime import date
+                updated_cv_list = []
+                for cv_entry in cv_list:
+                    if isinstance(cv_entry, dict):
+                        # If recruiter_date doesn't exist, add it (set when recruiter uploads profile)
+                        if 'recruiter_date' not in cv_entry or not cv_entry.get('recruiter_date'):
+                            # Try to extract from timestamp if available
+                            timestamp = cv_entry.get('time') or cv_entry.get('timestamp')
+                            if timestamp:
+                                try:
+                                    from datetime import datetime
+                                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                                    cv_entry['recruiter_date'] = dt.date().isoformat()
+                                except:
+                                    cv_entry['recruiter_date'] = date.today().isoformat()
+                            else:
+                                cv_entry['recruiter_date'] = date.today().isoformat()
+                        updated_cv_list.append(cv_entry)
+                    else:
+                        updated_cv_list.append(cv_entry)
+                
                 # Persist list
-                # Replace cv_list
+                # Replace cv_list with entries that have recruiter_date
                 cur.execute(
                     "UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
-                    (json.dumps(cv_list), activity_id)
+                    (json.dumps(updated_cv_list), activity_id)
                 )
                 # Note: CV count is now managed by update-cv-count-and-check endpoint
                 # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 conn.commit()
                 
-        return {"message": "cv_list updated", "activity_id": int(activity_id), "cv_list": cv_list}
+        return {"message": "cv_list updated", "activity_id": int(activity_id), "cv_list": updated_cv_list}
     except HTTPException:
         raise
     except Exception as e:
@@ -1837,6 +1965,28 @@ def list_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
     _ensure_tables()
     # Base local list
     local = get_local_cv_list(recruiter_id, demand_id).get("cvList", [])  # type: ignore
+    
+    # Get DB status for all files to filter out submitted/rejected
+    db_status_map = {}
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT filename, status, candidate_details
+                    FROM tbl_cv_downloads
+                    WHERE recruiter_id=%s AND demand_id=%s
+                    """,
+                    (recruiter_id, demand_id)
+                )
+                for row in cur.fetchall():
+                    db_status_map[row[0]] = {
+                        "status": row[1],
+                        "candidate_details": row[2]
+                    }
+    except Exception:
+        pass
+    
     # Load stored details from current processing activity
     stored: List[Dict[str, Any]] = []
     try:
@@ -1864,6 +2014,21 @@ def list_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
     stored_map = {key(i): i for i in stored}
     merged: List[Dict[str, Any]] = []
     for item in local:
+        filename = item.get("file_name") or item.get("file") or ""
+        
+        # Filter out submitted/rejected/discard CVs based on DB status
+        # Only show resumes with NULL, empty, or 'hold' status
+        if filename in db_status_map:
+            db_status_raw = db_status_map[filename].get("status")
+            if db_status_raw:
+                db_status = str(db_status_raw).strip().lower()
+                # Exclude submitted, rejected, discard, and numeric status '1' (submitted)
+                if db_status in ["submitted", "rejected", "discard", "1"]:
+                    continue  # Skip this CV
+                # Only include if status is 'hold' or 'on_hold'
+                if db_status not in ["hold", "on_hold", ""]:
+                    continue  # Skip any other non-null, non-hold status
+        
         k = key(item)
         if k in stored_map:
             merged_item = {**item, **stored_map[k]}
@@ -1918,8 +2083,23 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                         break
                 if idx == -1:
                     entry = {"file": filename, "time": time_str}
+                    # Add recruiter_date when creating new entry (set when recruiter uploads profile)
+                    from datetime import date
+                    if time_str:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(time_str).replace('Z', '+00:00'))
+                            entry['recruiter_date'] = dt.date().isoformat()
+                        except:
+                            entry['recruiter_date'] = date.today().isoformat()
+                    else:
+                        entry['recruiter_date'] = date.today().isoformat()
                     current.append(entry)
                     idx = len(current) - 1
+                # capture previous status (normalized) to compute submitted delta later
+                prev_status_raw = current[idx].get("status")
+                prev_status_norm = prev_status_raw.lower().replace(" ", "_") if isinstance(prev_status_raw, str) and prev_status_raw else None
+
                 # update fields
                 current[idx]["candidate_name"] = candidate_name
                 current[idx]["candidate_email"] = candidate_email
@@ -1932,13 +2112,27 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                     elif normalized in ("rejected",): normalized = "rejected"
                     elif normalized in ("on_hold", "hold"): normalized = "on_hold"
                     current[idx]["status"] = normalized
+                
+                # Ensure recruiter_date exists (set when recruiter uploads profile)
+                if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
+                    from datetime import date
+                    timestamp = current[idx].get('time') or current[idx].get('timestamp')
+                    if timestamp:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                            current[idx]['recruiter_date'] = dt.date().isoformat()
+                        except:
+                            current[idx]['recruiter_date'] = date.today().isoformat()
+                    else:
+                        current[idx]['recruiter_date'] = date.today().isoformat()
                 cur.execute(
                     "UPDATE tbl_recruiter_activity SET cv_list=%s::jsonb, updated_at=NOW() WHERE id=%s",
                     (json.dumps(current), activity_id)
                 )
-                # Note: CV count is now managed by update-cv-count-and-check endpoint
-                # _sync_uploaded_cv_count_across_demand(demand_id, cur)
                 conn.commit()
+                # Note: Count updates are handled explicitly by frontend via
+                # POST /recruiter/update-cv-count-and-check when status === 'submitted'.
         return {"message": "Resume details saved", "file_name": filename}
     except HTTPException:
         raise
@@ -2008,6 +2202,18 @@ def submit_selected_cvs(payload: Dict[str, Any]) -> Dict[str, Any]:
                             item["verified_status"] = "under_verification"
                             item["demand_id"] = demand_id
                             item["recruiter_id"] = rid
+                            # Ensure recruiter_date exists (set when recruiter uploads profile)
+                            if 'recruiter_date' not in item or not item.get('recruiter_date'):
+                                from datetime import date
+                                if time_str:
+                                    try:
+                                        from datetime import datetime
+                                        dt = datetime.fromisoformat(str(time_str).replace('Z', '+00:00'))
+                                        item['recruiter_date'] = dt.date().isoformat()
+                                    except:
+                                        item['recruiter_date'] = date.today().isoformat()
+                                else:
+                                    item['recruiter_date'] = date.today().isoformat()
                             break
 
                     # Insert submission row
@@ -2133,7 +2339,9 @@ def upload_cv(
                         current = cv_list if isinstance(cv_list, list) else json.loads(cv_list or "[]")
                     except Exception:
                         current = []
+                    from datetime import date
                     entry = {"file": file.filename, "time": datetime.now().isoformat()}
+                    entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
                     current.append(entry)
                     cur.execute(
                         "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at = NOW() WHERE id=%s",
@@ -2262,7 +2470,8 @@ def upload_resume_path(
 
 @router.get("/resumes/{recruiter_id}/{demand_id}")
 def fetch_all_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
-    """Return all resumes from tbl_cv_downloads for recruiter and demand, latest first."""
+    """Return all resumes from tbl_cv_downloads for recruiter and demand, latest first.
+    Only returns resumes with NULL status or 'hold' status. Excludes 'submitted' and 'rejected'."""
     _ensure_tables()
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
@@ -2272,6 +2481,13 @@ def fetch_all_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                     SELECT id, recruiter_id, demand_id, filename, file_path, created_at, status, candidate_details
                     FROM tbl_cv_downloads
                     WHERE recruiter_id=%s AND demand_id=%s
+                    AND (
+                        status IS NULL 
+                        OR status = '' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'hold' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'on_hold'
+                    )
+                    AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('submitted', 'rejected', 'discard', '1')
                     ORDER BY created_at DESC NULLS LAST, id DESC
                     """,
                     (recruiter_id, demand_id),
@@ -2322,7 +2538,7 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                     "email": email,
                     "phone": phone,
                     "remarks": remarks,
-                    "status": status_in or None,
+                    "status": normalized or None,
                 }
 
                 cur.execute(
@@ -2331,14 +2547,14 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                     SET status=%s, candidate_details=%s::jsonb
                     WHERE id=%s
                     """,
-                    (status_in, json.dumps(details_obj), cv_id),
+                    (normalized, json.dumps(details_obj), cv_id),
                 )
                 if cur.rowcount != 1:
                     conn.rollback()
                     return {"success": False, "message": "Failed to update resume (not found or unchanged)"}
 
                 # If Submitted, also append to tbl_recruiter_activity.cv_list
-                if (status_in or "").lower() == "submitted":
+                if normalized == "submitted":
                     cur.execute(
                         """
                         SELECT id, cv_list FROM tbl_recruiter_activity
@@ -2366,6 +2582,7 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                                 pass
                         next_id = max_id + 1
 
+                        from datetime import date
                         new_entry = {
                             "candidate_id": next_id,
                             "candidate_name": candidate_name,
@@ -2375,6 +2592,7 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                             "filename": filename,
                             "file_path": file_path,
                             "status": 0,
+                            "recruiter_date": date.today().isoformat(),  # Add recruiter_date when recruiter uploads profile
                         }
 
                         # Push into flat list per spec
@@ -2438,16 +2656,9 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
                 )
                 row = cur.fetchone()
                 if row is None:
-                    # If not found, insert new
-                    cur.execute(
-                        """
-                        INSERT INTO tbl_cv_downloads (recruiter_id, demand_id, filename, file_path, status, candidate_details)
-                        VALUES (%s, %s, %s, %s, %s, %s::jsonb)
-                        RETURNING id
-                        """,
-                        (recruiter_id, demand_id, filename, payload.get("file_path") or "", normalized_status, json.dumps(details_obj)),
-                    )
-                    row = cur.fetchone()
+                    # File record should exist from when file was opened. If not found, return error.
+                    conn.rollback()
+                    raise HTTPException(status_code=404, detail=f"CV file '{filename}' not found for this demand. Please refresh and try again.")
 
                 # Update tbl_recruiter_activity.cv_list
                 cur.execute(
@@ -2474,10 +2685,16 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
                         "phone": phone,
                         "status": normalized_status,
                     }
+                    from datetime import date
                     if idx == -1:
-                        current.append({"file": filename, "candidate": candidate_json})
+                        new_entry = {"file": filename, "candidate": candidate_json}
+                        new_entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
+                        current.append(new_entry)
                     else:
                         current[idx]["candidate"] = candidate_json
+                        # Ensure recruiter_date exists when updating (set to current date if missing)
+                        if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
+                            current[idx]["recruiter_date"] = date.today().isoformat()
 
                     # Only append to activity list if status is submitted
                     if normalized_status == "submitted":
@@ -2500,7 +2717,8 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @router.get("/{recruiter_id}/{demand_id}/resumes-db")
 def list_resumes_db(recruiter_id: int, demand_id: int) -> List[Dict[str, Any]]:
-    """List resumes from tbl_cv_downloads for given recruiter and demand."""
+    """List resumes from tbl_cv_downloads for given recruiter and demand.
+    Only returns resumes with NULL status or 'hold' status. Excludes 'submitted' and 'rejected'."""
     _ensure_tables()
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
@@ -2510,6 +2728,13 @@ def list_resumes_db(recruiter_id: int, demand_id: int) -> List[Dict[str, Any]]:
                     SELECT id, filename, file_path, created_at, status, candidate_details
                     FROM tbl_cv_downloads
                     WHERE recruiter_id=%s AND demand_id=%s
+                    AND (
+                        status IS NULL 
+                        OR status = '' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'hold' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'on_hold'
+                    )
+                    AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('submitted', 'rejected', 'discard', '1')
                     ORDER BY created_at DESC
                     """,
                     (recruiter_id, demand_id),
@@ -2544,6 +2769,23 @@ def serve_resume_file(recruiter_id: int, demand_id: int, filename: str):
                 elif lower.endswith('.docx'):
                     media = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 headers = {"Content-Disposition": "inline"}
+                # Upsert a row into tbl_cv_downloads when a file is opened, so UI lists always reflect openings
+                try:
+                    normalized_path = p.replace('\\', '/')
+                    with psycopg.connect(DATABASE_DSN) as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                INSERT INTO tbl_cv_downloads (recruiter_id, demand_id, filename, file_path)
+                                VALUES (%s, %s, %s, %s)
+                                ON CONFLICT DO NOTHING
+                                """,
+                                (recruiter_id, demand_id, os.path.basename(p), normalized_path)
+                            )
+                        conn.commit()
+                except Exception:
+                    # Non-fatal; still serve the file
+                    pass
                 return FileResponse(p, media_type=media, headers=headers)
         raise HTTPException(status_code=404, detail="File not found")
     except HTTPException:
@@ -2577,8 +2819,9 @@ def get_demand_cvs(recruiter_id: int, demand_id: int) -> List[Dict[str, Any]]:
 # New: List local CV files under recruiter_files/demand/<recruiter_id>/<demand_id>
 @router.get("/{recruiter_id}/{demand_id}/cv-list")
 def get_local_cv_list(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
-    """Return list of PDF/DOCX files from local directory for the recruiter/demand.
-    Path base: recruiter_files/demand/<recruiter_id>/<demand_id>/
+    """Return list of PDF/DOC/DOCX files from local directory for the recruiter/demand.
+    Primary path: <cv_download_path or recruiter_files>/demand/<recruiter_id>/<demand_id>/
+    Fallback path: <project_root>/src/assets/cv_uploads/<recruiter_id>/<demand_id>/
     """
     import os
     try:
@@ -2599,13 +2842,20 @@ def get_local_cv_list(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
             base_dir = os.getenv("RECRUITER_FILES_BASE", "recruiter_files")
         target_dir = os.path.join(base_dir, "demand", str(recruiter_id), str(demand_id))
         if not os.path.isdir(target_dir):
-            # Return folderPath for UI display even if empty
-            return {"cvList": [], "folderPath": base_dir, "message": "[WARN] No resumes found for this demand."}
+            # Fallback to src/assets/cv_uploads/<rid>/<did>
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            alt_dir = os.path.join(project_root, "src", "assets", "cv_uploads", str(recruiter_id), str(demand_id))
+            if os.path.isdir(alt_dir):
+                target_dir = alt_dir
+            else:
+                # Return folderPath for UI display even if empty
+                return {"cvList": [], "folderPath": base_dir, "message": "[WARN] No resumes found for this demand."}
 
         items: List[Dict[str, Any]] = []
+        allowed_exts = (".pdf", ".docx", ".doc")
         for name in sorted(os.listdir(target_dir)):
             lower = name.lower()
-            if not (lower.endswith(".pdf") or lower.endswith(".docx")):
+            if not any(lower.endswith(ext) for ext in allowed_exts):
                 continue
             file_path = os.path.join(target_dir, name)
             try:
@@ -2620,6 +2870,23 @@ def get_local_cv_list(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                 "created_at": created_iso,
                 "status": "Under Verification"
             })
+        # Upsert discovered files into tbl_cv_downloads so UI can strictly read from DB if needed
+        try:
+            with psycopg.connect(DATABASE_DSN) as conn:
+                with conn.cursor() as cur:
+                    for it in items:
+                        cur.execute(
+                            """
+                            INSERT INTO tbl_cv_downloads (recruiter_id, demand_id, filename, file_path)
+                            VALUES (%s, %s, %s, %s)
+                            ON CONFLICT DO NOTHING
+                            """,
+                            (recruiter_id, demand_id, it["filename"], it["path"]) 
+                        )
+                conn.commit()
+        except Exception:
+            # non-fatal: listing should still work even if DB upsert fails
+            pass
         return {"cvList": items, "folderPath": base_dir}
     except Exception as e:
         # Graceful error message for UI
@@ -2960,14 +3227,14 @@ def get_recruiter_process_count(recruiter_id: int) -> Dict[str, Any]:
                             )
                             total_assigned = int(cur.fetchone()[0])
                     
-                            # Count current processes (in_progress or processing)
+                            # Count current processes (processing activities)
                             cur.execute(
                                 """
-                                SELECT COUNT(*) FROM tbl_demand_sheet 
-                                WHERE assigned_to::text LIKE %s 
-                                AND status = 'in_progress'
+                                SELECT COUNT(*) FROM tbl_recruiter_activity 
+                                WHERE recruiter_id = %s 
+                                AND activity_status = 'processing'
                                 """,
-                                (f"%{recruiter_id}%",)
+                                (recruiter_id,)
                             )
                             current_processes = int(cur.fetchone()[0])
                     
@@ -2992,12 +3259,12 @@ def get_recruiter_process_count(recruiter_id: int) -> Dict[str, Any]:
                                 )
                                 total_assigned = int(cur.fetchone()[0])
                                 
-                                # Count current processes (in_progress or processing)
+                                # Count current processes (processing activities)
                                 cur.execute(
                                     """
-                                    SELECT COUNT(*) FROM tbl_demand_sheet 
-                                    WHERE %s = ANY(assigned_to) 
-                                    AND status = 'in_progress'
+                                    SELECT COUNT(*) FROM tbl_recruiter_activity 
+                                    WHERE recruiter_id = %s 
+                                    AND activity_status = 'processing'
                                     """,
                                     (recruiter_id,)
                                 )
@@ -3538,7 +3805,7 @@ def check_quota_and_update_status(request: Dict[str, Any]) -> Dict[str, Any]:
                 # Check if quota is already met
                 quota_met = uploaded_count >= required_count and required_count > 0
                 
-                # If quota is met, immediately update activity_status to 'closed'
+                # If quota is met, immediately update activity_status to 'closed' and close the demand
                 if quota_met and current_status != 'closed':
                     try:
                         cur.execute(
@@ -3549,6 +3816,15 @@ def check_quota_and_update_status(request: Dict[str, Any]) -> Dict[str, Any]:
                             WHERE demand_id = %s AND recruiter_id = %s
                             """,
                             (demand_id, recruiter_id)
+                        )
+                        # Also close the demand itself
+                        cur.execute(
+                            """
+                            UPDATE tbl_demand_sheet
+                            SET status = 'closed', updated_at = NOW()
+                            WHERE id = %s
+                            """,
+                            (demand_id,)
                         )
                         conn.commit()
                         print(f"✅ Updated activity status to closed for demand {demand_id}, recruiter {recruiter_id}")
@@ -3685,37 +3961,41 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception as e:
                     print(f"⚠️ Column setup warning: {e}")
                 
-                # Update uploaded_cv_count for all recruiters with same demand_id
+                # Recalculate uploaded_cv_count from cv_list for all recruiters with same demand_id
+                # This ensures accuracy by counting actual CVs instead of using increment/decrement
                 try:
-                    # First, get current count to handle None values
+                    # Calculate the actual count from cv_list (excluding rejected CVs with status = 2)
                     cur.execute(
                         """
-                        SELECT uploaded_cv_count FROM tbl_recruiter_activity 
-                        WHERE demand_id = %s LIMIT 1
+                        SELECT COALESCE(SUM(
+                            (SELECT COUNT(*) 
+                             FROM jsonb_array_elements(ra.cv_list) AS cv 
+                             WHERE (cv->>'status')::int != 2)
+                        ), 0) as total_cv_count
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.demand_id = %s
+                        AND ra.cv_list IS NOT NULL
+                        AND jsonb_array_length(ra.cv_list) > 0
                         """,
                         (demand_id,)
                     )
-                    current_result = cur.fetchone()
-                    current_count = current_result[0] if current_result else 0
                     
-                    # Handle None values
-                    if current_count is None:
-                        current_count = 0
+                    calculated_count_result = cur.fetchone()
+                    calculated_count = calculated_count_result[0] if calculated_count_result else 0
                     
-                    new_count = current_count + increment
-                    print(f"🔍 Current count: {current_count}, Increment: {increment}, New count: {new_count}")
+                    print(f"🔍 Recalculated count from cv_list: {calculated_count}")
                     
-                    # Update with the calculated new count
+                    # Update all recruiter activities with the recalculated count
                     cur.execute(
                         """
                         UPDATE tbl_recruiter_activity 
                         SET uploaded_cv_count = %s, updated_at = NOW()
                         WHERE demand_id = %s
                         """,
-                        (new_count, demand_id)
+                        (calculated_count, demand_id)
                     )
                     
-                    print(f"📊 Updated {cur.rowcount} recruiter activities with new count: {new_count}")
+                    print(f"📊 Updated {cur.rowcount} recruiter activities with recalculated count: {calculated_count}")
                 except Exception as e:
                     print(f"❌ Error updating recruiter activities: {e}")
                     raise HTTPException(status_code=500, detail=f"Database error: {e}")
@@ -3874,6 +4154,7 @@ def get_activity_status(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT 
+                        id,
                         activity_status,
                         required_cv_count,
                         uploaded_cv_count,
@@ -3887,7 +4168,7 @@ def get_activity_status(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                 if not row:
                     raise HTTPException(status_code=404, detail="Activity not found")
                 
-                activity_status, required_cv_count, uploaded_cv_count, cv_list = row
+                activity_id, activity_status, required_cv_count, uploaded_cv_count, cv_list = row
                 
                 # Count actual CVs in cv_list if it exists
                 actual_cv_count = 0
@@ -3903,6 +4184,7 @@ def get_activity_status(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                         actual_cv_count = 0
                 
                 return {
+                    "id": activity_id,
                     "activity_status": activity_status,
                     "required_cv_count": required_cv_count or 0,
                     "uploaded_cv_count": actual_cv_count,

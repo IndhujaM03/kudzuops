@@ -97,6 +97,78 @@ interface SubmissionData {
       font-size: 14px;
     }
 
+    /* Demand Details Structure */
+    .demand-row-1,
+    .demand-row-2 {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+
+    .demand-row-2 {
+      margin-bottom: 0;
+    }
+
+    .demand-label {
+      font-weight: 600;
+      color: var(--kudzu-primary);
+      font-size: 14px;
+      min-width: fit-content;
+    }
+
+    .demand-value {
+      color: #374151;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .demand-value.priority-value {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .demand-value.priority-value.priority-high {
+      background: #fef2f2;
+      color: #dc2626;
+    }
+
+    .demand-value.priority-value.priority-medium {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .demand-value.priority-value.priority-low {
+      background: #f0fdf4;
+      color: #16a34a;
+    }
+
+    /* Responsive Design for Demand Details */
+    @media (max-width: 768px) {
+      .demand-row-1,
+      .demand-row-2 {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .demand-label {
+        font-size: 13px;
+        margin-bottom: 2px;
+      }
+
+      .demand-value {
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+
+      .demand-row-2 {
+        margin-bottom: 0;
+      }
+    }
+
     .header-right {
       display: flex;
       gap: 12px;
@@ -480,8 +552,25 @@ interface SubmissionData {
       <!-- Header -->
       <div class="header">
         <div class="header-left">
-          <h1>Demand #{{ demand?.id }} - {{ demand?.job_title }}</h1>
-          <p>{{ demand?.client_name }} • {{ demand?.skill }} • {{ demand?.no_of_positions }} positions</p>
+          <h1>Demand #{{ demand?.id }}</h1>
+          <!-- Row 1: Job Title, Client, SPOC -->
+          <div class="demand-row-1">
+            <span class="demand-label">Job Title:</span>
+            <span class="demand-value">{{ demand?.job_title || demand?.skill || 'N/A' }}</span>
+            <span class="demand-label">Client:</span>
+            <span class="demand-value">{{ demand?.client_name || 'N/A' }}</span>
+            <span class="demand-label">SPOC:</span>
+            <span class="demand-value">{{ demand?.spoc_name || 'N/A' }}</span>
+          </div>
+          <!-- Row 2: Position, Priority -->
+          <div class="demand-row-2">
+            <span class="demand-label">Position:</span>
+            <span class="demand-value">{{ demand?.no_of_positions || 0 }}</span>
+            <span class="demand-label">Priority:</span>
+            <span class="demand-value priority-value" [class]="'priority-' + (demand?.priority || 'medium')">
+              {{ (demand?.priority || 'medium') | titlecase }}
+            </span>
+          </div>
         </div>
         <div class="header-right">
           <span class="processing-badge" *ngIf="isProcessing">🟢 Processing</span>
@@ -912,8 +1001,9 @@ export class DemandDetailComponent implements OnInit {
         console.log('✅ Profile submission response:', response);
         
         // Update CV count after successful submission
+        const demandId = this.route.snapshot.params['id'];
         const updatePayload = {
-          demand_id: this.demandId,
+          demand_id: demandId,
           recruiter_id: this.auth.getCurrentUserId(),
           increment: this.selectedCVs.length
         };

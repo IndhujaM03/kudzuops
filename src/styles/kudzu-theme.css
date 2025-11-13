@@ -233,10 +233,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Priority and Status Badges */
-.priority-high,
+.priority-high {
+  background: #fecaca !important;
+  color: #dc2626 !important;
+}
+
 .status-processing {
-  background: var(--kudzu-primary-light) !important;
-  color: var(--kudzu-primary) !important;
+  background: #d1fae5 !important;
+  color: #065f46 !important;
 }
 
 .priority-medium,

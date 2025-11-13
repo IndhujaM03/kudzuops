@@ -1,7 +1,10 @@
 .env
+.env.backup
 __pycache__/
 *.pyc
 node_modules/
 dist/
 build/
-.angular/
+.angular/.env.local
+.env.development
+.env.production

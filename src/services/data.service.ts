@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { forkJoin, Observable, map, of } from 'rxjs';
+import { environment } from '../environments/environment';
 import * as d3 from 'd3-dsv';
 import { RecruiterPerformanceData } from '../components/recruiter-performance-tracker/recruiter-performance-tracker.component';
-import { environment } from '../environments/environment';
 
 export interface SubmissionData {
   sno: number;
@@ -47,7 +47,7 @@ private DEMAND_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7
 
 private RECRUITER_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSOAQJWd7Pm_7pTn04ONGLY_xA69cq2ZHP9wf7Hb5VlFBJLFdGjL9ocdgnHo5fxeA6Dtjq5dPzGDs7/pub?gid=364112528&single=true&output=csv';
 
-  apiBase = 'http://localhost:8000';
+  apiBase = environment.apiBase;
 
   constructor(private http: HttpClient) {}
 

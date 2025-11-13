@@ -1,10 +1,22 @@
 import { Injectable } from '@angular/core';
+import { Subject } from 'rxjs';
+
+export interface ToastMessage {
+  message: string;
+  type: 'success' | 'error' | 'warning';
+}
 
 @Injectable({
   providedIn: 'root'
 })
 export class ToastService {
   private toasts: HTMLElement[] = [];
+  private toastSubject = new Subject<ToastMessage>();
+  
+  // Observable for components to subscribe to
+  get toast$() {
+    return this.toastSubject.asObservable();
+  }
 
   success(message: string): void {
     console.log('✅ Success:', message);
@@ -16,21 +28,34 @@ export class ToastService {
     this.showToast(message, 'error');
   }
 
-  show(message: string, type: 'success' | 'error' = 'success'): void {
-    if (type === 'success') {
-      this.success(message);
-    } else {
-      this.error(message);
-    }
+  warning(message: string): void {
+    console.warn('⚠️ Warning:', message);
+    this.showToast(message, 'warning');
   }
 
-  private showToast(message: string, type: 'success' | 'error'): void {
+  show(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
+    this.showToast(message, type);
+  }
+
+  private showToast(message: string, type: 'success' | 'error' | 'warning'): void {
+    // Emit to subject for global component
+    this.toastSubject.next({ message, type });
+    
+    // Also create direct DOM toasts for backward compatibility
+    this.createDirectToast(message, type);
+  }
+
+  private createDirectToast(message: string, type: 'success' | 'error' | 'warning'): void {
     // Create toast element
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    
+    // Get appropriate icon for each type
+    const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️';
+    
     toast.innerHTML = `
       <div class="toast-content">
-        <span class="toast-icon">${type === 'success' ? '✅' : '❌'}</span>
+        <span class="toast-icon">${icon}</span>
         <span class="toast-message">${message}</span>
         <button class="toast-close" onclick="this.parentElement.parentElement.remove()">×</button>
       </div>
@@ -48,10 +73,10 @@ export class ToastService {
       toast.classList.add('toast-show');
     }, 10);
 
-    // Auto-remove after 4 seconds (3-5 seconds range)
+    // Auto-remove after 3 seconds (standardized duration)
     setTimeout(() => {
       this.removeToast(toast);
-    }, 4000);
+    }, 3000);
   }
 
   private removeToast(toast: HTMLElement): void {
@@ -78,20 +103,22 @@ export class ToastService {
         top: 20px;
         right: 20px;
         z-index: 10000;
-        background: white;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
         border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        border-left: 4px solid #10b981;
-        min-width: 300px;
-        max-width: 500px;
+        box-shadow: 0 4px 12px rgba(24, 45, 23, 0.15);
+        border-left: 4px solid var(--kudzu-primary);
+        min-width: 280px;
+        max-width: 400px;
         opacity: 0;
         transform: translateX(100%);
         transition: all 0.3s ease-in-out;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: "Manrope", "Manrope Placeholder", sans-serif;
       }
 
       .toast-error {
         border-left-color: #ef4444;
+        background: rgba(254, 226, 226, 0.95);
       }
 
       .toast-show {
@@ -107,32 +134,32 @@ export class ToastService {
       .toast-content {
         display: flex;
         align-items: center;
-        padding: 12px 16px;
-        gap: 12px;
+        padding: 10px 14px;
+        gap: 10px;
       }
 
       .toast-icon {
-        font-size: 18px;
+        font-size: 16px;
         flex-shrink: 0;
       }
 
       .toast-message {
         flex: 1;
-        font-size: 14px;
-        font-weight: 500;
-        color: #374151;
-        line-height: 1.4;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1a202c;
+        line-height: 1.3;
       }
 
       .toast-close {
         background: none;
         border: none;
-        font-size: 18px;
-        color: #9ca3af;
+        font-size: 16px;
+        color: #6b7280;
         cursor: pointer;
         padding: 0;
-        width: 20px;
-        height: 20px;
+        width: 18px;
+        height: 18px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -147,25 +174,37 @@ export class ToastService {
 
       /* Success toast specific styling */
       .toast-success {
-        border-left-color: #10b981;
+        border-left-color: var(--kudzu-primary);
+        background: rgba(236, 253, 245, 0.95);
       }
 
       .toast-success .toast-icon {
-        color: #10b981;
+        color: var(--kudzu-primary);
       }
 
       /* Error toast specific styling */
       .toast-error {
         border-left-color: #ef4444;
+        background: rgba(254, 226, 226, 0.95);
       }
 
       .toast-error .toast-icon {
         color: #ef4444;
       }
 
+      /* Warning toast specific styling */
+      .toast-warning {
+        border-left-color: #f59e0b;
+        background: rgba(254, 243, 199, 0.95);
+      }
+
+      .toast-warning .toast-icon {
+        color: #f59e0b;
+      }
+
       /* Stack multiple toasts */
       .toast:nth-child(n+2) {
-        top: calc(20px + (n-1) * 80px);
+        top: calc(20px + (n-1) * 60px);
       }
     `;
     document.head.appendChild(style);

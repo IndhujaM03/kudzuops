@@ -1,9 +1,24 @@
+declare const process: {
+  env: {
+    NG_APP_API_BASE?: string;
+  };
+};
+
+const getApiBase = () => {
+  if (typeof process !== 'undefined' && process.env?.NG_APP_API_BASE) {
+    return process.env.NG_APP_API_BASE;
+  }
+  // Fallback only if env var not set
+  return '';
+};
+
 export const environment = {
   production: false,
-  // Point Angular to FastAPI (kudzuops DB is configured server-side)
-  apiBase: (window as any)["__env__apiBase"] || (typeof import.meta !== 'undefined' ? (import.meta as any).env?.NG_APP_API_BASE : undefined) || 'http://localhost:8000',
-  authBase: (window as any)["__env__authBase"] || undefined,
-  superAdminBase: (window as any)["__env__superAdminBase"] || undefined,
+  // Base environment - should not be used directly
+  // Development and production configs override this
+  apiBase: getApiBase(),
+  authBase: undefined as string | undefined,
+  superAdminBase: undefined as string | undefined,
 };
 
 // Fallback derive auth/superadmin from apiBase if not explicitly provided

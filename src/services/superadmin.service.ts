@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../environments/environment';
 
 export interface PendingUser {
   id: number;
@@ -22,7 +23,7 @@ export interface SuperAdminAuthResponse {
 @Injectable({ providedIn: 'root' })
 export class SuperAdminService {
   private http = inject(HttpClient);
-  private api = 'http://localhost:8000';
+  private api = environment.apiBase;
   private getAuthHeaders(): HttpHeaders {
     const token = localStorage.getItem('access_token');
     const type = localStorage.getItem('token_type') || 'bearer';

@@ -4,6 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, AbstractContro
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Router, RouterModule, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { environment } from '../../environments/environment';
 
 interface LoginResponse {
   access_token: string;
@@ -50,7 +51,7 @@ class NotificationService {
             <label class="form-label">Email</label>
             <input type="email" formControlName="email" placeholder="you@example.com"
                    [class.error]="submitted && form.get('email')?.invalid"
-                   class="form-input" />
+                   class="form-input" autocomplete="username" />
             <div *ngIf="submitted && form.get('email')?.invalid" class="form-error">
               <span *ngIf="form.get('email')?.errors?.['required']">Email is required</span>
               <span *ngIf="form.get('email')?.errors?.['email']">Enter a valid email</span>
@@ -61,7 +62,7 @@ class NotificationService {
             <label class="form-label">Password</label>
             <input [type]="showPassword() ? 'text' : 'password'" formControlName="password" placeholder="••••••••"
                    [class.error]="submitted && form.get('password')?.invalid"
-                   class="form-input" />
+                   class="form-input" autocomplete="current-password" />
             <div *ngIf="submitted && form.get('password')?.invalid" class="form-error">
               <span *ngIf="form.get('password')?.errors?.['required']">Password is required</span>
             </div>
@@ -109,8 +110,7 @@ class NotificationService {
               </ul>
             </div>
             <div class="modal-footer">
-              <button (click)="showApprovalModal=false" class="btn btn-secondary">Close</button>
-              <button (click)="onGoogleSignIn()" class="btn btn-primary">Contact Admin</button>
+              <button (click)="showApprovalModal=false" class="btn btn-secondary btn-close">Close</button>
             </div>
           </div>
         </div>
@@ -309,6 +309,12 @@ class NotificationService {
       justify-content: flex-end;
       gap: 8px;
     }
+
+    .btn-close {
+      padding: 8px 16px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
   `]
 })
 export class LoginComponent {
@@ -319,7 +325,7 @@ export class LoginComponent {
   private auth = inject(AuthService);
   private notify = new NotificationService();
 
-  apiBase = 'http://localhost:8000';
+  apiBase = environment.apiBase;
   loading = signal(false);
   submitted = false;
   alertMessage = '';
@@ -417,7 +423,7 @@ export class LoginComponent {
           console.error('Navigation to superadmin failed:', err);
         });
       } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
-        this.router.navigate(['/teamleader/demand-sheet']).catch((err) => {
+        this.router.navigate(['/teamleader/dashboard']).catch((err) => {
           console.error('Navigation to teamleader failed:', err);
         });
       } else if (userRole === 'recruiter') {
@@ -437,20 +443,58 @@ export class LoginComponent {
 
   onGoogleSignIn() {
     if (this.loading()) return;
+    
+    this.loading.set(true);
+    
     // Open Google OAuth in a popup window for better UX
     const popup = window.open(`${this.apiBase}/auth/google/login`, 'googleAuth', 'width=500,height=600,scrollbars=yes,resizable=yes');
     
+    if (!popup) {
+      this.loading.set(false);
+      this.alertMessage = 'Popup blocked. Please allow popups for this site.';
+      return;
+    }
+    
     // Listen for the popup to close and check for success
     const checkClosed = setInterval(() => {
-      if (popup?.closed) {
+      try {
+        if (popup.closed) {
+          clearInterval(checkClosed);
+          this.loading.set(false);
+          
+          // Check if user is now authenticated
+          const token = localStorage.getItem('access_token');
+          if (token) {
+            this.notify.showSuccess('Google sign-in successful');
+            this.handleRoleBasedNavigation({});
+          } else {
+            this.alertMessage = 'Google sign-in was cancelled or failed.';
+          }
+        }
+      } catch (error) {
+        // Handle COOP errors gracefully
+        console.warn('COOP policy blocked popup access:', error);
         clearInterval(checkClosed);
-        // Check if user is now authenticated
+        this.loading.set(false);
+        
+        // Check if user is authenticated despite the error
         const token = localStorage.getItem('access_token');
         if (token) {
           this.notify.showSuccess('Google sign-in successful');
           this.handleRoleBasedNavigation({});
+        } else {
+          this.alertMessage = 'Google sign-in status unknown. Please try again.';
         }
       }
     }, 1000);
+    
+    // Timeout after 2 minutes
+    setTimeout(() => {
+      if (!popup.closed) {
+        clearInterval(checkClosed);
+        this.loading.set(false);
+        this.alertMessage = 'Google sign-in timed out. Please try again.';
+      }
+    }, 120000);
   }
 }

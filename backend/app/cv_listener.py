@@ -71,7 +71,10 @@ class _CVHandler(FileSystemEventHandler):
                         current = cv_list if isinstance(cv_list, list) else json.loads(cv_list or "[]")
                     except Exception:
                         current = []
-                    current.append({"file": filename, "time": ts, "path": target_path.replace('\\', '/')})
+                    from datetime import date
+                    entry = {"file": filename, "time": ts, "path": target_path.replace('\\', '/')}
+                    entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
+                    current.append(entry)
                     cur.execute(
                         "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at=NOW() WHERE id=%s",
                         (json.dumps(current), activity_id),

@@ -729,7 +729,7 @@ interface DashboardData {
     }
 
     .status-badge.open { background: #dbeafe; color: #1d4ed8; }
-    .status-badge.processing { background: #fef3c7; color: #d97706; }
+    .status-badge.processing { background: #d1fae5; color: #065f46; }
     .status-badge.hold { background: #fef3c7; color: #facc15; }
     .status-badge.closed { background: #dcfce7; color: #16a34a; }
 
@@ -854,7 +854,7 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
   statusFilter = '';
   filteredActivities: Activity[] = [];
 
-  private apiUrl = environment.apiBase || 'http://localhost:8000';
+  private apiUrl = environment.apiBase;
   currentUser: any;
   private resizeTimeout: any;
 
@@ -869,14 +869,44 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
     console.log('Dashboard component initializing...');
     console.log('Token exists:', !!localStorage.getItem('access_token'));
     
+    // Validate token exists and is not expired
+    const token = localStorage.getItem('access_token');
+    const expiresAt = localStorage.getItem('expires_at');
+    
+    if (token && expiresAt) {
+      const expiresTime = new Date(expiresAt).getTime();
+      const now = new Date().getTime();
+      if (now >= expiresTime) {
+        console.error('Token has expired');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('token_type');
+        localStorage.removeItem('expires_at');
+        this.error = 'Session expired. Please log in again.';
+        setTimeout(() => {
+          this.router.navigate(['/signin']);
+        }, 2000);
+        return;
+      }
+    }
+    
     // First try to get user ID directly
     const directUserId = this.authService.getCurrentUserId();
     console.log('Direct user ID from token:', directUserId);
     
-    if (directUserId) {
+    if (directUserId && directUserId !== null && directUserId !== undefined) {
       this.currentUser = { id: directUserId };
       console.log('Using direct user ID:', directUserId);
       this.loadDashboardData();
+      return;
+    }
+    
+    // If no valid ID found from direct method, clear localStorage and redirect
+    if (!localStorage.getItem('access_token')) {
+      console.error('No access token found in localStorage');
+      this.error = 'Please log in to continue';
+      setTimeout(() => {
+        this.router.navigate(['/signin']);
+      }, 2000);
       return;
     }
     
@@ -885,11 +915,24 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       next: (user) => {
         console.log('Current user from auth service Observable:', user);
         this.currentUser = user;
-        this.loadDashboardData();
+        
+        // CRITICAL: Only load dashboard data if we have a valid user ID
+        if (this.currentUser && this.currentUser.id) {
+          this.loadDashboardData();
+        } else {
+          console.error('No valid user ID found. Redirecting to login.');
+          this.error = 'User not authenticated. Redirecting to login...';
+          setTimeout(() => {
+            this.router.navigate(['/signin']);
+          }, 2000);
+        }
       },
       error: (error) => {
         console.error('Error getting current user from Observable:', error);
         this.error = 'User not authenticated';
+        setTimeout(() => {
+          this.router.navigate(['/signin']);
+        }, 2000);
       }
     });
   }
@@ -1009,28 +1052,43 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
     console.log('User ID type:', typeof this.currentUser.id);
     console.log('User ID value:', this.currentUser.id);
 
-    if (!this.currentUser.id || this.currentUser.id === 'undefined' || this.currentUser.id === undefined) {
+    if (!this.currentUser.id || this.currentUser.id === undefined || this.currentUser.id === null) {
       console.error('Invalid user ID:', this.currentUser.id);
       console.log('Attempting to get user ID from token directly...');
       
       // Try one more time to get the user ID directly
       const fallbackUserId = this.authService.getCurrentUserId();
-      if (fallbackUserId) {
+      if (fallbackUserId && fallbackUserId !== null && fallbackUserId !== undefined) {
         console.log('Found fallback user ID:', fallbackUserId);
         this.currentUser.id = fallbackUserId;
       } else {
         this.error = 'Invalid user ID - please log in again';
+        console.error('CRITICAL: No valid recruiter_id available. Cannot load dashboard.');
+        setTimeout(() => {
+          this.router.navigate(['/signin']);
+        }, 2000);
         return;
       }
+    }
+
+    // Final validation - ensure we have a proper numeric ID
+    const recruiterId = Number(this.currentUser.id);
+    if (isNaN(recruiterId) || recruiterId <= 0) {
+      console.error('CRITICAL: Invalid recruiter_id value:', recruiterId);
+      this.error = 'Invalid user ID - please log in again';
+      setTimeout(() => {
+        this.router.navigate(['/signin']);
+      }, 2000);
+      return;
     }
 
     this.loading = true;
     this.error = null;
 
-    console.log('Loading dashboard data for user:', this.currentUser.id);
+    console.log('Loading dashboard data for recruiter_id:', recruiterId);
     
-    // Use the new dashboard API endpoint
-    this.http.get<any>(`${this.apiUrl}/recruiter/${this.currentUser.id}/dashboard`)
+    // Use the new dashboard API endpoint with validated ID
+    this.http.get<any>(`${this.apiUrl}/recruiter/${recruiterId}/dashboard`)
       .subscribe({
         next: (data) => {
           console.log('Dashboard data loaded successfully:', data);
@@ -1068,6 +1126,20 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
         },
         error: (error) => {
           console.error('Error loading dashboard data:', error);
+          
+          // Check for authentication errors
+          if (error.status === 400 || error.status === 401) {
+            console.error('Authentication error detected. Redirecting to login.');
+            this.error = 'Session expired. Please log in again.';
+            setTimeout(() => {
+              // Clear localStorage and redirect
+              localStorage.removeItem('access_token');
+              localStorage.removeItem('token_type');
+              localStorage.removeItem('expires_at');
+              this.router.navigate(['/signin']);
+            }, 2000);
+            return;
+          }
           
           // Create fallback data structure for demonstration
           this.dashboardData = {
