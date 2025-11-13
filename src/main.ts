@@ -12,6 +12,14 @@ import { VerifyComponent } from './components/login/verify.component';
 import { ResetPasswordComponent } from './components/login/reset-password.component';
 import { VerifyResetComponent } from './components/login/verify-reset.component';
 import { SuperAdminDashboardComponent } from './components/superadmin/superadmin-dashboard.component';
+import { SuperAdminOverviewComponent } from './components/superadmin/superadmin-overview.component';
+import { SuperAdminUsersComponent } from './components/superadmin/superadmin-users.component';
+import { ManagerDashboardComponent } from './components/manager/manager-dashboard.component';
+import { ManagerLayoutComponent } from './components/manager/manager-layout.component';
+import { BusinessHeadDashboardComponent } from './components/businesshead/businesshead-dashboard.component';
+import { BusinessHeadLayoutComponent } from './components/businesshead/businesshead-layout.component';
+import { ClusterManagerLayoutComponent } from './components/clustermanager/clustermanager-layout.component';
+import { ClusterManagerDashboardComponent } from './components/clustermanager/clustermanager-dashboard.component';
 import { SuperAdminLayoutComponent } from './components/superadmin/superadmin-layout.component';
 import { TeamLeaderLayoutComponent } from './components/teamleader/teamleader-layout.component';
 import { TeamLeaderDashboardComponent } from './components/teamleader/teamleader-dashboard.component';
@@ -145,6 +153,12 @@ class AppRoot implements OnInit {
       this.router.navigate(['/superadmin/dashboard']).catch(() => {});
     } else if (role === 'team_leader' || role === 'teamleader' || role === 'team_leadr' || role === 'tl') {
       this.router.navigate(['/teamleader/dashboard']).catch(() => {});
+    } else if (role === 'manager') {
+      this.router.navigate(['/manager/dashboard']).catch(() => {});
+    } else if (role === 'business_head') {
+      this.router.navigate(['/businesshead/dashboard']).catch(() => {});
+    } else if (role === 'cluster_manager') {
+      this.router.navigate(['/clustermanager/dashboard']).catch(() => {});
     } else if (role === 'recruiter') {
       this.router.navigate(['/recruiter/dashboard']).catch(() => {});
     } else if (role === 'candidate') {
@@ -221,6 +235,9 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
     const roleMapping: { [key: string]: string[] } = {
       'super_admin': ['super_admin'],
       'team_leader': ['team_leader', 'teamleader', 'team_leadr', 'tl'],
+      'manager': ['manager'],
+      'business_head': ['business_head'],
+      'cluster_manager': ['cluster_manager'],
       'recruiter': ['recruiter'],
       'candidate': ['candidate']
     };
@@ -240,6 +257,15 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
       } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
         console.log('🔄 Redirecting team leader to dashboard');
         return router.parseUrl('/teamleader/dashboard') as UrlTree;
+      } else if (userRole === 'manager') {
+        console.log('🔄 Redirecting manager to dashboard');
+        return router.parseUrl('/manager/dashboard') as UrlTree;
+      } else if (userRole === 'business_head') {
+        console.log('🔄 Redirecting business head to dashboard');
+        return router.parseUrl('/businesshead/dashboard') as UrlTree;
+      } else if (userRole === 'cluster_manager') {
+        console.log('🔄 Redirecting cluster manager to dashboard');
+        return router.parseUrl('/clustermanager/dashboard') as UrlTree;
       } else if (userRole === 'recruiter') {
         console.log('🔄 Redirecting recruiter to dashboard');
         return router.parseUrl('/recruiter/dashboard') as UrlTree;
@@ -288,8 +314,14 @@ const rootRedirectGuard: CanActivateFn = () => {
     // Redirect based on role
     if (userRole === 'super_admin') {
       return router.parseUrl('/superadmin/dashboard') as UrlTree;
-      } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
-        return router.parseUrl('/teamleader/dashboard') as UrlTree;
+    } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
+      return router.parseUrl('/teamleader/dashboard') as UrlTree;
+    } else if (userRole === 'manager') {
+      return router.parseUrl('/manager/dashboard') as UrlTree;
+    } else if (userRole === 'business_head') {
+      return router.parseUrl('/businesshead/dashboard') as UrlTree;
+    } else if (userRole === 'cluster_manager') {
+      return router.parseUrl('/clustermanager/dashboard') as UrlTree;
     } else if (userRole === 'recruiter') {
       return router.parseUrl('/recruiter/dashboard') as UrlTree;
     } else if (userRole === 'candidate') {
@@ -320,12 +352,40 @@ const routes: Routes = [
     component: SuperAdminLayoutComponent,
     canActivate: [roleGuard('super_admin')],
     children: [
-      { path: 'dashboard', component: SuperAdminDashboardComponent },
+      { path: 'dashboard', component: SuperAdminOverviewComponent },
       { path: 'pending-approvals', component: SuperAdminDashboardComponent },
+      { path: 'users', component: SuperAdminUsersComponent },
       { path: 'client-settings/client', component: ClientSettingsComponent },
       { path: 'client-settings/spoc', component: ClientSettingsComponent },
       { path: 'client-settings', redirectTo: 'client-settings/client', pathMatch: 'full' },
       { path: 'pending-users', redirectTo: 'pending-approvals', pathMatch: 'full' },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+    ]
+  },
+  {
+    path: 'manager',
+    component: ManagerLayoutComponent,
+    canActivate: [roleGuard('manager')],
+    children: [
+      { path: 'dashboard', component: ManagerDashboardComponent },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+    ]
+  },
+  {
+    path: 'businesshead',
+    component: BusinessHeadLayoutComponent,
+    canActivate: [roleGuard('business_head')],
+    children: [
+      { path: 'dashboard', component: BusinessHeadDashboardComponent },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+    ]
+  },
+  {
+    path: 'clustermanager',
+    component: ClusterManagerLayoutComponent,
+    canActivate: [roleGuard('cluster_manager')],
+    children: [
+      { path: 'dashboard', component: ClusterManagerDashboardComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

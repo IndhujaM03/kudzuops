@@ -3,18 +3,8 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
 
-export interface PendingUser {
-  id: number;
-  email: string;
-  first_name?: string;
-  last_name?: string;
-  role?: string;
-  reporting_to?: number | '';
-  showRoleDropdown?: boolean;
-}
-
 @Injectable({ providedIn: 'root' })
-export class SuperAdminService {
+export class BusinessHeadService {
   private http = inject(HttpClient);
   private api = environment.apiBase;
 
@@ -27,13 +17,13 @@ export class SuperAdminService {
   // Dashboard methods
   getKeyHighlights(): Observable<{ total_submissions: number; current_demand: number; number_of_managers: number }> {
     return this.http.get<{ total_submissions: number; current_demand: number; number_of_managers: number }>(
-      `${this.api}/superadmin/dashboard/key-highlights`, 
+      `${this.api}/businesshead/dashboard/key-highlights`, 
       { headers: this.getAuthHeaders() }
     );
   }
 
   getDailySubmissionsTrend(startDate?: string, endDate?: string): Observable<{ daily_trend: Array<{ date: string; count: number; managers?: Array<{ manager_name: string; count: number }> }> }> {
-    let url = `${this.api}/superadmin/dashboard/daily-submissions-trend`;
+    let url = `${this.api}/businesshead/dashboard/daily-submissions-trend`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -46,7 +36,7 @@ export class SuperAdminService {
   }
 
   getDemandByManagers(startDate?: string, endDate?: string): Observable<{ distribution: Array<{ manager_id: number; manager_name: string; count: number; percentage: number }> }> {
-    let url = `${this.api}/superadmin/dashboard/demand-by-managers`;
+    let url = `${this.api}/businesshead/dashboard/demand-by-managers`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -59,7 +49,7 @@ export class SuperAdminService {
   }
 
   getDemandByStatus(startDate?: string, endDate?: string): Observable<{ status_counts: Array<{ status: string; count: number }> }> {
-    let url = `${this.api}/superadmin/dashboard/demand-by-status`;
+    let url = `${this.api}/businesshead/dashboard/demand-by-status`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -72,7 +62,7 @@ export class SuperAdminService {
   }
 
   getDemandBySkill(startDate?: string, endDate?: string): Observable<{ skill_distribution: Array<{ skill: string; count: number; percentage: number }> }> {
-    let url = `${this.api}/superadmin/dashboard/demand-by-skill`;
+    let url = `${this.api}/businesshead/dashboard/demand-by-skill`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -85,7 +75,7 @@ export class SuperAdminService {
   }
 
   getSubmissionsByManagers(startDate?: string, endDate?: string): Observable<{ manager_submissions: Array<{ manager_id: number; manager_name: string; count: number }> }> {
-    let url = `${this.api}/superadmin/dashboard/submissions-by-managers`;
+    let url = `${this.api}/businesshead/dashboard/submissions-by-managers`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -98,7 +88,7 @@ export class SuperAdminService {
   }
 
   getDemandBySpocs(startDate?: string, endDate?: string): Observable<{ distribution: Array<{ spoc_id: number; spoc_name: string; count: number; percentage: number }> }> {
-    let url = `${this.api}/superadmin/dashboard/demand-by-spocs`;
+    let url = `${this.api}/businesshead/dashboard/demand-by-spocs`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -111,7 +101,7 @@ export class SuperAdminService {
   }
 
   getSubmissionsBySpocs(startDate?: string, endDate?: string): Observable<{ spoc_submissions: Array<{ spoc_id: number; spoc_name: string; count: number }> }> {
-    let url = `${this.api}/superadmin/dashboard/submissions-by-spocs`;
+    let url = `${this.api}/businesshead/dashboard/submissions-by-spocs`;
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
@@ -122,74 +112,8 @@ export class SuperAdminService {
       { headers: this.getAuthHeaders() }
     );
   }
-
-  // Session helpers
-  logout(): void {
-    try {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('token_type');
-      localStorage.removeItem('expires_at');
-    } catch {}
-  }
-
-  // Pending approvals
-  getPendingCount(): Observable<{ count: number }> {
-    return this.http.get<{ count: number }>(
-      `${this.api}/superadmin/pending-approvals/count`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  getPendingUsers(): Observable<PendingUser[]> {
-    return this.http.get<PendingUser[]>(
-      `${this.api}/superadmin/pending-users`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  approveUser(userId: number, reportingTo?: number | ''): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(
-      `${this.api}/superadmin/approve/${userId}`,
-      { reporting_to: reportingTo ?? null },
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  rejectUser(userId: number): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(
-      `${this.api}/superadmin/reject/${userId}`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  setUserRole(userId: number, role: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(
-      `${this.api}/superadmin/set-role/${userId}`,
-      { role },
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  getTeamLeaders(): Observable<any[]> {
-    return this.http.get<any[]>(
-      `${this.api}/users?role=team_leader`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  getUsersByRole(role: string): Observable<any[]> {
-    return this.http.get<any[]>(
-      `${this.api}/users?role=${encodeURIComponent(role)}`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  updateUserReportingTo(userId: number, reportingTo: number): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(
-      `${this.api}/superadmin/update-user-reporting-to`,
-      { user_id: userId, reporting_to: reportingTo },
-      { headers: this.getAuthHeaders() }
-    );
-  }
 }
+
+
+
+

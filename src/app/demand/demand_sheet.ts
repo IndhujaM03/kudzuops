@@ -120,6 +120,8 @@ export class DemandSheetComponent implements OnInit {
 
   // Status edit modal state
   showStatusModal = signal(false);
+  // Also use a regular property as backup for template binding
+  showStatusModalProperty = false;
   selectedDemandId: number | null = null;
   selectedDemandStatus: string = '';
   statusRemark: string = '';
@@ -127,6 +129,8 @@ export class DemandSheetComponent implements OnInit {
 
   // Submitted profiles modal state
   showSubmittedProfilesModal = signal(false);
+  // Also use a regular property as backup for template binding
+  showSubmittedProfilesModalProperty = false;
   selectedSubmittedDemand: any = null;
   submittedProfiles = signal<any[]>([]);
   profileSelections = signal<Map<number, boolean>>(new Map()); // Map of profile index to selected (true = accept, false = reject)

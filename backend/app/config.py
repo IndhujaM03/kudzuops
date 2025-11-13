@@ -8,11 +8,9 @@ load_dotenv(find_dotenv(), override=False)
 @dataclass
 class Settings:
     app_env: str = os.getenv("APP_ENV", "development")
-    database_url: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops",
-    )
+    database_url: str = os.getenv("DATABASE_URL", "")
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    api_base_url: str = os.getenv("API_BASE_URL", "")
 
 
 settings = Settings()

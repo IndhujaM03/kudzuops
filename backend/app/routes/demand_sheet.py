@@ -1,10 +1,10 @@
 import os
 import json
-from datetime import datetime, date
+from datetime import datetime, date, date
 from typing import Any, Dict, List, Optional
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Depends
 from fastapi.responses import FileResponse
 
 try:
@@ -16,12 +16,10 @@ except ImportError:
 try:
     from ..config import settings
     DATABASE_DSN = settings.database_url
+    API_BASE_URL = settings.api_base_url or os.getenv("API_BASE_URL", "")
 except Exception:
-    # Default DSN targets kudzuops database; can be overridden by env var DATABASE_URL
-    DATABASE_DSN = os.getenv(
-        "DATABASE_URL",
-        "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops",
-    )
+    DATABASE_DSN = os.getenv("DATABASE_URL", "")
+    API_BASE_URL = os.getenv("API_BASE_URL", "")
 
 
 router = APIRouter(prefix="/api", tags=["demand"])
@@ -896,7 +894,7 @@ async def get_cv_received(current_user: Dict[str, Any] = Depends(get_current_use
                                     # URL encode the filename to handle spaces and special characters
                                     import urllib.parse
                                     encoded_filename = urllib.parse.quote(filename)
-                                    cv['cv_url'] = f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}"
+                                    cv['cv_url'] = f"{API_BASE_URL}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                                     # Add file availability check
                                     cv['cv_available'] = True
                                 elif not cv.get('cv_url'):
@@ -976,6 +974,9 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
                     cv_dict = dict(cv)
                     if i == target_index:
                         cv_dict['status'] = 1
+                        # Set Team Leader action date (tl_date) when status changes to 1 (submitted)
+                        from datetime import date
+                        cv_dict['tl_date'] = date.today().isoformat()
                         # Set Team Leader action date (tl_date) when status changes to 1 (submitted)
                         from datetime import date
                         cv_dict['tl_date'] = date.today().isoformat()
@@ -1234,8 +1235,7 @@ async def get_activity_profiles(activity_id: int):
                             filename = os.path.basename(filename)
                             encoded_filename = urllib.parse.quote(filename, safe='')
                             # Router prefix is /api, so endpoint is /api/cv-file/...
-                            api_base = os.getenv('API_BASE_URL', 'http://localhost:8000')
-                            cv_url = f"{api_base}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}"
+                            cv_url = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                     
                     # Get candidate info from multiple possible locations
                     candidate_name = (cv.get('candidate_name') or 
@@ -1283,8 +1283,144 @@ async def get_activity_profiles(activity_id: int):
                         filename = os.path.basename(filename)
                         encoded_filename = urllib.parse.quote(filename, safe='')
                         # Router prefix is /api, so endpoint is /api/cv-file/...
-                        api_base = os.getenv('API_BASE_URL', 'http://localhost:8000')
-                        profile['cv_url'] = f"{api_base}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}"
+                        profile['cv_url'] = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
+                    
+                    profiles.append(profile)
+                
+                # Return profiles array with recruiter info included
+                return profiles
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch activity profiles: {e}")
+
+
+@router.get("/recruiter-activity/{activity_id}/profiles")
+async def get_activity_profiles(activity_id: int):
+    """Get CV profiles for a specific recruiter activity"""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        ra.id,
+                        ra.recruiter_id,
+                        ra.demand_id,
+                        ra.cv_list,
+                        ra.uploaded_cv_count,
+                        ra.required_cv_count,
+                        COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.first_name, u.last_name, u.email) as recruiter_name,
+                        u.email as recruiter_email,
+                        ds.skill,
+                        c.client_name,
+                        cs.spoc_name
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_users u ON ra.recruiter_id = u.id
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    LEFT JOIN tbl_clients c ON ds.client_id = c.id
+                    LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
+                    WHERE ra.id = %s
+                """, (activity_id,))
+                
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                columns = [desc[0] for desc in cur.description]
+                result = dict(zip(columns, row))
+                
+                # Parse cv_list if it's a string
+                cv_list = result.get('cv_list', [])
+                if isinstance(cv_list, str):
+                    try:
+                        cv_list = json.loads(cv_list)
+                    except:
+                        cv_list = []
+                elif cv_list is None:
+                    cv_list = []
+                
+                # Transform cv_list to match frontend expectations
+                profiles = []
+                for cv in cv_list:
+                    # Check if there's a nested 'candidate' object
+                    candidate_obj = cv.get('candidate', {})
+                    if not isinstance(candidate_obj, dict):
+                        candidate_obj = {}
+                    
+                    # Handle both 'remark' and 'remarks' (some entries use plural)
+                    remark = (cv.get('remark') or 
+                             cv.get('remarks') or 
+                             candidate_obj.get('remark') or 
+                             candidate_obj.get('remarks') or 
+                             '')
+                    
+                    # Handle different field names for CV URL
+                    # Check multiple possible field names for file/URL
+                    cv_url = (cv.get('cv_url') or 
+                             cv.get('file_path') or 
+                             cv.get('path') or 
+                             cv.get('file') or 
+                             cv.get('file_name') or '')
+                    
+                    # Build file path if we have file info but no URL
+                    if not cv_url.startswith('http') and not cv_url.startswith('/'):
+                        filename = cv.get('file') or cv.get('file_name') or ''
+                        if filename:
+                            import urllib.parse
+                            # Ensure filename doesn't have path separators
+                            filename = os.path.basename(filename)
+                            encoded_filename = urllib.parse.quote(filename, safe='')
+                            # Router prefix is /api, so endpoint is /api/cv-file/...
+                            cv_url = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
+                    
+                    # Get candidate info from multiple possible locations
+                    candidate_name = (cv.get('candidate_name') or 
+                                    candidate_obj.get('candidate_name') or 
+                                    candidate_obj.get('name') or
+                                    cv.get('file') or 
+                                    cv.get('file_name') or 
+                                    'Unknown')
+                    
+                    candidate_email = (cv.get('candidate_email') or 
+                                      cv.get('email') or
+                                      candidate_obj.get('candidate_email') or 
+                                      candidate_obj.get('email') or 
+                                      '')
+                    
+                    candidate_phone = (cv.get('candidate_phone') or 
+                                      cv.get('phone') or
+                                      candidate_obj.get('candidate_phone') or 
+                                      candidate_obj.get('phone') or 
+                                      '')
+                    
+                    profile = {
+                        'recruiter_name': result.get('recruiter_name', ''),
+                        'recruiter_email': result.get('recruiter_email', ''),
+                        'profile_name': candidate_name,
+                        'candidate_name': candidate_name,
+                        'candidate_email': candidate_email,
+                        'candidate_phone': candidate_phone,
+                        'remark': remark,
+                        'cv_url': cv_url,
+                        'status': cv.get('status') or candidate_obj.get('status') or 0,
+                        'upload_date': cv.get('upload_date') or cv.get('uploaded_at') or cv.get('time') or cv.get('timestamp', '')
+                    }
+                    
+                    # Update CV URLs to use proper file paths (if not already set above)
+                    if profile['cv_url'] and not profile['cv_url'].startswith('http') and not profile['cv_url'].startswith('/'):
+                        original_url = profile['cv_url']
+                        if original_url.startswith("src/assets/cv_uploads/"):
+                            filename = os.path.basename(original_url)
+                        else:
+                            filename = original_url
+                        
+                        import urllib.parse
+                        # Ensure filename doesn't have path separators
+                        filename = os.path.basename(filename)
+                        encoded_filename = urllib.parse.quote(filename, safe='')
+                        # Router prefix is /api, so endpoint is /api/cv-file/...
+                        profile['cv_url'] = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                     
                     profiles.append(profile)
                 
@@ -1298,12 +1434,27 @@ async def get_activity_profiles(activity_id: int):
 
 
 @router.get("/cv-submitted")
-async def get_cv_submitted():
-    """Get approved CVs (status = 1) for the Submitted tab with aggregated CV counts"""
+async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get approved CVs (status = 1) for the Submitted tab with aggregated CV counts, filtered by Team Leader"""
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Query to get approved CVs (status = 1) with aggregated CV counts
+                # Get all recruiters reporting to this team leader
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'recruiter' AND reporting_to = %s
+                """, (team_leader_id,))
+                recruiter_rows = cur.fetchall()
+                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                
+                if not recruiter_ids:
+                    return []
+                
+                # Query to get approved CVs (status = 1) with aggregated CV counts, filtered by team leader's recruiters
                 cur.execute("""
                     SELECT 
                         ra.id,
@@ -1336,14 +1487,15 @@ async def get_cv_submitted():
                     LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
                     LEFT JOIN tbl_clients c ON ds.client_id = c.id
                     LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
-                    WHERE ra.cv_list IS NOT NULL 
+                    WHERE ra.recruiter_id = ANY(%s)
+                    AND ra.cv_list IS NOT NULL 
                     AND jsonb_array_length(ra.cv_list) > 0
                     AND EXISTS (
                         SELECT 1 FROM jsonb_array_elements(ra.cv_list) AS cv
                         WHERE cv->>'status' = '1'
                     )
                     ORDER BY ra.updated_at DESC
-                """)
+                """, (recruiter_ids,))
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 result = _rows_to_dicts(columns, rows)
@@ -1400,7 +1552,7 @@ async def get_cv_submitted():
                                             # URL encode the filename to handle spaces and special characters
                                             import urllib.parse
                                             encoded_filename = urllib.parse.quote(filename)
-                                            cv['cv_url'] = f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}"
+                                            cv['cv_url'] = f"{API_BASE_URL}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                                             # Add file availability check
                                             cv['cv_available'] = True
                                         elif not cv.get('cv_url'):
@@ -1495,12 +1647,89 @@ async def get_cv_file(recruiter_id: int, demand_id: int, filename: str):
             filename=filename,
             headers={"Content-Disposition": f"inline; filename={filename}"}
         )
-        
     except HTTPException:
         raise
     except Exception as e:
         print(f"[ERROR] Error serving CV file: {e}")
         raise HTTPException(status_code=500, detail=f"Error serving CV file: {e}")
+
+
+@router.post("/demand/{demand_id}/status")
+async def update_demand_status(
+    demand_id: int,
+    payload: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Update demand status and spoc_remark - accessible by Team Leaders"""
+    try:
+        status = payload.get("status")
+        spoc_remark = payload.get("spoc_remark")
+        
+        if not status:
+            raise HTTPException(status_code=400, detail="Status is required")
+        
+        # Map UI status to database status
+        status_map = {
+            'open': 'open',
+            'hold': 'on_hold',
+            'close': 'closed',
+            'cancel': 'rejected'
+        }
+        db_status = status_map.get(status.lower(), status.lower())
+        
+        if db_status not in ['open', 'in_progress', 'closed', 'on_hold', 'rejected']:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Check if demand exists
+                cur.execute("SELECT id FROM tbl_demand_sheet WHERE id = %s", (demand_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Demand not found")
+                
+                # Build update query
+                update_fields = ["status = %s", "updated_at = NOW()"]
+                params = [db_status]
+                
+                if spoc_remark is not None:
+                    update_fields.append("spoc_remark = %s")
+                    params.append(spoc_remark)
+                
+                params.append(demand_id)
+                
+                update_query = f"""
+                    UPDATE tbl_demand_sheet SET 
+                        {', '.join(update_fields)}
+                    WHERE id = %s
+                """
+                
+                cur.execute(update_query, params)
+                
+                # Update activity_status in tbl_recruiter_activity based on status
+                if db_status.lower() == 'open':
+                    cur.execute("""
+                        UPDATE tbl_recruiter_activity 
+                        SET activity_status = 'open', updated_at = NOW()
+                        WHERE demand_id = %s
+                    """, (demand_id,))
+                else:
+                    cur.execute("""
+                        UPDATE tbl_recruiter_activity 
+                        SET activity_status = 'closed', updated_at = NOW()
+                        WHERE demand_id = %s
+                    """, (demand_id,))
+                
+                conn.commit()
+                
+                return {"message": "Demand status updated successfully"}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to update demand status: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in update_demand_status: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to update demand status: {str(e)}")
 
 
 @router.get("/cv-files-list")
@@ -2513,3 +2742,3032 @@ async def get_available_years(current_user: Dict[str, Any] = Depends(get_current
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch available years: {e}")
 
+
+# ============================================
+# Manager Dashboard Endpoints
+# ============================================
+
+@router.get("/manager/dashboard/key-highlights")
+async def get_manager_key_highlights(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get key highlights for Manager: Total Submissions, Current Demand, and Number of Team Leaders
+    Aggregates data from Team Leaders reporting to this Manager
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        # Build date filter conditions
+        date_filter = ""
+        date_params = []
+        if start_date and end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                )
+            """
+            date_params = [start_date, end_date, start_date, end_date]
+        elif start_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date >= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                )
+            """
+            date_params = [start_date, start_date]
+        elif end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date <= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                )
+            """
+            date_params = [end_date, end_date]
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get all Team Leaders reporting to this Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get all recruiters reporting to these Team Leaders
+                recruiter_ids = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                
+                # Total Submissions: Count total number of CVs with status = 1
+                total_submissions = 0
+                if recruiter_ids:
+                    if date_params:
+                        query = f"""
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 {date_filter})
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids] + date_params
+                    else:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids]
+                    cur.execute(query, params)
+                    result = cur.fetchone()
+                    total_submissions = result[0] if result else 0
+                
+                # Current Demand: Count distinct demands
+                current_demand = 0
+                if recruiter_ids:
+                    query = """
+                        SELECT COUNT(DISTINCT ra.demand_id)
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.recruiter_id = ANY(%s)
+                    """
+                    cur.execute(query, (recruiter_ids,))
+                    result = cur.fetchone()
+                    current_demand = result[0] if result else 0
+                
+                # Number of Team Leaders
+                number_of_team_leaders = len(tl_ids)
+                
+                return {
+                    "total_submissions": total_submissions,
+                    "current_demand": current_demand,
+                    "number_of_team_leaders": number_of_team_leaders
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to fetch manager key highlights: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in get_manager_key_highlights: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch manager key highlights: {str(e)}")
+
+
+@router.get("/manager/dashboard/submissions-by-team-leaders")
+async def get_manager_submissions_by_team_leaders(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    For a Manager, get total submissions grouped by Team Leaders under them.
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Team Leaders reporting to this manager
+                cur.execute("""
+                    SELECT id, COALESCE(first_name,'') || CASE WHEN last_name IS NOT NULL AND last_name <> '' THEN ' ' || last_name ELSE '' END AS name
+                    FROM tbl_users
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+
+                if not tl_ids:
+                    return {"team_leader_submissions": []}
+
+                # Recruiters reporting to these TLs
+                cur.execute("""
+                    SELECT id, reporting_to FROM tbl_users
+                    WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                """, (tl_ids,))
+                rec_rows = cur.fetchall()
+                recruiter_ids = [r[0] for r in rec_rows] if rec_rows else []
+
+                if not recruiter_ids:
+                    return {"team_leader_submissions": []}
+
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+
+                # Count submissions grouped by TL (via recruiter -> TL mapping)
+                query = f"""
+                    SELECT tl.id AS team_leader_id,
+                           COALESCE(tl.first_name,'') || CASE WHEN tl.last_name IS NOT NULL AND tl.last_name <> '' THEN ' ' || tl.last_name ELSE '' END AS team_leader_name,
+                           COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    JOIN tbl_users r ON r.id = s.recruiter_id AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    WHERE r.id = ANY(%s)
+                    {date_filter}
+                    GROUP BY tl.id, tl.first_name, tl.last_name
+                    ORDER BY submission_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+
+                team_leader_submissions = [
+                    {
+                        "team_leader_id": row[0],
+                        "team_leader_name": row[1] or "",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+
+                return {"team_leader_submissions": team_leader_submissions}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by team leaders: {e}")
+
+
+@router.get("/manager/dashboard/submissions-by-spocs")
+async def get_manager_submissions_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    For a Manager, get total submissions grouped by SPOC for all recruiters under TLs of the manager.
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Team Leaders under manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+
+                # Recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+
+                if not recruiter_ids:
+                    return {"spoc_submissions": []}
+
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+
+                # Count submissions grouped by SPOC
+                query = f"""
+                    SELECT 
+                        s.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    LEFT JOIN tbl_client_spocs cs ON s.spoc_id = cs.id
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY s.spoc_id, cs.spoc_name
+                    ORDER BY submission_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+
+                spoc_submissions = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+
+                return {"spoc_submissions": spoc_submissions}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by SPOCs: {e}")
+
+
+@router.get("/manager/dashboard/daily-submissions-trend")
+async def get_manager_daily_submissions_trend(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get daily submissions trend for Manager (aggregates from all recruiters under their Team Leaders).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Team Leaders under this manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"daily_trend": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Get daily submissions grouped by date
+                query = f"""
+                    SELECT 
+                        DATE(s.submission_date) as date,
+                        COUNT(*) as count
+                    FROM tbl_submissions s
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY DATE(s.submission_date)
+                    ORDER BY DATE(s.submission_date)
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                daily_trend = [
+                    {
+                        "date": row[0].isoformat() if isinstance(row[0], date) else str(row[0]),
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"daily_trend": daily_trend}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch daily submissions trend: {e}")
+
+
+@router.get("/manager/dashboard/demand-by-team-leaders")
+async def get_manager_demand_by_team_leaders(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by Team Leaders for Manager.
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Team Leaders under this manager
+                cur.execute("""
+                    SELECT id, COALESCE(first_name,'') || CASE WHEN last_name IS NOT NULL AND last_name <> '' THEN ' ' || last_name ELSE '' END AS name
+                    FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_data = {row[0]: row[1] for row in tl_rows}
+                tl_ids = list(tl_data.keys())
+                
+                if not tl_ids:
+                    return {"distribution": []}
+                
+                # Get recruiters under those TLs
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                """, (tl_ids,))
+                rec_rows = cur.fetchall()
+                recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per Team Leader (via recruiter -> TL mapping)
+                query = f"""
+                    SELECT 
+                        tl.id AS team_leader_id,
+                        COALESCE(tl.first_name,'') || CASE WHEN tl.last_name IS NOT NULL AND tl.last_name <> '' THEN ' ' || tl.last_name ELSE '' END AS team_leader_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    JOIN jsonb_array_elements(ds.assigned_to) AS assignment ON (assignment->>'recruiter_id')::int = ANY(%s)
+                    JOIN tbl_users r ON r.id = (assignment->>'recruiter_id')::int AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    WHERE ds.assigned_to IS NOT NULL
+                    {date_filter}
+                    GROUP BY tl.id, tl.first_name, tl.last_name
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "team_leader_id": row[0],
+                        "team_leader_name": row[1] or "",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by team leaders: {e}")
+
+
+@router.get("/manager/dashboard/demand-by-status")
+async def get_manager_demand_by_status(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand count by status for Manager (aggregates from all recruiters under their Team Leaders).
+    Date filter applies to updated_at from demand_sheet table.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Team Leaders under this manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"status_counts": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND DATE(ds.updated_at) BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND DATE(ds.updated_at) >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND DATE(ds.updated_at) <= %s"
+                    date_params = [end_date]
+                
+                # Get demands assigned to these recruiters and count by status
+                query = f"""
+                    SELECT 
+                        COALESCE(LOWER(CAST(ds.status AS TEXT)), 'unknown') as status,
+                        COUNT(DISTINCT ds.id) as count
+                    FROM tbl_demand_sheet ds
+                    WHERE ds.assigned_to IS NOT NULL
+                    AND ds.assigned_to != '[]'::jsonb
+                    AND jsonb_typeof(ds.assigned_to) = 'array'
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                    )
+                    {date_filter}
+                    GROUP BY ds.status
+                    ORDER BY count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                status_counts = [
+                    {
+                        "status": row[0] or "unknown",
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"status_counts": status_counts}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by status: {e}")
+
+
+@router.get("/manager/dashboard/demand-by-skill")
+async def get_manager_demand_by_skill(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get distribution of demands by skill for Manager (aggregates from all recruiters under their Team Leaders).
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Team Leaders under this manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"skill_distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Get skills from demand_sheet via recruiter_activity.demand_id
+                query = f"""
+                    SELECT 
+                        COALESCE(ds.skill, 'Unknown') as skill,
+                        COUNT(DISTINCT ra.demand_id) as demand_count
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    WHERE ra.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY ds.skill
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[1] for row in rows) if rows else 0
+                
+                skill_distribution = [
+                    {
+                        "skill": row[0] or "Unknown",
+                        "count": row[1],
+                        "percentage": round((row[1] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"skill_distribution": skill_distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by skill: {e}")
+
+
+@router.get("/manager/dashboard/demand-by-spocs")
+async def get_manager_demand_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by SPOCs for Manager (aggregates from all recruiters under their Team Leaders).
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Team Leaders under this manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = %s
+                """, (manager_id,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per SPOC
+                query = f"""
+                    SELECT 
+                        ds.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
+                    WHERE ds.assigned_to IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                    )
+                    {date_filter}
+                    GROUP BY ds.spoc_id, cs.spoc_name
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by SPOCs: {e}")
+
+
+# ============================================
+# Business Head Dashboard Endpoints
+# ============================================
+
+@router.get("/businesshead/dashboard/key-highlights")
+async def get_businesshead_key_highlights(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get key highlights for Business Head: Total Submissions, Current Demand, and Number of Managers
+    Aggregates data from Managers reporting to this Business Head
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        # Build date filter conditions
+        date_filter = ""
+        date_params = []
+        if start_date and end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                )
+            """
+            date_params = [start_date, end_date, start_date, end_date]
+        elif start_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date >= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                )
+            """
+            date_params = [start_date, start_date]
+        elif end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date <= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                )
+            """
+            date_params = [end_date, end_date]
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get all Managers reporting to this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get all Team Leaders reporting to these Managers
+                tl_ids = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get all recruiters reporting to these Team Leaders
+                recruiter_ids = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                
+                # Total Submissions: Count total number of CVs with status = 1
+                total_submissions = 0
+                if recruiter_ids:
+                    if date_params:
+                        query = f"""
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 {date_filter})
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids] + date_params
+                    else:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids]
+                    cur.execute(query, params)
+                    result = cur.fetchone()
+                    total_submissions = result[0] if result else 0
+                
+                # Current Demand: Count distinct demands
+                current_demand = 0
+                if recruiter_ids:
+                    query = """
+                        SELECT COUNT(DISTINCT ra.demand_id)
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.recruiter_id = ANY(%s)
+                    """
+                    cur.execute(query, (recruiter_ids,))
+                    result = cur.fetchone()
+                    current_demand = result[0] if result else 0
+                
+                # Number of Managers
+                number_of_managers = len(manager_ids)
+                
+                return {
+                    "total_submissions": total_submissions,
+                    "current_demand": current_demand,
+                    "number_of_managers": number_of_managers
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to fetch business head key highlights: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in get_businesshead_key_highlights: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch business head key highlights: {str(e)}")
+
+
+@router.get("/businesshead/dashboard/daily-submissions-trend")
+async def get_businesshead_daily_submissions_trend(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get daily submissions trend for Business Head (aggregates from all recruiters under their Managers).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"daily_trend": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Get daily submissions grouped by date
+                query = f"""
+                    SELECT 
+                        DATE(s.submission_date) as date,
+                        COUNT(*) as count
+                    FROM tbl_submissions s
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY DATE(s.submission_date)
+                    ORDER BY DATE(s.submission_date)
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                daily_trend = [
+                    {
+                        "date": row[0].isoformat() if isinstance(row[0], date) else str(row[0]),
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"daily_trend": daily_trend}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch daily submissions trend: {e}")
+
+
+@router.get("/businesshead/dashboard/demand-by-managers")
+async def get_businesshead_demand_by_managers(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by Managers for Business Head.
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id, COALESCE(first_name,'') || CASE WHEN last_name IS NOT NULL AND last_name <> '' THEN ' ' || last_name ELSE '' END AS name
+                    FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_data = {row[0]: row[1] for row in manager_rows}
+                manager_ids = list(manager_data.keys())
+                
+                if not manager_ids:
+                    return {"distribution": []}
+                
+                # Get Team Leaders under those Managers
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                """, (manager_ids,))
+                tl_rows = cur.fetchall()
+                tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                """, (tl_ids,))
+                rec_rows = cur.fetchall()
+                recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per Manager (via recruiter -> TL -> Manager mapping)
+                query = f"""
+                    SELECT 
+                        m.id AS manager_id,
+                        COALESCE(m.first_name,'') || CASE WHEN m.last_name IS NOT NULL AND m.last_name <> '' THEN ' ' || m.last_name ELSE '' END AS manager_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    JOIN jsonb_array_elements(ds.assigned_to) AS assignment ON (assignment->>'recruiter_id')::int = ANY(%s)
+                    JOIN tbl_users r ON r.id = (assignment->>'recruiter_id')::int AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    JOIN tbl_users m ON m.id = tl.reporting_to AND m.role = 'manager'
+                    WHERE ds.assigned_to IS NOT NULL
+                    {date_filter}
+                    GROUP BY m.id, m.first_name, m.last_name
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "manager_id": row[0],
+                        "manager_name": row[1] or "",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by managers: {e}")
+
+
+@router.get("/businesshead/dashboard/demand-by-status")
+async def get_businesshead_demand_by_status(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand count by status for Business Head (aggregates from all recruiters under their Managers).
+    Date filter applies to updated_at from demand_sheet table.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"status_counts": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND DATE(ds.updated_at) BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND DATE(ds.updated_at) >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND DATE(ds.updated_at) <= %s"
+                    date_params = [end_date]
+                
+                # Get demands assigned to these recruiters and count by status
+                query = f"""
+                    SELECT 
+                        COALESCE(LOWER(CAST(ds.status AS TEXT)), 'unknown') as status,
+                        COUNT(DISTINCT ds.id) as count
+                    FROM tbl_demand_sheet ds
+                    WHERE ds.assigned_to IS NOT NULL
+                    AND ds.assigned_to != '[]'::jsonb
+                    AND jsonb_typeof(ds.assigned_to) = 'array'
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                    )
+                    {date_filter}
+                    GROUP BY ds.status
+                    ORDER BY count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                status_counts = [
+                    {
+                        "status": row[0] or "unknown",
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"status_counts": status_counts}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by status: {e}")
+
+
+@router.get("/businesshead/dashboard/demand-by-skill")
+async def get_businesshead_demand_by_skill(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get distribution of demands by skill for Business Head (aggregates from all recruiters under their Managers).
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"skill_distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Get skills from demand_sheet via recruiter_activity.demand_id
+                query = f"""
+                    SELECT 
+                        COALESCE(ds.skill, 'Unknown') as skill,
+                        COUNT(DISTINCT ra.demand_id) as demand_count
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    WHERE ra.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY ds.skill
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[1] for row in rows) if rows else 0
+                
+                skill_distribution = [
+                    {
+                        "skill": row[0] or "Unknown",
+                        "count": row[1],
+                        "percentage": round((row[1] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"skill_distribution": skill_distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by skill: {e}")
+
+
+@router.get("/businesshead/dashboard/submissions-by-managers")
+async def get_businesshead_submissions_by_managers(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get submissions grouped by Managers for Business Head (all Managers under the Business Head).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Count submissions grouped by Manager (via recruiter -> TL -> Manager hierarchy)
+                query = f"""
+                    SELECT 
+                        m.id AS manager_id,
+                        COALESCE(m.first_name,'') || CASE WHEN m.last_name IS NOT NULL AND m.last_name <> '' THEN ' ' || m.last_name ELSE '' END AS manager_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    JOIN tbl_users r ON r.id = s.recruiter_id AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    JOIN tbl_users m ON m.id = tl.reporting_to AND m.role = 'manager'
+                    WHERE m.reporting_to = %s
+                    {date_filter}
+                    GROUP BY m.id, m.first_name, m.last_name
+                    ORDER BY submission_count DESC
+                """
+                params: List[Any] = [business_head_id] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                manager_submissions = [
+                    {
+                        "manager_id": row[0],
+                        "manager_name": row[1] or "",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+                
+                return {"manager_submissions": manager_submissions}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by managers: {e}")
+
+
+@router.get("/businesshead/dashboard/demand-by-spocs")
+async def get_businesshead_demand_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by SPOCs for Business Head (aggregates from all recruiters under their Managers).
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per SPOC
+                query = f"""
+                    SELECT 
+                        ds.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
+                    WHERE ds.assigned_to IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                    )
+                    {date_filter}
+                    GROUP BY ds.spoc_id, cs.spoc_name
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by SPOCs: {e}")
+
+
+@router.get("/businesshead/dashboard/submissions-by-spocs")
+async def get_businesshead_submissions_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get submissions grouped by SPOC for Business Head (all recruiters under their Managers).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"spoc_submissions": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Count submissions grouped by SPOC
+                query = f"""
+                    SELECT 
+                        s.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    LEFT JOIN tbl_client_spocs cs ON s.spoc_id = cs.id
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY s.spoc_id, cs.spoc_name
+                    ORDER BY submission_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                spoc_submissions = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+                
+                return {"spoc_submissions": spoc_submissions}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by SPOCs: {e}")
+
+
+# ============================================
+# Cluster Manager Dashboard Endpoints
+# ============================================
+
+@router.get("/clustermanager/dashboard/key-highlights")
+async def get_clustermanager_key_highlights(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get key highlights for Cluster Manager: Total Submissions, Current Demand, and Number of Business Heads
+    Aggregates data from Business Heads reporting to this Cluster Manager
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        # Build date filter conditions
+        date_filter = ""
+        date_params = []
+        if start_date and end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                )
+            """
+            date_params = [start_date, end_date, start_date, end_date]
+        elif start_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date >= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                )
+            """
+            date_params = [start_date, start_date]
+        elif end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date <= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                )
+            """
+            date_params = [end_date, end_date]
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get all Business Heads reporting to this Cluster Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_ids = [row[0] for row in bh_rows] if bh_rows else []
+                
+                # Get all Managers reporting to these Business Heads
+                manager_ids = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get all Team Leaders reporting to these Managers
+                tl_ids = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get all recruiters reporting to these Team Leaders
+                recruiter_ids = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                
+                # Total Submissions: Count total number of CVs with status = 1
+                total_submissions = 0
+                if recruiter_ids:
+                    if date_params:
+                        query = f"""
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 {date_filter})
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids] + date_params
+                    else:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids]
+                    cur.execute(query, params)
+                    result = cur.fetchone()
+                    total_submissions = result[0] if result else 0
+                
+                # Current Demand: Count distinct demands assigned to these recruiters (open or processing)
+                current_demand = 0
+                if recruiter_ids:
+                    cur.execute("""
+                        SELECT COUNT(DISTINCT ds.id)
+                        FROM tbl_demand_sheet ds
+                        WHERE ds.status IN ('open', 'processing')
+                        AND ds.assigned_to IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                            WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                        )
+                    """, (recruiter_ids,))
+                    result = cur.fetchone()
+                    current_demand = result[0] if result else 0
+                
+                # Number of Business Heads: Count Business Heads reporting to this Cluster Manager
+                number_of_business_heads = len(bh_ids)
+                
+                return {
+                    "total_submissions": total_submissions,
+                    "current_demand": current_demand,
+                    "number_of_business_heads": number_of_business_heads
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to fetch cluster manager key highlights: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in get_clustermanager_key_highlights: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch cluster manager key highlights: {str(e)}")
+
+
+@router.get("/clustermanager/dashboard/daily-submissions-trend")
+async def get_clustermanager_daily_submissions_trend(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get daily submissions trend for Cluster Manager (aggregates from all recruiters under their Business Heads).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Business Heads under this Cluster Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_ids = [row[0] for row in bh_rows] if bh_rows else []
+                
+                # Get Managers under those Business Heads
+                manager_ids: List[int] = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"daily_trend": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Get daily submissions grouped by date
+                query = f"""
+                    SELECT 
+                        DATE(s.submission_date) as date,
+                        COUNT(*) as count
+                    FROM tbl_submissions s
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY DATE(s.submission_date)
+                    ORDER BY DATE(s.submission_date)
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                daily_trend = [
+                    {
+                        "date": row[0].isoformat() if isinstance(row[0], date) else str(row[0]),
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"daily_trend": daily_trend}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch daily submissions trend: {e}")
+
+
+@router.get("/clustermanager/dashboard/demand-by-business-heads")
+async def get_clustermanager_demand_by_business_heads(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by Business Heads for Cluster Manager.
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Business Heads under this Cluster Manager
+                cur.execute("""
+                    SELECT id, COALESCE(first_name,'') || CASE WHEN last_name IS NOT NULL AND last_name <> '' THEN ' ' || last_name ELSE '' END AS name
+                    FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_data = {row[0]: row[1] for row in bh_rows}
+                bh_ids = list(bh_data.keys())
+                
+                if not bh_ids:
+                    return {"distribution": []}
+                
+                # Get Managers under those Business Heads
+                manager_ids: List[int] = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per Business Head (via recruiter -> TL -> Manager -> BH mapping)
+                query = f"""
+                    SELECT 
+                        bh.id AS business_head_id,
+                        COALESCE(bh.first_name,'') || CASE WHEN bh.last_name IS NOT NULL AND bh.last_name <> '' THEN ' ' || bh.last_name ELSE '' END AS business_head_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    JOIN jsonb_array_elements(ds.assigned_to) AS assignment ON (assignment->>'recruiter_id')::int = ANY(%s)
+                    JOIN tbl_users r ON r.id = (assignment->>'recruiter_id')::int AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    JOIN tbl_users m ON m.id = tl.reporting_to AND m.role = 'manager'
+                    JOIN tbl_users bh ON bh.id = m.reporting_to AND bh.role = 'business_head'
+                    WHERE ds.assigned_to IS NOT NULL
+                    {date_filter}
+                    GROUP BY bh.id, bh.first_name, bh.last_name
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "business_head_id": row[0],
+                        "business_head_name": row[1] or "",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by business heads: {e}")
+
+
+@router.get("/clustermanager/dashboard/demand-by-status")
+async def get_clustermanager_demand_by_status(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand count by status for Cluster Manager (aggregates from all recruiters under their Business Heads).
+    Date filter applies to updated_at from demand_sheet table.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Business Heads under this Cluster Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_ids = [row[0] for row in bh_rows] if bh_rows else []
+                
+                # Get Managers under those Business Heads
+                manager_ids: List[int] = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"status_counts": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND DATE(ds.updated_at) BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND DATE(ds.updated_at) >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND DATE(ds.updated_at) <= %s"
+                    date_params = [end_date]
+                
+                # Get demands assigned to these recruiters and count by status
+                query = f"""
+                    SELECT 
+                        COALESCE(LOWER(CAST(ds.status AS TEXT)), 'unknown') as status,
+                        COUNT(DISTINCT ds.id) as count
+                    FROM tbl_demand_sheet ds
+                    WHERE ds.assigned_to IS NOT NULL
+                    AND ds.assigned_to != '[]'::jsonb
+                    AND jsonb_typeof(ds.assigned_to) = 'array'
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                    )
+                    {date_filter}
+                    GROUP BY ds.status
+                    ORDER BY count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                status_counts = [
+                    {
+                        "status": row[0] or "unknown",
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"status_counts": status_counts}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by status: {e}")
+
+
+@router.get("/clustermanager/dashboard/demand-by-skill")
+async def get_clustermanager_demand_by_skill(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get distribution of demands by skill for Cluster Manager (aggregates from all recruiters under their Business Heads).
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Business Heads under this Cluster Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_ids = [row[0] for row in bh_rows] if bh_rows else []
+                
+                # Get Managers under those Business Heads
+                manager_ids: List[int] = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"skill_distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Get skills from demand_sheet via recruiter_activity.demand_id
+                query = f"""
+                    SELECT 
+                        COALESCE(ds.skill, 'Unknown') as skill,
+                        COUNT(DISTINCT ra.demand_id) as demand_count
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    WHERE ra.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY ds.skill
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[1] for row in rows) if rows else 0
+                
+                skill_distribution = [
+                    {
+                        "skill": row[0] or "Unknown",
+                        "count": row[1],
+                        "percentage": round((row[1] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"skill_distribution": skill_distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by skill: {e}")
+
+
+@router.get("/clustermanager/dashboard/submissions-by-business-heads")
+async def get_clustermanager_submissions_by_business_heads(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get submissions grouped by Business Heads for Cluster Manager (all Business Heads under the Cluster Manager).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Count submissions grouped by Business Head (via recruiter -> TL -> Manager -> BH hierarchy)
+                query = f"""
+                    SELECT 
+                        bh.id AS business_head_id,
+                        COALESCE(bh.first_name,'') || CASE WHEN bh.last_name IS NOT NULL AND bh.last_name <> '' THEN ' ' || bh.last_name ELSE '' END AS business_head_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    JOIN tbl_users r ON r.id = s.recruiter_id AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    JOIN tbl_users m ON m.id = tl.reporting_to AND m.role = 'manager'
+                    JOIN tbl_users bh ON bh.id = m.reporting_to AND bh.role = 'business_head'
+                    WHERE bh.reporting_to = %s
+                    {date_filter}
+                    GROUP BY bh.id, bh.first_name, bh.last_name
+                    ORDER BY submission_count DESC
+                """
+                params: List[Any] = [cluster_manager_id] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                business_head_submissions = [
+                    {
+                        "business_head_id": row[0],
+                        "business_head_name": row[1] or "",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+                
+                return {"business_head_submissions": business_head_submissions}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by business heads: {e}")
+
+
+@router.get("/clustermanager/dashboard/demand-by-spocs")
+async def get_clustermanager_demand_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by SPOCs for Cluster Manager (aggregates from all recruiters under their Business Heads).
+    Date filter applies to demand_date from demand_sheet table.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Business Heads under this Cluster Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_ids = [row[0] for row in bh_rows] if bh_rows else []
+                
+                # Get Managers under those Business Heads
+                manager_ids: List[int] = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"distribution": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per SPOC
+                query = f"""
+                    SELECT 
+                        ds.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
+                    WHERE ds.assigned_to IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
+                    )
+                    {date_filter}
+                    GROUP BY ds.spoc_id, cs.spoc_name
+                    ORDER BY demand_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by SPOCs: {e}")
+
+
+@router.get("/clustermanager/dashboard/submissions-by-spocs")
+async def get_clustermanager_submissions_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get submissions grouped by SPOC for Cluster Manager (all recruiters under their Business Heads).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        cluster_manager_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not cluster_manager_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Business Heads under this Cluster Manager
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'business_head' AND reporting_to = %s
+                """, (cluster_manager_id,))
+                bh_rows = cur.fetchall()
+                bh_ids = [row[0] for row in bh_rows] if bh_rows else []
+                
+                # Get Managers under those Business Heads
+                manager_ids: List[int] = []
+                if bh_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'manager' AND reporting_to = ANY(%s)
+                    """, (bh_ids,))
+                    manager_rows = cur.fetchall()
+                    manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"spoc_submissions": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Count submissions grouped by SPOC
+                query = f"""
+                    SELECT 
+                        s.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    LEFT JOIN tbl_client_spocs cs ON s.spoc_id = cs.id
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY s.spoc_id, cs.spoc_name
+                    ORDER BY submission_count DESC
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                spoc_submissions = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+                
+                return {"spoc_submissions": spoc_submissions}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by SPOCs: {e}")
+
+
+# ============================================
+# SuperAdmin Dashboard Endpoints
+# ============================================
+
+@router.get("/superadmin/dashboard/key-highlights")
+async def get_superadmin_key_highlights(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get key highlights for SuperAdmin: Total Submissions, Current Demand, and Number of Managers
+    Aggregates data from ALL recruiters (no hierarchy filter for SuperAdmin)
+    """
+    try:
+        # SuperAdmin has access to all data, no user_id check needed for filtering
+        # But we still validate the user is authenticated
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        # Build date filter conditions
+        date_filter = ""
+        date_params = []
+        if start_date and end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                )
+            """
+            date_params = [start_date, end_date, start_date, end_date]
+        elif start_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date >= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                )
+            """
+            date_params = [start_date, start_date]
+        elif end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date <= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                )
+            """
+            date_params = [end_date, end_date]
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Total Submissions: Count total number of CVs with status = 1 from ALL recruiters
+                total_submissions = 0
+                if date_params:
+                    # Build the query with date filter - note: ra.updated_at is accessible in subquery via outer query reference
+                    if start_date and end_date:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 AND (
+                                     (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                                     OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [start_date, end_date, start_date, end_date]
+                    elif start_date:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 AND (
+                                     (cv->>'recruiter_date')::date >= %s
+                                     OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [start_date, start_date]
+                    elif end_date:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 AND (
+                                     (cv->>'recruiter_date')::date <= %s
+                                     OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [end_date, end_date]
+                else:
+                    query = """
+                        SELECT COALESCE(SUM(
+                            (SELECT COUNT(*) 
+                             FROM jsonb_array_elements(ra.cv_list) AS cv
+                             WHERE (
+                                 cv->>'status' = '1' 
+                                 OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                             ))
+                        ), 0) as total_count
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.cv_list IS NOT NULL
+                        AND jsonb_array_length(ra.cv_list) > 0
+                    """
+                    params = []
+                cur.execute(query, params)
+                result = cur.fetchone()
+                total_submissions = result[0] if result else 0
+                
+                # Current Demand: Count distinct demands (open or processing)
+                query = """
+                    SELECT COUNT(DISTINCT id)
+                    FROM tbl_demand_sheet
+                    WHERE status IN ('open', 'processing')
+                """
+                cur.execute(query)
+                result = cur.fetchone()
+                current_demand = result[0] if result else 0
+                
+                # Number of Managers: Count all managers
+                cur.execute("""
+                    SELECT COUNT(*) FROM tbl_users 
+                    WHERE role = 'manager'
+                """)
+                result = cur.fetchone()
+                number_of_managers = result[0] if result else 0
+                
+                return {
+                    "total_submissions": total_submissions,
+                    "current_demand": current_demand,
+                    "number_of_managers": number_of_managers
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to fetch superadmin key highlights: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in get_superadmin_key_highlights: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch superadmin key highlights: {str(e)}")
+
+
+@router.get("/superadmin/dashboard/daily-submissions-trend")
+async def get_superadmin_daily_submissions_trend(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get daily submissions trend for SuperAdmin (all recruiters, no hierarchy filter).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Get daily submissions from ALL recruiters
+                query = f"""
+                    SELECT 
+                        DATE(s.submission_date) as date,
+                        COUNT(*) as count
+                    FROM tbl_submissions s
+                    WHERE 1=1
+                    {date_filter}
+                    GROUP BY DATE(s.submission_date)
+                    ORDER BY DATE(s.submission_date)
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                daily_trend = [
+                    {
+                        "date": row[0].isoformat() if isinstance(row[0], date) else str(row[0]),
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"daily_trend": daily_trend}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch daily submissions trend: {e}")
+
+
+@router.get("/superadmin/dashboard/demand-by-managers")
+async def get_superadmin_demand_by_managers(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by Managers for SuperAdmin (all managers).
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Get all managers and their demand counts
+                query = f"""
+                    SELECT 
+                        m.id AS manager_id,
+                        COALESCE(m.first_name,'') || CASE WHEN m.last_name IS NOT NULL AND m.last_name <> '' THEN ' ' || m.last_name ELSE '' END AS manager_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_users m
+                    LEFT JOIN tbl_users tl ON tl.reporting_to = m.id AND tl.role = 'team_leader'
+                    LEFT JOIN tbl_users r ON r.reporting_to = tl.id AND r.role = 'recruiter'
+                    LEFT JOIN tbl_demand_sheet ds ON ds.assigned_to IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
+                            WHERE (assignment->>'recruiter_id')::int = r.id
+                        )
+                        {date_filter}
+                    WHERE m.role = 'manager'
+                    GROUP BY m.id, m.first_name, m.last_name
+                    HAVING COUNT(DISTINCT ds.id) > 0
+                    ORDER BY demand_count DESC
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "manager_id": row[0],
+                        "manager_name": row[1] or "",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by managers: {e}")
+
+
+@router.get("/superadmin/dashboard/demand-by-status")
+async def get_superadmin_demand_by_status(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by status for SuperAdmin (all demands).
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND demand_date <= %s"
+                    date_params = [end_date]
+                
+                query = f"""
+                    SELECT status, COUNT(*) as count
+                    FROM tbl_demand_sheet
+                    WHERE 1=1
+                    {date_filter}
+                    GROUP BY status
+                    ORDER BY count DESC
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                status_counts = [
+                    {
+                        "status": row[0] or "unknown",
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"status_counts": status_counts}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by status: {e}")
+
+
+@router.get("/superadmin/dashboard/demand-by-skill")
+async def get_superadmin_demand_by_skill(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by skill for SuperAdmin (all demands).
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND demand_date <= %s"
+                    date_params = [end_date]
+                
+                query = f"""
+                    SELECT skill, COUNT(*) as count
+                    FROM tbl_demand_sheet
+                    WHERE skill IS NOT NULL AND skill != ''
+                    {date_filter}
+                    GROUP BY skill
+                    ORDER BY count DESC
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                total = sum(row[1] for row in rows) if rows else 0
+                
+                skill_distribution = [
+                    {
+                        "skill": row[0],
+                        "count": row[1],
+                        "percentage": round((row[1] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"skill_distribution": skill_distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by skill: {e}")
+
+
+@router.get("/superadmin/dashboard/submissions-by-managers")
+async def get_superadmin_submissions_by_managers(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get submissions grouped by Managers for SuperAdmin (all managers).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Count submissions grouped by Manager (via recruiter -> TL -> Manager hierarchy)
+                query = f"""
+                    SELECT 
+                        m.id AS manager_id,
+                        COALESCE(m.first_name,'') || CASE WHEN m.last_name IS NOT NULL AND m.last_name <> '' THEN ' ' || m.last_name ELSE '' END AS manager_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    JOIN tbl_users r ON r.id = s.recruiter_id AND r.role = 'recruiter'
+                    JOIN tbl_users tl ON tl.id = r.reporting_to AND tl.role = 'team_leader'
+                    JOIN tbl_users m ON m.id = tl.reporting_to AND m.role = 'manager'
+                    WHERE 1=1
+                    {date_filter}
+                    GROUP BY m.id, m.first_name, m.last_name
+                    ORDER BY submission_count DESC
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                manager_submissions = [
+                    {
+                        "manager_id": row[0],
+                        "manager_name": row[1] or "",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+                
+                return {"manager_submissions": manager_submissions}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by managers: {e}")
+
+
+@router.get("/superadmin/dashboard/demand-by-spocs")
+async def get_superadmin_demand_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get demand distribution by SPOCs for SuperAdmin (all demands).
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND ds.demand_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND ds.demand_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND ds.demand_date <= %s"
+                    date_params = [end_date]
+                
+                # Count demands per SPOC (all demands)
+                query = f"""
+                    SELECT 
+                        ds.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(DISTINCT ds.id) AS demand_count
+                    FROM tbl_demand_sheet ds
+                    LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
+                    WHERE ds.assigned_to IS NOT NULL
+                    {date_filter}
+                    GROUP BY ds.spoc_id, cs.spoc_name
+                    ORDER BY demand_count DESC
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                total = sum(row[2] for row in rows) if rows else 0
+                
+                distribution = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2],
+                        "percentage": round((row[2] / total * 100) if total > 0 else 0, 1)
+                    }
+                    for row in rows
+                ]
+                
+                return {"distribution": distribution}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch demand by SPOCs: {e}")
+
+
+@router.get("/superadmin/dashboard/submissions-by-spocs")
+async def get_superadmin_submissions_by_spocs(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get submissions grouped by SPOC for SuperAdmin (all recruiters).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Count submissions grouped by SPOC (all recruiters)
+                query = f"""
+                    SELECT 
+                        s.spoc_id,
+                        COALESCE(cs.spoc_name, 'Unknown SPOC') AS spoc_name,
+                        COUNT(*) AS submission_count
+                    FROM tbl_submissions s
+                    LEFT JOIN tbl_client_spocs cs ON s.spoc_id = cs.id
+                    WHERE 1=1
+                    {date_filter}
+                    GROUP BY s.spoc_id, cs.spoc_name
+                    ORDER BY submission_count DESC
+                """
+                cur.execute(query, date_params)
+                rows = cur.fetchall()
+                
+                spoc_submissions = [
+                    {
+                        "spoc_id": row[0],
+                        "spoc_name": row[1] or "Unknown SPOC",
+                        "count": row[2]
+                    }
+                    for row in rows
+                ]
+                
+                return {"spoc_submissions": spoc_submissions}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch submissions by SPOCs: {e}")

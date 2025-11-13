@@ -7,9 +7,13 @@ from .login import get_current_user  # reuse auth dependency
 try:
     from .config import settings
     DATABASE_DSN = settings.database_url
+    if not DATABASE_DSN:
+        raise ValueError("DATABASE_URL not set in environment")
 except Exception:
-    # Fallback DSN if config import fails
-    DATABASE_DSN = "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops"
+    import os
+    DATABASE_DSN = os.getenv("DATABASE_URL", "")
+    if not DATABASE_DSN:
+        raise ValueError("DATABASE_URL environment variable is required")
 
 
 router = APIRouter(prefix="/api/clientsettings", tags=["clientsettings"]) 
@@ -150,19 +154,111 @@ def create_client(payload: ClientCreateRequest, _: Dict[str, Any] = Depends(get_
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO tbl_clients (client_name, industry, location, status)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id, client_name, industry, location, email, contact_person, status
-                    """,
-                    (payload.clientname.strip(), payload.industry, payload.location, payload.status or 'inactive'),
-                )
+                # Check which columns exist in the table
+                cur.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'tbl_clients'
+                    AND table_schema = 'public'
+                """)
+                available_columns = {row[0] for row in cur.fetchall()}
+                
+                # Build INSERT query dynamically based on available columns
+                insert_cols = ['client_name']
+                insert_values = [payload.clientname.strip()]
+                
+                if 'industry' in available_columns:
+                    insert_cols.append('industry')
+                    insert_values.append(payload.industry)
+                
+                if 'location' in available_columns:
+                    insert_cols.append('location')
+                    insert_values.append(payload.location)
+                
+                # Handle status column
+                status_value = payload.status or 'inactive'
+                if 'status' in available_columns:
+                    insert_cols.append('status')
+                    insert_values.append(status_value)
+                elif 'is_active' in available_columns:
+                    insert_cols.append('is_active')
+                    insert_values.append(status_value == 'active')
+                
+                # Build the INSERT query
+                placeholders = ', '.join(['%s'] * len(insert_values))
+                columns_str = ', '.join(insert_cols)
+                
+                # Build RETURNING clause based on available columns
+                return_cols = ['id', 'client_name']
+                
+                # Handle industry
+                if 'industry' in available_columns:
+                    return_cols.append('industry')
+                else:
+                    return_cols.append('NULL::VARCHAR as industry')
+                
+                # Handle location
+                if 'location' in available_columns:
+                    return_cols.append('location')
+                else:
+                    return_cols.append('NULL::VARCHAR as location')
+                
+                # Handle email
+                if 'email' in available_columns:
+                    return_cols.append('email')
+                else:
+                    return_cols.append('NULL::VARCHAR as email')
+                
+                # Handle contact_person
+                if 'contact_person' in available_columns:
+                    return_cols.append('contact_person')
+                else:
+                    return_cols.append('NULL::VARCHAR as contact_person')
+                
+                # Handle status
+                if 'status' in available_columns:
+                    return_cols.append('status')
+                elif 'is_active' in available_columns:
+                    return_cols.append("CASE WHEN is_active THEN 'active' ELSE 'inactive' END as status")
+                else:
+                    return_cols.append("'inactive'::VARCHAR as status")
+                
+                # Check if client with same name already exists
+                cur.execute("SELECT id FROM tbl_clients WHERE client_name = %s", (payload.clientname.strip(),))
+                existing = cur.fetchone()
+                if existing:
+                    raise HTTPException(status_code=400, detail=f"Client with name '{payload.clientname.strip()}' already exists")
+                
+                query = f"""
+                    INSERT INTO tbl_clients ({columns_str})
+                    VALUES ({placeholders})
+                    RETURNING {', '.join(return_cols)}
+                """
+                
+                cur.execute(query, tuple(insert_values))
                 row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=500, detail="Failed to create client: No row returned")
                 conn.commit()
                 return _row_to_client(row)
+    except HTTPException:
+        raise
+    except psycopg.IntegrityError as integrity_err:
+        conn.rollback()
+        error_msg = str(integrity_err)
+        if "unique" in error_msg.lower() or "duplicate" in error_msg.lower():
+            raise HTTPException(status_code=400, detail=f"Client with name '{payload.clientname.strip()}' already exists")
+        raise HTTPException(status_code=500, detail=f"Database integrity error: {str(integrity_err)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create client: {e}")
+        import traceback
+        error_detail = f"Failed to create client: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in create_client: {error_detail}")
+        if 'conn' in locals():
+            try:
+                conn.rollback()
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to create client: {str(e)}")
 
 
 @router.put("/clients/{client_id}", response_model=ClientResponse)
@@ -175,22 +271,127 @@ def update_client(client_id: int, payload: ClientCreateRequest, _: Dict[str, Any
                 if not cur.fetchone():
                     raise HTTPException(status_code=404, detail="Client not found")
                 
-                cur.execute(
-                    """
+                # Check if another client with the same name already exists (excluding current client)
+                cur.execute("SELECT id FROM tbl_clients WHERE client_name = %s AND id != %s", (payload.clientname.strip(), client_id))
+                existing = cur.fetchone()
+                if existing:
+                    raise HTTPException(status_code=400, detail=f"Client with name '{payload.clientname.strip()}' already exists")
+                
+                # Check which columns exist in the table
+                cur.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'tbl_clients'
+                    AND table_schema = 'public'
+                """)
+                available_columns = {row[0] for row in cur.fetchall()}
+                
+                # Build UPDATE query dynamically based on available columns
+                update_parts = []
+                update_values = []
+                
+                # Always update client_name
+                update_parts.append("client_name = %s")
+                update_values.append(payload.clientname.strip())
+                
+                # Update industry if column exists
+                if 'industry' in available_columns:
+                    update_parts.append("industry = %s")
+                    update_values.append(payload.industry)
+                
+                # Update location if column exists
+                if 'location' in available_columns:
+                    update_parts.append("location = %s")
+                    update_values.append(payload.location)
+                
+                # Handle status column
+                status_value = payload.status or 'inactive'
+                if 'status' in available_columns:
+                    update_parts.append("status = %s")
+                    update_values.append(status_value)
+                elif 'is_active' in available_columns:
+                    update_parts.append("is_active = %s")
+                    update_values.append(status_value == 'active')
+                
+                # Update updated_at if column exists
+                if 'updated_at' in available_columns:
+                    update_parts.append("updated_at = NOW()")
+                
+                # Add client_id for WHERE clause
+                update_values.append(client_id)
+                
+                # Build RETURNING clause based on available columns
+                return_cols = ['id', 'client_name']
+                
+                # Handle industry
+                if 'industry' in available_columns:
+                    return_cols.append('industry')
+                else:
+                    return_cols.append('NULL::VARCHAR as industry')
+                
+                # Handle location
+                if 'location' in available_columns:
+                    return_cols.append('location')
+                else:
+                    return_cols.append('NULL::VARCHAR as location')
+                
+                # Handle email
+                if 'email' in available_columns:
+                    return_cols.append('email')
+                else:
+                    return_cols.append('NULL::VARCHAR as email')
+                
+                # Handle contact_person
+                if 'contact_person' in available_columns:
+                    return_cols.append('contact_person')
+                else:
+                    return_cols.append('NULL::VARCHAR as contact_person')
+                
+                # Handle status
+                if 'status' in available_columns:
+                    return_cols.append('status')
+                elif 'is_active' in available_columns:
+                    return_cols.append("CASE WHEN is_active THEN 'active' ELSE 'inactive' END as status")
+                else:
+                    return_cols.append("'inactive'::VARCHAR as status")
+                
+                # Build the UPDATE query
+                set_clause = ', '.join(update_parts)
+                query = f"""
                     UPDATE tbl_clients 
-                    SET client_name=%s, industry=%s, location=%s, status=%s, updated_at=NOW()
-                    WHERE id=%s
-                    RETURNING id, client_name, industry, location, email, contact_person, status
-                    """,
-                    (payload.clientname.strip(), payload.industry, payload.location, payload.status or 'inactive', client_id),
-                )
+                    SET {set_clause}
+                    WHERE id = %s
+                    RETURNING {', '.join(return_cols)}
+                """
+                
+                cur.execute(query, tuple(update_values))
                 row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=500, detail="Failed to update client: No row returned")
                 conn.commit()
                 return _row_to_client(row)
     except HTTPException:
         raise
+    except psycopg.IntegrityError as integrity_err:
+        if 'conn' in locals():
+            try:
+                conn.rollback()
+            except:
+                pass
+        error_msg = str(integrity_err)
+        if "unique" in error_msg.lower() or "duplicate" in error_msg.lower():
+            raise HTTPException(status_code=400, detail=f"Client with name '{payload.clientname.strip()}' already exists")
+        raise HTTPException(status_code=500, detail=f"Database integrity error: {str(integrity_err)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update client: {e}")
+        import traceback
+        error_detail = f"Failed to update client: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in update_client: {error_detail}")
+        if 'conn' in locals():
+            try:
+                conn.rollback()
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to update client: {str(e)}")
 
 
 @router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

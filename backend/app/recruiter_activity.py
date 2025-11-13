@@ -11,6 +11,13 @@ from fastapi import Body  # type: ignore[reportMissingImports]
 from fastapi.responses import FileResponse, JSONResponse  # type: ignore[reportMissingImports]
 from pydantic import BaseModel  # type: ignore[reportMissingImports]
 from fastapi import Depends  # type: ignore[reportMissingImports]
+import psycopg  # type: ignore[reportMissingImports]
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form  # type: ignore[reportMissingImports]
+from fastapi import Request  # type: ignore[reportMissingImports]
+from fastapi import Body  # type: ignore[reportMissingImports]
+from fastapi.responses import FileResponse, JSONResponse  # type: ignore[reportMissingImports]
+from pydantic import BaseModel  # type: ignore[reportMissingImports]
+from fastapi import Depends  # type: ignore[reportMissingImports]
 import shutil
 import traceback
 
@@ -1941,6 +1948,28 @@ def activity_update_cv_list(payload: Dict[str, Any]) -> Dict[str, Any]:
                     else:
                         updated_cv_list.append(cv_entry)
                 
+                # Ensure all CV entries have recruiter_date field
+                from datetime import date
+                updated_cv_list = []
+                for cv_entry in cv_list:
+                    if isinstance(cv_entry, dict):
+                        # If recruiter_date doesn't exist, add it
+                        if 'recruiter_date' not in cv_entry or not cv_entry.get('recruiter_date'):
+                            # Try to extract from timestamp if available
+                            timestamp = cv_entry.get('time') or cv_entry.get('timestamp')
+                            if timestamp:
+                                try:
+                                    from datetime import datetime
+                                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                                    cv_entry['recruiter_date'] = dt.date().isoformat()
+                                except:
+                                    cv_entry['recruiter_date'] = date.today().isoformat()
+                            else:
+                                cv_entry['recruiter_date'] = date.today().isoformat()
+                        updated_cv_list.append(cv_entry)
+                    else:
+                        updated_cv_list.append(cv_entry)
+                
                 # Persist list
                 # Replace cv_list with entries that have recruiter_date
                 cur.execute(
@@ -2029,6 +2058,14 @@ def list_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                 if db_status not in ["hold", "on_hold", ""]:
                     continue  # Skip any other non-null, non-hold status
         
+        filename = item.get("file_name") or item.get("file") or ""
+        
+        # Filter out submitted/rejected CVs based on DB status
+        if filename in db_status_map:
+            db_status = db_status_map[filename].get("status", "").lower() if db_status_map[filename].get("status") else ""
+            if db_status in ["submitted", "rejected"]:
+                continue  # Skip this CV
+        
         k = key(item)
         if k in stored_map:
             merged_item = {**item, **stored_map[k]}
@@ -2094,6 +2131,17 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                             entry['recruiter_date'] = date.today().isoformat()
                     else:
                         entry['recruiter_date'] = date.today().isoformat()
+                    # Add recruiter_date when creating new entry
+                    from datetime import date
+                    if time_str:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(time_str).replace('Z', '+00:00'))
+                            entry['recruiter_date'] = dt.date().isoformat()
+                        except:
+                            entry['recruiter_date'] = date.today().isoformat()
+                    else:
+                        entry['recruiter_date'] = date.today().isoformat()
                     current.append(entry)
                     idx = len(current) - 1
                 # capture previous status (normalized) to compute submitted delta later
@@ -2114,6 +2162,20 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                     current[idx]["status"] = normalized
                 
                 # Ensure recruiter_date exists (set when recruiter uploads profile)
+                if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
+                    from datetime import date
+                    timestamp = current[idx].get('time') or current[idx].get('timestamp')
+                    if timestamp:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                            current[idx]['recruiter_date'] = dt.date().isoformat()
+                        except:
+                            current[idx]['recruiter_date'] = date.today().isoformat()
+                    else:
+                        current[idx]['recruiter_date'] = date.today().isoformat()
+                
+                # Ensure recruiter_date exists
                 if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
                     from datetime import date
                     timestamp = current[idx].get('time') or current[idx].get('timestamp')
@@ -2203,6 +2265,18 @@ def submit_selected_cvs(payload: Dict[str, Any]) -> Dict[str, Any]:
                             item["demand_id"] = demand_id
                             item["recruiter_id"] = rid
                             # Ensure recruiter_date exists (set when recruiter uploads profile)
+                            if 'recruiter_date' not in item or not item.get('recruiter_date'):
+                                from datetime import date
+                                if time_str:
+                                    try:
+                                        from datetime import datetime
+                                        dt = datetime.fromisoformat(str(time_str).replace('Z', '+00:00'))
+                                        item['recruiter_date'] = dt.date().isoformat()
+                                    except:
+                                        item['recruiter_date'] = date.today().isoformat()
+                                else:
+                                    item['recruiter_date'] = date.today().isoformat()
+                            # Ensure recruiter_date exists
                             if 'recruiter_date' not in item or not item.get('recruiter_date'):
                                 from datetime import date
                                 if time_str:
@@ -2340,8 +2414,10 @@ def upload_cv(
                     except Exception:
                         current = []
                     from datetime import date
+                    from datetime import date
                     entry = {"file": file.filename, "time": datetime.now().isoformat()}
                     entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
+                    entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date for date filtering
                     current.append(entry)
                     cur.execute(
                         "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at = NOW() WHERE id=%s",
@@ -2488,6 +2564,8 @@ def fetch_all_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                         OR LOWER(TRIM(COALESCE(status, ''))) = 'on_hold'
                     )
                     AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('submitted', 'rejected', 'discard', '1')
+                    AND (status IS NULL OR LOWER(status) = 'hold')
+                    AND (status IS NULL OR LOWER(status) NOT IN ('submitted', 'rejected'))
                     ORDER BY created_at DESC NULLS LAST, id DESC
                     """,
                     (recruiter_id, demand_id),
@@ -2593,6 +2671,7 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                             "file_path": file_path,
                             "status": 0,
                             "recruiter_date": date.today().isoformat(),  # Add recruiter_date when recruiter uploads profile
+                            "recruiter_date": date.today().isoformat(),  # Add recruiter_date for date filtering
                         }
 
                         # Push into flat list per spec
@@ -2695,6 +2774,9 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
                         # Ensure recruiter_date exists when updating (set to current date if missing)
                         if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
                             current[idx]["recruiter_date"] = date.today().isoformat()
+                        # Ensure recruiter_date exists when updating
+                        if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
+                            current[idx]["recruiter_date"] = date.today().isoformat()
 
                     # Only append to activity list if status is submitted
                     if normalized_status == "submitted":
@@ -2735,6 +2817,8 @@ def list_resumes_db(recruiter_id: int, demand_id: int) -> List[Dict[str, Any]]:
                         OR LOWER(TRIM(COALESCE(status, ''))) = 'on_hold'
                     )
                     AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('submitted', 'rejected', 'discard', '1')
+                    AND (status IS NULL OR LOWER(status) = 'hold')
+                    AND (status IS NULL OR LOWER(status) NOT IN ('submitted', 'rejected'))
                     ORDER BY created_at DESC
                     """,
                     (recruiter_id, demand_id),

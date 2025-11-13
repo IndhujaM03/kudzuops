@@ -10,6 +10,3 @@ COMMENT ON COLUMN tbl_submissions.candidate_name IS 'Name of the candidate being
 COMMENT ON COLUMN tbl_submissions.candidate_email IS 'Email of the candidate';
 COMMENT ON COLUMN tbl_submissions.candidate_phone IS 'Phone number of the candidate';
 
-
-
-

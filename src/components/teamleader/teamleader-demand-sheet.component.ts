@@ -1,4 +1,4 @@
-import { Component, signal, inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, signal, inject, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TeamLeaderService } from '../../services/teamleader.service';
@@ -203,7 +203,7 @@ interface DemandItem {
               <tbody>
                 <tr *ngFor="let cvData of cvSubmitted(); let i = index">
                   <ng-container *ngFor="let cv of getApprovedCvs(cvData.cv_list); let j = index">
-                    <tr class="cv-row">
+                    <tr class="cv-row" (dblclick)="openCvReviewModal(cv, cvData)" style="cursor: pointer;" title="Double-click to view profile details">
                       <td class="demand-id">{{ cvData.demand_id || 'N/A' }}</td>
                       <td class="cv-progress">
                         <div class="progress-container">
@@ -252,8 +252,64 @@ interface DemandItem {
 
     </div>
 
+    <!-- Status Edit Modal - Moved outside wrapper for proper z-index -->
+    <div class="modal-overlay status-modal-overlay" *ngIf="showStatusModal()" (click)="closeStatusModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3 class="modal-title">Edit Demand Status</h3>
+          <button class="modal-close" (click)="closeStatusModal()">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="status-edit-form">
+            <div class="form-group">
+              <label for="status-select">Status</label>
+              <select id="status-select" class="form-control" [(ngModel)]="selectedStatus">
+                <option value="open">Open</option>
+                <option value="hold">Hold</option>
+                <option value="close">Closed</option>
+                <option value="cancel">Cancel</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="status-remark">Remark</label>
+              <textarea 
+                id="status-remark" 
+                class="form-control" 
+                rows="4" 
+                placeholder="Enter remark (optional)"
+                [(ngModel)]="statusRemark"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <div class="action-buttons">
+            <button (click)="saveStatus()" class="btn-save" title="Save Status">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              Save
+            </button>
+            <button (click)="closeStatusModal()" class="btn-cancel" title="Cancel">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- CV Review Modal -->
-    <div class="modal-overlay" *ngIf="showCvModal" (click)="closeCvModal()">
+    <div class="modal-overlay" *ngIf="showCvModal()" (click)="closeCvModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h3 class="modal-title">CV Review - {{ selectedCv?.candidate_name || 'Unknown Candidate' }}</h3>
@@ -366,61 +422,6 @@ interface DemandItem {
       </div>
     </div>
 
-    <!-- Status Edit Modal -->
-    <div class="modal-overlay" *ngIf="showStatusModal()" (click)="closeStatusModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h3 class="modal-title">Edit Demand Status</h3>
-          <button class="modal-close" (click)="closeStatusModal()">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-          </button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="status-edit-form">
-            <div class="form-group">
-              <label for="status-select">Status</label>
-              <select id="status-select" class="form-control" [(ngModel)]="selectedStatus">
-                <option value="open">Open</option>
-                <option value="hold">Hold</option>
-                <option value="close">Closed</option>
-                <option value="cancel">Cancel</option>
-              </select>
-            </div>
-            
-            <div class="form-group">
-              <label for="status-remark">Remark</label>
-              <textarea 
-                id="status-remark" 
-                class="form-control" 
-                rows="4" 
-                placeholder="Enter remark (optional)"
-                [(ngModel)]="statusRemark"
-              ></textarea>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <div class="action-buttons">
-            <button (click)="saveStatus()" class="btn-save" title="Save Status">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-              </svg>
-              Save
-            </button>
-            <button (click)="closeStatusModal()" class="btn-cancel" title="Cancel">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
   `,
   styles: [`
     .tl-demand-wrapper { 
@@ -692,8 +693,35 @@ interface DemandItem {
 
     
     /* Modal Styles */
-    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-content { background: white; border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); max-width: 600px; width: 90%; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+    .modal-overlay { 
+      position: fixed !important; 
+      top: 0 !important; 
+      left: 0 !important; 
+      right: 0 !important; 
+      bottom: 0 !important; 
+      background: rgba(0, 0, 0, 0.5) !important; 
+      display: flex !important; 
+      align-items: center !important; 
+      justify-content: center !important; 
+      z-index: 99999 !important; 
+      pointer-events: auto !important;
+    }
+    .status-modal-overlay {
+      z-index: 100000 !important;
+    }
+    .modal-content { 
+      background: white !important; 
+      border-radius: 12px !important; 
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important; 
+      max-width: 600px !important; 
+      width: 90% !important; 
+      max-height: 80vh !important; 
+      overflow: hidden !important; 
+      display: flex !important; 
+      flex-direction: column !important; 
+      z-index: 100000 !important;
+      position: relative !important;
+    }
     .modal-header { padding: 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
     .modal-title { margin: 0; font-size: 18px; font-weight: 600; color: #111827; }
     .modal-close { background: none; border: none; cursor: pointer; padding: 4px; color: #6b7280; }
@@ -830,6 +858,7 @@ interface DemandItem {
 export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   private teamLeaderService = inject(TeamLeaderService);
   private toastService = inject(ToastService);
+  private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
   
   // Modal state
@@ -1292,8 +1321,25 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
     };
     this.selectedStatus = statusMap[currentStatus?.toLowerCase()] || 'open';
     this.statusRemark = '';
+    
+    // Set the signal immediately
     this.showStatusModal.set(true);
     console.log('Status modal signal set to:', this.showStatusModal());
+    
+    // Force change detection multiple times to ensure DOM updates
+    this.cdr.detectChanges();
+    
+    // Use setTimeout to ensure the modal is rendered after the current execution context
+    setTimeout(() => {
+      this.cdr.detectChanges();
+      console.log('After setTimeout - Status modal signal:', this.showStatusModal());
+      // Check if modal element exists in DOM
+      const modalElement = document.querySelector('.status-modal-overlay');
+      console.log('Modal element in DOM:', modalElement);
+      if (modalElement) {
+        console.log('Modal element styles:', window.getComputedStyle(modalElement));
+      }
+    }, 10);
   }
 
   closeStatusModal() {

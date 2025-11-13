@@ -2129,6 +2129,8 @@
   border-radius: 4px;
   background: #eff6ff;
   transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
   border: 1px solid #dbeafe;
   font-weight: 500;
 }
@@ -2144,6 +2146,21 @@
 .cv-link-btn:hover svg {
   color: var(--kudzu-primary);
   stroke: var(--kudzu-primary);
+}
+
+.cv-link-btn:active,
+.cv-link-btn:focus {
+  background: #eff6ff !important;
+  color: var(--kudzu-primary) !important;
+  transform: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.cv-link-btn:active svg,
+.cv-link-btn:focus svg {
+  color: var(--kudzu-primary) !important;
+  stroke: var(--kudzu-primary) !important;
 }
 
 .cv-link-btn svg {
@@ -2238,6 +2255,21 @@
   stroke: white;
 }
 
+.cv-link-btn:active,
+.cv-link-btn:focus {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  transform: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.cv-link-btn:active svg,
+.cv-link-btn:focus svg {
+  color: white !important;
+  stroke: white !important;
+}
+
 .cv-link-btn svg {
   width: 14px;
   height: 14px;
@@ -2328,7 +2360,12 @@
 
 /* CV Modal Styles */
 .cv-modal-overlay {
-  z-index: 10000 !important;
+  z-index: 100010 !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
 }
 
 .cv-modal {
@@ -2336,7 +2373,8 @@
   max-height: 90vh;
   width: 1000px;
   height: 700px;
-  z-index: 10001 !important;
+  z-index: 100011 !important;
+  position: relative !important;
 }
 
 .cv-modal .modal-header {
@@ -2440,13 +2478,14 @@
 .status-modal-overlay {
   position: fixed !important;
   inset: 0 !important;
-  display: flex !important;
+  /* display is controlled by inline style binding - do not set here */
   align-items: center !important;
   justify-content: center !important;
   background: rgba(15, 23, 42, 0.35) !important;
   backdrop-filter: blur(4px) !important;
-  padding: 225px !important;
-  z-index: 9999 !important;
+  padding: 16px !important;
+  z-index: 100000 !important;
+  pointer-events: auto !important;
 }
 
 .status-modal-card {

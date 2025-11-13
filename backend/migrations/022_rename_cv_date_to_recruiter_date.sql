@@ -81,6 +81,3 @@ BEGIN
         RAISE NOTICE 'Success: All cv_date fields have been successfully renamed to recruiter_date';
     END IF;
 END $$;
-
-
-

@@ -1266,20 +1266,20 @@ interface CandidateForm {
     }
     
     /* Ensure docx content respects margins */
-    .docx-host >>> img,
-    .docx-host >>> table {
+    .docx-host ::ng-deep img,
+    .docx-host ::ng-deep table {
       max-width: 100% !important;
       height: auto !important;
     }
     
     /* Add proper margins to paragraphs */
-    .docx-host >>> p {
+    .docx-host ::ng-deep p {
       margin: 8px 0;
       line-height: 1.6;
     }
     
     /* Wrap table if it's too wide */
-    .docx-host >>> table {
+    .docx-host ::ng-deep table {
       margin: 10px 0;
     }
     
