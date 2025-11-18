@@ -65,10 +65,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at TIMESTAMPTZ,
-    created_by BIGINT REFERENCES tbl_users(id)
+    created_by BIGINT REFERENCES users(id)
 );
 
--- Optional helpful indexes
-CREATE INDEX IF NOT EXISTS idx_users_user_type ON tbl_users(user_type);
-CREATE INDEX IF NOT EXISTS idx_users_is_active ON tbl_users(is_active);
+-- Optional helpful indexes (on the users table, not the view)
+CREATE INDEX IF NOT EXISTS idx_users_user_type ON users(user_type);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
