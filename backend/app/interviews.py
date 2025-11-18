@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 
 # Database connection
@@ -59,21 +59,47 @@ def _ensure_tables():
         print(f"Error ensuring interview tables: {e}")
 
 @router.get("/interviews/recruiter/{recruiter_id}")
-def get_recruiter_interviews(recruiter_id: int, page: int = 1, size: int = 10) -> Dict[str, Any]:
-    """Get all interviews for a specific recruiter"""
+def get_recruiter_interviews(
+    recruiter_id: int, 
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=1, le=100),
+    search: Optional[str] = Query(None)
+) -> Dict[str, Any]:
+    """Get all interviews for a specific recruiter with optional search"""
     _ensure_tables()
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
+                # Build WHERE clause with search
+                where_conditions = ["i.recruiter_id = %s"]
+                params = [recruiter_id]
+                
+                if search:
+                    search_pattern = f"%{search}%"
+                    where_conditions.append("""
+                        (rs.candidate_name ILIKE %s OR 
+                         rs.candidate_email ILIKE %s OR 
+                         ds.skill ILIKE %s OR 
+                         c.client_name ILIKE %s)
+                    """)
+                    params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+                
+                where_clause = " AND ".join(where_conditions)
+                
                 # Count total
-                cur.execute(
-                    "SELECT COUNT(*) FROM tbl_interviews WHERE recruiter_id = %s",
-                    (recruiter_id,)
-                )
+                count_query = f"""
+                    SELECT COUNT(*) 
+                    FROM tbl_interviews i
+                    LEFT JOIN tbl_recruiter_submissions rs ON i.submission_id = rs.id
+                    LEFT JOIN tbl_demand_sheet ds ON rs.demand_id = ds.id
+                    LEFT JOIN tbl_clients c ON ds.client_id = c.id
+                    WHERE {where_clause}
+                """
+                cur.execute(count_query, params)
                 total = int(cur.fetchone()[0])
                 
                 # Get interviews with submission and demand info
-                cur.execute("""
+                query = f"""
                     SELECT 
                         i.id, i.submission_id, i.recruiter_id, i.interview_date, 
                         i.mode, i.status, i.notes, i.created_at, i.updated_at,
@@ -83,10 +109,12 @@ def get_recruiter_interviews(recruiter_id: int, page: int = 1, size: int = 10) -
                     LEFT JOIN tbl_recruiter_submissions rs ON i.submission_id = rs.id
                     LEFT JOIN tbl_demand_sheet ds ON rs.demand_id = ds.id
                     LEFT JOIN tbl_clients c ON ds.client_id = c.id
-                    WHERE i.recruiter_id = %s
+                    WHERE {where_clause}
                     ORDER BY i.interview_date DESC
                     LIMIT %s OFFSET %s
-                """, (recruiter_id, size, (page - 1) * size))
+                """
+                params.extend([size, (page - 1) * size])
+                cur.execute(query, params)
                 
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
@@ -217,7 +245,7 @@ def get_interview(interview_id: int) -> Dict[str, Any]:
                         i.mode, i.status, i.notes, i.created_at, i.updated_at,
                         rs.candidate_name, rs.candidate_email, rs.candidate_phone, rs.demand_id,
                         ds.skill as job_title, c.client_name,
-                        u.display_name as recruiter_name
+                        u.display_name as candidate_name
                     FROM tbl_interviews i
                     LEFT JOIN tbl_recruiter_submissions rs ON i.submission_id = rs.id
                     LEFT JOIN tbl_demand_sheet ds ON rs.demand_id = ds.id
@@ -262,7 +290,395 @@ def delete_interview(interview_id: int) -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete interview: {e}")
 
+# Interview Schedule endpoints for tbl_interview_schedule table (Page 1)
+# New structure with JSON column for rounds and slots
 
+class SlotAssignment(BaseModel):
+    round_key: str  # e.g., "R1"
+    slot_index: int  # Index of the slot in the slots array
 
+class RejectAllSlots(BaseModel):
+    round_key: str  # e.g., "R1"
 
+def _ensure_interview_schedule_table():
+    """Ensure interview schedule table exists with new structure"""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS tbl_interview_schedule (
+                        id BIGSERIAL PRIMARY KEY,
+                        candidate_name VARCHAR(255) NOT NULL,
+                        recruiter_name VARCHAR(255),
+                        recruiter_id BIGINT,
+                        round VARCHAR(50),
+                        status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+                        interview_schedules JSONB,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                """)
+                # Create indexes
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_interview_schedule_status 
+                    ON tbl_interview_schedule(status);
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_interview_schedule_recruiter_id 
+                    ON tbl_interview_schedule(recruiter_id);
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_interview_schedule_json 
+                    ON tbl_interview_schedule USING GIN (interview_schedules);
+                """)
+                conn.commit()
+    except Exception as e:
+        print(f"Error ensuring interview schedule table: {e}")
+
+@router.get("/interview-schedule/waiting")
+def get_waiting_candidates(
+    page: int = Query(1, ge=1),
+    size: int = Query(1000, ge=1, le=10000),
+    search: Optional[str] = Query(None)
+) -> Dict[str, Any]:
+    """Get candidates in Waiting tab: status='scheduled' and round_status=0"""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                where_conditions = ["s.status = 'scheduled'"]
+                params = []
+                
+                # Filter for round_status = 0 in JSON (handle NULL)
+                where_conditions.append("""
+                    (s.interview_schedules IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM jsonb_each(s.interview_schedules) AS rounds
+                        WHERE (rounds.value->>'round_status')::int = 0
+                    ))
+                """)
+                
+                if search:
+                    search_pattern = f"%{search}%"
+                    where_conditions.append("s.candidate_name ILIKE %s")
+                    params.extend([search_pattern])
+                
+                where_clause = " AND ".join(where_conditions)
+                
+                # Count total
+                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}"
+                cur.execute(count_query, params)
+                total = int(cur.fetchone()[0])
+                
+                # Get candidates with recruiter name from users table
+                query = f"""
+                    SELECT 
+                        s.id, s.candidate_name, 
+                        COALESCE(
+                            TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))),
+                            'N/A'
+                        ) as recruiter_name,
+                        s.recruiter_id, 
+                        s.round, s.status, s.interview_schedules, s.created_at
+                    FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_users u ON s.recruiter_id = u.id
+                    WHERE {where_clause}
+                    ORDER BY s.created_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                params.extend([size, (page - 1) * size])
+                cur.execute(query, params)
+                
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                candidates = []
+                
+                for row in rows:
+                    candidate = dict(zip(cols, row))
+                    # Parse JSON if it exists
+                    if candidate.get('interview_schedules'):
+                        if isinstance(candidate['interview_schedules'], str):
+                            candidate['interview_schedules'] = json.loads(candidate['interview_schedules'])
+                    else:
+                        candidate['interview_schedules'] = {}
+                    
+                    # Extract round key and all slots from JSON where round_status = 0
+                    all_slots = []
+                    if candidate.get('interview_schedules'):
+                        for round_key, round_data in candidate['interview_schedules'].items():
+                            if round_data.get('round_status') == 0:
+                                candidate['round'] = round_key
+                                # Extract all slots for this round
+                                if round_data.get('slots'):
+                                    for slot in round_data['slots']:
+                                        if slot.get('date') and slot.get('time'):
+                                            all_slots.append({
+                                                'date': slot.get('date'),
+                                                'time': slot.get('time'),
+                                                'slot_status': slot.get('slot_status', 0),
+                                                'round': round_key
+                                            })
+                                break
+                    
+                    # Add all_slots to candidate for frontend display
+                    candidate['all_slots'] = all_slots
+                    
+                    # Serialize timestamps
+                    if candidate.get('created_at'):
+                        if hasattr(candidate['created_at'], 'isoformat'):
+                            candidate['created_at'] = candidate['created_at'].isoformat()
+                        else:
+                            candidate['created_at'] = str(candidate['created_at'])
+                    
+                    candidates.append(candidate)
+                
+                return {
+                    "items": candidates,
+                    "total": total,
+                    "page": page,
+                    "size": size
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch waiting candidates: {str(e)}")
+
+@router.get("/interview-schedule/scheduled")
+def get_scheduled_candidates(
+    page: int = Query(1, ge=1),
+    size: int = Query(1000, ge=1, le=10000),
+    search: Optional[str] = Query(None)
+) -> Dict[str, Any]:
+    """Get candidates in Scheduled tab: status='slot_allocated' and at least one slot_status=1"""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                where_conditions = ["s.status = 'slot_allocated'"]
+                params = []
+                
+                # Filter for at least one slot with slot_status = 1 (handle NULL)
+                where_conditions.append("""
+                    (s.interview_schedules IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM jsonb_each(s.interview_schedules) AS rounds,
+                        jsonb_array_elements(rounds.value->'slots') AS slot
+                        WHERE (slot->>'slot_status')::int = 1
+                    ))
+                """)
+                
+                if search:
+                    search_pattern = f"%{search}%"
+                    where_conditions.append("s.candidate_name ILIKE %s")
+                    params.extend([search_pattern])
+                
+                where_clause = " AND ".join(where_conditions)
+                
+                # Count total
+                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}"
+                cur.execute(count_query, params)
+                total = int(cur.fetchone()[0])
+                
+                # Get candidates with recruiter name from users table
+                query = f"""
+                    SELECT 
+                        s.id, s.candidate_name, 
+                        COALESCE(
+                            TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))),
+                            'N/A'
+                        ) as recruiter_name,
+                        s.recruiter_id, 
+                        s.round, s.status, s.interview_schedules, s.created_at
+                    FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_users u ON s.recruiter_id = u.id
+                    WHERE {where_clause}
+                    ORDER BY s.created_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                params.extend([size, (page - 1) * size])
+                cur.execute(query, params)
+                
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                candidates = []
+                
+                for row in rows:
+                    candidate = dict(zip(cols, row))
+                    # Parse JSON if it exists
+                    if candidate.get('interview_schedules'):
+                        if isinstance(candidate['interview_schedules'], str):
+                            candidate['interview_schedules'] = json.loads(candidate['interview_schedules'])
+                    else:
+                        candidate['interview_schedules'] = {}
+                    
+                    # Extract round key and all slots with slot_status = 1
+                    all_slots = []
+                    if candidate.get('interview_schedules'):
+                        for round_key, round_data in candidate['interview_schedules'].items():
+                            if round_data.get('slots'):
+                                for slot in round_data['slots']:
+                                    if slot.get('slot_status') == 1:
+                                        if not candidate.get('round'):
+                                            candidate['round'] = round_key
+                                        # Only include slots with slot_status = 1
+                                        if slot.get('date') and slot.get('time'):
+                                            all_slots.append({
+                                                'date': slot.get('date'),
+                                                'time': slot.get('time'),
+                                                'slot_status': slot.get('slot_status', 1),
+                                                'round': round_key
+                                            })
+                    
+                    # Add all_slots to candidate for frontend display (only slot_status = 1)
+                    candidate['all_slots'] = all_slots
+                    
+                    # Serialize timestamps
+                    if candidate.get('created_at'):
+                        if hasattr(candidate['created_at'], 'isoformat'):
+                            candidate['created_at'] = candidate['created_at'].isoformat()
+                        else:
+                            candidate['created_at'] = str(candidate['created_at'])
+                    
+                    candidates.append(candidate)
+                
+                return {
+                    "items": candidates,
+                    "total": total,
+                    "page": page,
+                    "size": size
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch scheduled candidates: {str(e)}")
+
+@router.post("/interview-schedule/{schedule_id}/assign-slot")
+def assign_slot(schedule_id: int, assignment: SlotAssignment) -> Dict[str, Any]:
+    """Assign a slot: Update selected slot slot_status=1, round round_status=1, and status='slot_allocated'"""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get current data
+                cur.execute("""
+                    SELECT interview_schedules, status
+                    FROM tbl_interview_schedule
+                    WHERE id = %s
+                """, (schedule_id,))
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Interview schedule not found")
+                
+                schedules_json = result[0]
+                if schedules_json is None:
+                    schedules_json = {}
+                elif isinstance(schedules_json, str):
+                    schedules_json = json.loads(schedules_json)
+                
+                # Update the specific slot
+                if assignment.round_key not in schedules_json:
+                    raise HTTPException(status_code=400, detail=f"Round {assignment.round_key} not found")
+                
+                round_data = schedules_json[assignment.round_key]
+                if 'slots' not in round_data:
+                    raise HTTPException(status_code=400, detail=f"No slots found for round {assignment.round_key}")
+                
+                slots = round_data['slots']
+                if assignment.slot_index < 0 or assignment.slot_index >= len(slots):
+                    raise HTTPException(status_code=400, detail="Invalid slot index")
+                
+                # Update slot status to 1
+                slots[assignment.slot_index]['slot_status'] = 1
+                
+                # Do NOT update round_status when assigning a slot
+                # round_status should only be updated when rejecting all slots
+                
+                # Update schedules JSON
+                schedules_json[assignment.round_key] = round_data
+                
+                # Update database
+                cur.execute("""
+                    UPDATE tbl_interview_schedule 
+                    SET interview_schedules = %s::jsonb,
+                        status = 'slot_allocated',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING id
+                """, (json.dumps(schedules_json), schedule_id))
+                
+                if cur.fetchone() is None:
+                    raise HTTPException(status_code=404, detail="Failed to update interview schedule")
+                
+                conn.commit()
+                
+                return {
+                    "message": "Slot assigned successfully",
+                    "schedule_id": schedule_id,
+                    "round": assignment.round_key,
+                    "slot_index": assignment.slot_index
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign slot: {str(e)}")
+
+@router.post("/interview-schedule/{schedule_id}/reject-all-slots")
+def reject_all_slots(schedule_id: int, reject: RejectAllSlots) -> Dict[str, Any]:
+    """Reject all slots: Update round round_status=1 and status='reschedule'"""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get current data
+                cur.execute("""
+                    SELECT interview_schedules, status
+                    FROM tbl_interview_schedule
+                    WHERE id = %s
+                """, (schedule_id,))
+                
+                result = cur.fetchone()
+                if not result:
+                    raise HTTPException(status_code=404, detail="Interview schedule not found")
+                
+                schedules_json = result[0]
+                if schedules_json is None:
+                    schedules_json = {}
+                elif isinstance(schedules_json, str):
+                    schedules_json = json.loads(schedules_json)
+                
+                # Update the round status
+                if reject.round_key not in schedules_json:
+                    raise HTTPException(status_code=400, detail=f"Round {reject.round_key} not found")
+                
+                round_data = schedules_json[reject.round_key]
+                round_data['round_status'] = 1
+                schedules_json[reject.round_key] = round_data
+                
+                # Update database
+                cur.execute("""
+                    UPDATE tbl_interview_schedule 
+                    SET interview_schedules = %s::jsonb,
+                        status = 'reschedule',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING id
+                """, (json.dumps(schedules_json), schedule_id))
+                
+                if cur.fetchone() is None:
+                    raise HTTPException(status_code=404, detail="Failed to update interview schedule")
+                
+                conn.commit()
+                
+                return {
+                    "message": "All slots rejected. Candidate moved to reschedule.",
+                    "schedule_id": schedule_id,
+                    "round": reject.round_key
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reject slots: {str(e)}")
+
+@router.get("/interview-schedule/test")
+def test_interview_schedule_endpoint() -> Dict[str, Any]:
+    """Test endpoint to verify interview-schedule routes are working"""
+    return {
+        "message": "Interview schedule endpoint is working",
+        "status": "ok"
+    }
 

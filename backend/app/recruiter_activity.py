@@ -1249,35 +1249,49 @@ def get_recruiter_dashboard(recruiter_id: int) -> Dict[str, Any]:
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all activities for the recruiter with status in ('open', 'processing', 'hold')
+                # Get all activities for the recruiter where activity_status != 'closed'
+                # Select all columns explicitly to ensure required_cv_count is correctly retrieved
                 cur.execute("""
                     SELECT 
-                        ra.*,
+                        ra.id,
+                        ra.recruiter_id,
+                        ra.demand_id,
+                        ra.activity_status,
+                        ra.required_cv_count,
+                        ra.uploaded_cv_count,
+                        ra.cv_list,
+                        ra.opened_at,
+                        ra.closed_at,
+                        ra.updated_at,
                         COALESCE(c.client_name, '') AS client_name,
-                        ds.skill,
-                        ds.no_of_positions,
-                        ds.priority,
-                        ds.status as demand_status
+                        COALESCE(ds.skill, '') AS skill,
+                        COALESCE(ds.skill, '') AS job_title,
+                        COALESCE(ds.no_of_positions, 0) AS no_of_positions,
+                        COALESCE(ds.priority::text, 'medium') AS priority,
+                        COALESCE(ds.status::text, 'open') as demand_status
                     FROM tbl_recruiter_activity ra
                     LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
                     LEFT JOIN tbl_clients c ON ds.client_id = c.id
                     WHERE ra.recruiter_id = %s 
-                    AND ra.activity_status IN ('open', 'processing', 'hold')
+                    AND ra.activity_status != 'closed'
                     ORDER BY ra.updated_at DESC
                 """, (recruiter_id,))
                 
                 activities = _rows_to_dicts([desc[0] for desc in cur.description], cur.fetchall())
                 
-                # Initialize counters
-                total_demands = len(activities)
-                total_cvs = 0
-                approved = 0
-                under_verification = 0
-                rejected = 0
+                # Count unique demands (by demand_id) to get accurate total_demands
+                unique_demand_ids = set()
+                total_cvs_uploaded = 0  # Sum of uploaded_cv_count
+                approved = 0  # Count from cv_list where status = 1
                 
                 # Process each activity's cv_list
                 processed_activities = []
                 for activity in activities:
+                    # Track unique demand IDs
+                    demand_id = activity.get('demand_id')
+                    if demand_id:
+                        unique_demand_ids.add(demand_id)
+                    
                     # Parse cv_list JSON
                     cv_list = []
                     if activity.get('cv_list'):
@@ -1286,57 +1300,61 @@ def get_recruiter_dashboard(recruiter_id: int) -> Dict[str, Any]:
                         except:
                             cv_list = []
                     
-                    # Count CVs by status
-                    activity_cv_count = 0
+                    # Count approved CVs from cv_list (status = 1)
                     activity_approved = 0
-                    activity_under_verification = 0
-                    activity_rejected = 0
-                    
                     for cv in cv_list:
                         if isinstance(cv, dict) and 'status' in cv:
-                            total_cvs += 1
-                            activity_cv_count += 1
-                            
                             status = cv.get('status')
                             if status == 1:  # approved
                                 approved += 1
                                 activity_approved += 1
-                            elif status == 0:  # under verification
-                                under_verification += 1
-                                activity_under_verification += 1
-                            elif status == 2:  # rejected
-                                rejected += 1
-                                activity_rejected += 1
+                    
+                    # Sum uploaded_cv_count for total CVs uploaded
+                    uploaded_count = activity.get('uploaded_cv_count', 0) or 0
+                    total_cvs_uploaded += uploaded_count
+                    
+                    # Ensure required_cv_count is correctly retrieved (use value from activity, not demand_sheet)
+                    required_count = activity.get('required_cv_count', 0) or 0
                     
                     # Add processed data to activity
                     activity['cv_list'] = cv_list
                     activity['cv_stats'] = {
-                        'total': activity_cv_count,
+                        'total': len(cv_list),
                         'approved': activity_approved,
-                        'under_verification': activity_under_verification,
-                        'rejected': activity_rejected
+                        'under_verification': 0,
+                        'rejected': 0
                     }
                     
                     # Calculate progress percentage
-                    required_count = activity.get('required_cv_count', 0)
-                    uploaded_count = activity.get('uploaded_cv_count', 0)
                     progress_percentage = (uploaded_count / required_count * 100) if required_count > 0 else 0
                     activity['progress_percentage'] = round(progress_percentage, 1)
                     
+                    # Ensure required_cv_count is explicitly set
+                    activity['required_cv_count'] = required_count
+                    
+                    # Add job_title if not present
+                    if not activity.get('job_title') and activity.get('skill'):
+                        activity['job_title'] = activity.get('skill')
+                    
                     processed_activities.append(activity)
+                
+                # Total demands = count of unique demand_ids
+                total_demands = len(unique_demand_ids)
                 
                 # Create summary statistics
                 summary = {
                     'total_demands': total_demands,
-                    'total_cvs': total_cvs,
-                    'approved': approved,
-                    'under_verification': under_verification,
-                    'rejected': rejected
+                    'total_cvs_uploaded': total_cvs_uploaded,  # Sum of uploaded_cv_count
+                    'approved_cvs_count': approved,  # Count from cv_list where status = 1
+                    'total_cvs': total_cvs_uploaded,  # Keep for backward compatibility
+                    'approved': approved,  # Keep for backward compatibility
+                    'under_verification': 0,
+                    'rejected': 0
                 }
                 
                 # Calculate approval rate
-                if total_cvs > 0:
-                    summary['approval_rate'] = round((approved / total_cvs) * 100, 1)
+                if total_cvs_uploaded > 0:
+                    summary['approval_rate'] = round((approved / total_cvs_uploaded) * 100, 1)
                 else:
                     summary['approval_rate'] = 0
                 

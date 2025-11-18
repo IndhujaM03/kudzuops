@@ -48,7 +48,7 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
                     <div class="superadmin-role-dropdown" [class.open]="user.showRoleDropdown">
                       <div class="superadmin-role-trigger" (click)="toggleRoleDropdown(user, $event)">
                         <span class="superadmin-role-display">
-                          {{ user.role ? (user.role | titlecase) : 'Select Role' }}
+                          {{ user.role ? formatRole(user.role) : 'Select Role' }}
                         </span>
                         <span class="superadmin-role-arrow">▼</span>
                       </div>
@@ -64,6 +64,10 @@ import { SuperAdminService, PendingUser } from '../../services/superadmin.servic
                         <label class="superadmin-role-checkbox">
                           <input type="checkbox" [checked]="user.role === 'manager'" (change)="setRoleFromCheckbox(user, 'manager'); $event.stopPropagation()">
                           <span>Manager</span>
+                        </label>
+                        <label class="superadmin-role-checkbox">
+                          <input type="checkbox" [checked]="user.role === 'hr'" (change)="setRoleFromCheckbox(user, 'hr'); $event.stopPropagation()">
+                          <span>HR</span>
                         </label>
                         <label class="superadmin-role-checkbox">
                           <input type="checkbox" [checked]="user.role === 'business_head'" (change)="setRoleFromCheckbox(user, 'business_head'); $event.stopPropagation()">
@@ -1125,7 +1129,7 @@ export class SuperAdminDashboardComponent implements OnInit {
   // Check if a role needs a reporting person
   needsReportingPerson(role: string | undefined): boolean {
     if (!role) return false;
-    return ['recruiter', 'team_leader', 'manager', 'business_head', 'cluster_manager'].includes(role);
+    return ['recruiter', 'team_leader', 'manager', 'hr', 'business_head', 'cluster_manager'].includes(role);
   }
 
   // Get reporting persons based on role
@@ -1141,6 +1145,8 @@ export class SuperAdminDashboardComponent implements OnInit {
         const businessHeads = this.businessHeads();
         const superAdmins = this.superAdmins();
         return [...businessHeads, ...superAdmins];
+      case 'hr':
+        return this.superAdmins();
       case 'business_head':
         return this.clusterManagers();
       case 'cluster_manager':
@@ -1163,6 +1169,11 @@ export class SuperAdminDashboardComponent implements OnInit {
         if (businessHead) return businessHead.id;
         const superAdmin = reportingPersons.find(p => p.role === 'super_admin');
         if (superAdmin) return superAdmin.id;
+        return reportingPersons[0]?.id || null;
+      case 'hr':
+        // HR always reports to Super Admin
+        const hrSuperAdmin = reportingPersons.find(p => p.role === 'super_admin');
+        if (hrSuperAdmin) return hrSuperAdmin.id;
         return reportingPersons[0]?.id || null;
       case 'cluster_manager':
         // Prefer Super Admin
@@ -1238,5 +1249,25 @@ export class SuperAdminDashboardComponent implements OnInit {
   logout(): void {
     this.superAdminService.logout();
     this.router.navigate(['/superadmin/login']);
+  }
+
+  formatRole(role: string): string {
+    if (!role) {
+      return '';
+    }
+    const customLabels: Record<string, string> = {
+      hr: 'HR',
+      super_admin: 'Super Admin',
+      team_leader: 'Team Leader',
+      business_head: 'Business Head',
+      cluster_manager: 'Cluster Manager'
+    };
+    if (customLabels[role]) {
+      return customLabels[role];
+    }
+    return role
+      .split('_')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 }

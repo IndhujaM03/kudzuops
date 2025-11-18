@@ -16,6 +16,9 @@ import { SuperAdminOverviewComponent } from './components/superadmin/superadmin-
 import { SuperAdminUsersComponent } from './components/superadmin/superadmin-users.component';
 import { ManagerDashboardComponent } from './components/manager/manager-dashboard.component';
 import { ManagerLayoutComponent } from './components/manager/manager-layout.component';
+import { HrLayoutComponent } from './components/hr/hr-layout.component';
+import { HrDashboardComponent } from './components/hr/hr-dashboard.component';
+import { HrOnboardingComponent } from './components/hr/hr-onboarding.component';
 import { BusinessHeadDashboardComponent } from './components/businesshead/businesshead-dashboard.component';
 import { BusinessHeadLayoutComponent } from './components/businesshead/businesshead-layout.component';
 import { ClusterManagerLayoutComponent } from './components/clustermanager/clustermanager-layout.component';
@@ -35,6 +38,7 @@ import { RecruiterActivityComponent } from './components/recruiter/recruiter-act
 import { SubmittedComponent } from './components/recruiter/submitted/submitted.component';
 import { SettingsComponent } from './components/recruiter/settings/settings.component';
 import { InterviewScheduleComponent } from './components/recruiter/interview-schedule/interview-schedule.component';
+import { OnboardingFormComponent } from './components/onboarding/onboarding-form.component';
 
 // Simple protected Dashboard (same UI style)
 @Component({
@@ -318,6 +322,8 @@ const rootRedirectGuard: CanActivateFn = () => {
       return router.parseUrl('/teamleader/dashboard') as UrlTree;
     } else if (userRole === 'manager') {
       return router.parseUrl('/manager/dashboard') as UrlTree;
+    } else if (userRole === 'hr') {
+      return router.parseUrl('/hr/dashboard') as UrlTree;
     } else if (userRole === 'business_head') {
       return router.parseUrl('/businesshead/dashboard') as UrlTree;
     } else if (userRole === 'cluster_manager') {
@@ -345,6 +351,7 @@ const routes: Routes = [
   { path: 'reset-password', component: ResetPasswordComponent },
   { path: 'verify-reset', component: VerifyResetComponent },
   { path: 'debug-auth', component: DebugAuthComponent },
+  { path: 'onboarding-form/:candidateId/:token', component: OnboardingFormComponent },
   { path: 'dashboard', component: DashboardComponent, canActivate: [rootRedirectGuard] },
   { path: 'demand/create', component: DemandSheetComponent, canActivate: [authGuard] },
   {
@@ -368,6 +375,16 @@ const routes: Routes = [
     canActivate: [roleGuard('manager')],
     children: [
       { path: 'dashboard', component: ManagerDashboardComponent },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
+    ]
+  },
+  {
+    path: 'hr',
+    component: HrLayoutComponent,
+    canActivate: [roleGuard('hr')],
+    children: [
+      { path: 'dashboard', component: HrDashboardComponent },
+      { path: 'onboarding', component: HrOnboardingComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

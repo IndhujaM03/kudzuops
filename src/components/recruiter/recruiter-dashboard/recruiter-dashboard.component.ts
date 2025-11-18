@@ -10,11 +10,13 @@ import * as d3 from 'd3';
 
 interface DashboardSummary {
   total_demands: number;
-  total_cvs: number;
-  approved: number;
-  under_verification: number;
-  rejected: number;
-  approval_rate: number;
+  total_cvs_uploaded?: number;
+  total_cvs?: number;  // For backward compatibility
+  approved_cvs_count?: number;
+  approved?: number;  // For backward compatibility
+  under_verification?: number;
+  rejected?: number;
+  approval_rate?: number;
 }
 
 interface DemandData {
@@ -87,14 +89,6 @@ interface DashboardData {
           </div>
         </div>
         <div class="header-controls">
-          <div class="date-range-selector">
-            <label>Filter:</label>
-            <select [(ngModel)]="selectedDays" (change)="onDateRangeChange()">
-              <option value="1">Daily</option>
-              <option value="7">Weekly</option>
-              <option value="30" selected>Monthly</option>
-            </select>
-          </div>
           <button class="refresh-btn" (click)="refreshData()" [disabled]="loading">
             <svg class="icon" [class.spinning]="loading" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -144,8 +138,8 @@ interface DashboardData {
               </svg>
             </div>
             <div class="kpi-content">
-              <h3>{{ dashboardData.summary.total_cvs }}</h3>
-              <p>Total CVs</p>
+              <h3>{{ dashboardData.summary.total_cvs_uploaded || dashboardData.summary.total_cvs }}</h3>
+              <p>Total CVs Uploaded</p>
             </div>
           </div>
 
@@ -156,46 +150,14 @@ interface DashboardData {
               </svg>
             </div>
             <div class="kpi-content">
-              <h3>{{ dashboardData.summary.approved }}</h3>
-              <p>Approved CVs</p>
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-icon verification">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div class="kpi-content">
-              <h3>{{ dashboardData.summary.under_verification }}</h3>
-              <p>Under Verification</p>
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-icon rejections">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div class="kpi-content">
-              <h3>{{ dashboardData.summary.rejected }}</h3>
-              <p>Rejected CVs</p>
+              <h3>{{ dashboardData.summary.approved_cvs_count || dashboardData.summary.approved }}</h3>
+              <p>Approved CVs Count</p>
             </div>
           </div>
         </div>
 
         <!-- Charts Section -->
         <div class="charts-section">
-          <!-- Pie Chart - CV Status Overview -->
-          <div class="chart-container">
-            <div class="chart-header">
-              <h3>🥧 CV Status Overview</h3>
-            </div>
-            <div #pieChart class="chart" id="pie-chart"></div>
-          </div>
-
           <!-- Bar Chart - CVs per Demand -->
           <div class="chart-container">
             <div class="chart-header">
@@ -240,84 +202,59 @@ interface DashboardData {
           <div class="chart-container">
             <div class="chart-header">
               <h3>📈 CV Uploads Trend</h3>
-              <div class="chart-legend">
-                <span class="legend-item">
-                  <span class="legend-color uploads"></span>
-                  Daily Uploads
-                </span>
+              <div class="chart-filters">
+                <div class="filter-container">
+                  <div class="filter-group-view">
+                    <label class="filter-label">View:</label>
+                    <div class="radio-group">
+                      <label class="radio-label">
+                        <input type="radio" name="trendView" value="daily" [(ngModel)]="trendView" (ngModelChange)="onTrendFilterChange()">
+                        <span>Daily</span>
+                      </label>
+                      <label class="radio-label">
+                        <input type="radio" name="trendView" value="weekly" [(ngModel)]="trendView" (ngModelChange)="onTrendFilterChange()">
+                        <span>Weekly</span>
+                      </label>
+                      <label class="radio-label">
+                        <input type="radio" name="trendView" value="monthly" [(ngModel)]="trendView" (ngModelChange)="onTrendFilterChange()">
+                        <span>Monthly</span>
+                      </label>
               </div>
             </div>
-            <div #lineChart class="chart" id="line-chart"></div>
-          </div>
-        </div>
-
-        <!-- Activities Table -->
-        <div class="demands-table-container">
-          <div class="table-header">
-            <h3>Active Demands</h3>
-            <div class="table-controls">
-              <input type="text" placeholder="Search demands..." [(ngModel)]="searchTerm" (input)="filterDemands()">
-              <select [(ngModel)]="statusFilter" (change)="filterDemands()">
-                <option value="">All Statuses</option>
-                <option value="open">Open</option>
-                <option value="processing">Processing</option>
-                <option value="hold">Hold</option>
+                  <div class="filter-group-month">
+                    <label class="filter-label">Month:</label>
+                    <select class="filter-dropdown-month" [(ngModel)]="trendMonth" (ngModelChange)="onTrendFilterChange()">
+                      <option *ngFor="let option of monthOptions" [value]="option.value">{{ option.label }}</option>
               </select>
             </div>
           </div>
-          <div class="table-wrapper">
-            <table class="demands-table">
-              <thead>
-                <tr>
-                  <th>Demand ID</th>
-                  <th>Job Title</th>
-                  <th>Client</th>
-                  <th>Required CVs</th>
-                  <th>Uploaded CVs</th>
-                  <th>Status</th>
-                  <th>Progress (%)</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let activity of filteredActivities" (click)="selectActivity(activity)">
-                  <td>
-                    <span class="demand-id">#{{ activity.demand_id }}</span>
-                  </td>
-                  <td>
-                    <div class="demand-title">{{ activity.job_title }}</div>
-                    <div class="demand-skill">{{ activity.skill }}</div>
-                  </td>
-                  <td>{{ activity.client_name || 'N/A' }}</td>
-                  <td>{{ activity.required_cv_count }}</td>
-                  <td>{{ activity.uploaded_cv_count }}</td>
-                  <td>
-                    <span class="status-badge" [ngClass]="getStatusClass(activity.activity_status)">
-                      {{ activity.activity_status }}
-                    </span>
-                  </td>
-                  <td>
-                    <div class="progress-container">
-                      <div class="progress-bar">
-                        <div class="progress-fill" [style.width.%]="activity.progress_percentage"></div>
                       </div>
-                      <span class="progress-text">{{ activity.progress_percentage }}%</span>
                     </div>
-                  </td>
-                  <td>
-                    <button class="action-btn" (click)="$event.stopPropagation(); viewActivityDetails(activity)" title="View Details">
-                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <div *ngIf="filteredActivities.length === 0" class="no-data">
-              <p>No activities found matching your criteria</p>
+            <div #lineChart class="chart" id="line-chart"></div>
+          </div>
+
+          <!-- Demand Performance (Top 5) -->
+          <div class="chart-container">
+            <div class="chart-header">
+              <h3>🏆 Demand Performance (Top 5)</h3>
             </div>
+            <div #demandPerformanceChart class="chart" id="demand-performance-chart"></div>
+          </div>
+
+          <!-- Interview Outcomes Pie Chart -->
+          <div class="chart-container">
+            <div class="chart-header">
+              <h3>🥧 Interview Outcomes</h3>
+            </div>
+            <div #interviewPieChart class="chart" id="interview-pie-chart"></div>
+          </div>
+
+          <!-- Daily Activity Heatmap -->
+          <div class="chart-container">
+            <div class="chart-header">
+              <h3>🔥 Daily Activity Heatmap</h3>
+            </div>
+            <div #heatmapChart class="chart" id="heatmap-chart"></div>
           </div>
         </div>
       </div>
@@ -336,20 +273,23 @@ interface DashboardData {
   `,
   styles: [`
     .dashboard-container {
-      padding: 20px;
-      background: #f8fafc;
+      padding: 24px;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
       min-height: 100vh;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
     .dashboard-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 30px;
-      padding: 20px;
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 32px;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(24, 45, 23, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
     }
 
     .header-info {
@@ -391,25 +331,6 @@ interface DashboardData {
       display: flex;
       align-items: center;
       gap: 20px;
-    }
-
-    .date-range-selector {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .date-range-selector label {
-      font-weight: 500;
-      color: #64748b;
-    }
-
-    .date-range-selector select {
-      padding: 8px 12px;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
-      background: white;
-      color: #374151;
     }
 
     .refresh-btn {
@@ -519,15 +440,18 @@ interface DashboardData {
       display: flex;
       align-items: center;
       gap: 16px;
-      padding: 20px;
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      transition: transform 0.2s;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(24, 45, 23, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+      transition: all 0.3s ease;
     }
 
     .kpi-card:hover {
-      transform: translateY(-2px);
+      transform: translateY(-4px);
+      box-shadow: 0 10px 20px rgba(24, 45, 23, 0.15);
     }
 
     .kpi-icon {
@@ -560,28 +484,35 @@ interface DashboardData {
     }
 
     .charts-section {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
       margin-bottom: 30px;
       width: 100%;
     }
 
     .chart-container {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(24, 45, 23, 0.1);
+      border-radius: 16px;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
       overflow: hidden;
       width: 100%;
-      min-height: 450px;
+      min-height: 300px;
+      transition: all 0.3s ease;
+    }
+
+    .chart-container:hover {
+      box-shadow: 0 10px 20px rgba(24, 45, 23, 0.15);
     }
 
     .chart-header {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      flex-direction: column;
+      gap: 12px;
       padding: 20px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid rgba(229, 231, 235, 0.5);
     }
 
     .chart-header h3 {
@@ -589,6 +520,131 @@ interface DashboardData {
       color: #1e293b;
       font-size: 18px;
       font-weight: 600;
+    }
+
+    .chart-filters {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
+    .filter-container {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 14px;
+      background: rgba(249, 250, 251, 0.8);
+      border-radius: 10px;
+      border: 1px solid rgba(24, 45, 23, 0.08);
+    }
+
+    .filter-group-view {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-group-month {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .filter-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #4b5563;
+      white-space: nowrap;
+    }
+
+    .radio-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .radio-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: #4b5563;
+      position: relative;
+    }
+
+    .radio-label input[type="radio"] {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      cursor: pointer;
+      appearance: none;
+      border: 2px solid rgba(24, 45, 23, 0.3);
+      border-radius: 50%;
+      background: white;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .radio-label input[type="radio"]:checked {
+      border-color: #182D17;
+      background: white;
+    }
+
+    .radio-label input[type="radio"]:checked::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #182D17;
+    }
+
+    .radio-label input[type="radio"]:hover {
+      border-color: #182D17;
+    }
+
+    .radio-label span {
+      user-select: none;
+      font-weight: 400;
+    }
+
+    .filter-dropdown-month {
+      padding: 6px 32px 6px 10px;
+      border: 1px solid rgba(24, 45, 23, 0.2);
+      border-radius: 6px;
+      background: white;
+      color: #111827;
+      font-size: 13px;
+      font-weight: 400;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23111111' d='M5 7L1 3h8z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      background-size: 10px;
+      min-width: 100px;
+    }
+
+    .filter-dropdown-month:hover {
+      border-color: rgba(24, 45, 23, 0.3);
+    }
+
+    .filter-dropdown-month:focus {
+      outline: none;
+      border-color: #182D17;
+      box-shadow: 0 0 0 2px rgba(24, 45, 23, 0.1);
+    }
+
+    .filter-dropdown-month option {
+      padding: 8px;
+      background: white;
+      color: #111827;
     }
 
     .chart-legend {
@@ -808,8 +864,7 @@ interface DashboardData {
       }
 
       .charts-section {
-        grid-template-columns: 1fr;
-        gap: 15px;
+        gap: 20px;
       }
 
       .chart-container {
@@ -843,16 +898,32 @@ interface DashboardData {
 export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('barChart') barChartRef!: ElementRef;
   @ViewChild('lineChart') lineChartRef!: ElementRef;
-  @ViewChild('pieChart') pieChartRef!: ElementRef;
   @ViewChild('stackedBarChart') stackedBarChartRef!: ElementRef;
+  @ViewChild('demandPerformanceChart') demandPerformanceChartRef!: ElementRef;
+  @ViewChild('interviewPieChart') interviewPieChartRef!: ElementRef;
+  @ViewChild('heatmapChart') heatmapChartRef!: ElementRef;
 
   dashboardData: DashboardData | null = null;
   loading = false;
   error: string | null = null;
-  selectedDays = 30;
-  searchTerm = '';
-  statusFilter = '';
-  filteredActivities: Activity[] = [];
+  trendView: string = 'monthly';
+  trendMonth: string = 'all';
+  interviewData: { scheduled: number; completed: number; cancelled: number } = { scheduled: 0, completed: 0, cancelled: 0 };
+  monthOptions = [
+    { value: 'all', label: 'All' },
+    { value: '0', label: 'January' },
+    { value: '1', label: 'February' },
+    { value: '2', label: 'March' },
+    { value: '3', label: 'April' },
+    { value: '4', label: 'May' },
+    { value: '5', label: 'June' },
+    { value: '6', label: 'July' },
+    { value: '7', label: 'August' },
+    { value: '8', label: 'September' },
+    { value: '9', label: 'October' },
+    { value: '10', label: 'November' },
+    { value: '11', label: 'December' }
+  ];
 
   private apiUrl = environment.apiBase;
   currentUser: any;
@@ -962,81 +1033,40 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
     }, 250);
   }
 
-  onDateRangeChange() {
-    this.loadDashboardData();
-  }
-
   refreshData() {
     this.loadDashboardData();
   }
 
 
-  // Method to ensure minimum values for chart visibility
-  private ensureMinimumValues() {
+  // Method to validate data structure (no hardcoded values)
+  private validateDataStructure() {
     if (!this.dashboardData) {
-      console.warn('ensureMinimumValues: No dashboard data available');
+      console.warn('validateDataStructure: No dashboard data available');
       return;
     }
     
-    // Ensure summary exists and has minimum values
+    // Ensure summary exists with default zeros if missing
     if (!this.dashboardData.summary) {
-      console.warn('ensureMinimumValues: No summary data, creating default');
       this.dashboardData.summary = {
-        total_demands: 1,
-        total_cvs: 1,
-        approved: 1,
-        under_verification: 1,
-        rejected: 1,
+        total_demands: 0,
+        total_cvs_uploaded: 0,
+        total_cvs: 0,
+        approved_cvs_count: 0,
+        approved: 0,
+        under_verification: 0,
+        rejected: 0,
         approval_rate: 0
       };
-    } else {
-      this.dashboardData.summary = {
-        total_demands: Math.max(this.dashboardData.summary.total_demands || 0, 1),
-        total_cvs: Math.max(this.dashboardData.summary.total_cvs || 0, 1),
-        approved: Math.max(this.dashboardData.summary.approved || 0, 1),
-        under_verification: Math.max(this.dashboardData.summary.under_verification || 0, 1),
-        rejected: Math.max(this.dashboardData.summary.rejected || 0, 1),
-        approval_rate: Math.max(this.dashboardData.summary.approval_rate || 0, 0)
-      };
     }
     
-    // Ensure activities have minimum values
-    if (!this.dashboardData.activities || !Array.isArray(this.dashboardData.activities) || this.dashboardData.activities.length === 0) {
-      console.warn('ensureMinimumValues: No activities data, creating sample data');
-      this.dashboardData.activities = [
-        {
-          id: 1,
-          recruiter_id: 1,
-          demand_id: 1,
-          activity_status: 'processing',
-          opened_at: new Date().toISOString(),
-          cv_list: [],
-          job_title: 'Sample Job',
-          client_name: 'Sample Client',
-          skill: 'Sample Skill',
-          no_of_positions: 2,
-          priority: 'high',
-          demand_status: 'open',
-          required_cv_count: 3,
-          uploaded_cv_count: 2,
-          progress_percentage: 66.7,
-          cv_stats: { total: 2, approved: 1, under_verification: 1, rejected: 0 }
-        }
-      ];
+    // Ensure activities is an array (empty if missing)
+    if (!this.dashboardData.activities || !Array.isArray(this.dashboardData.activities)) {
+      this.dashboardData.activities = [];
     }
     
-    // Ensure trend data has minimum values
-    if (!this.dashboardData.trend_data || !Array.isArray(this.dashboardData.trend_data) || this.dashboardData.trend_data.length === 0) {
-      console.warn('ensureMinimumValues: No trend data, creating sample data');
-      const today = new Date();
-      this.dashboardData.trend_data = Array.from({ length: 7 }, (_, i) => {
-        const date = new Date(today);
-        date.setDate(date.getDate() - (6 - i));
-        return {
-          date: date.toISOString().split('T')[0],
-          daily_uploads: Math.floor(Math.random() * 5) + 1
-        };
-      });
+    // Ensure trend_data is an array (empty if missing)
+    if (!this.dashboardData.trend_data || !Array.isArray(this.dashboardData.trend_data)) {
+      this.dashboardData.trend_data = [];
     }
   }
 
@@ -1092,12 +1122,17 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       .subscribe({
         next: (data) => {
           console.log('Dashboard data loaded successfully:', data);
+          console.log('Summary data:', data.summary);
+          console.log('Activities count:', data.activities?.length);
+          console.log('Activities data:', data.activities);
           
           // Ensure we have the required data structure
           if (!data.summary) {
             data.summary = {
               total_demands: 0,
+              total_cvs_uploaded: 0,
               total_cvs: 0,
+              approved_cvs_count: 0,
               approved: 0,
               under_verification: 0,
               rejected: 0,
@@ -1113,16 +1148,28 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
             data.trend_data = [];
           }
           
+          // Log for debugging
+          console.log('Total Demands from API:', data.summary.total_demands);
+          console.log('Total CVs Uploaded from API:', data.summary.total_cvs_uploaded || data.summary.total_cvs);
+          console.log('Approved CVs Count from API:', data.summary.approved_cvs_count || data.summary.approved);
+          
+          // Verify activities data
+          if (data.activities && data.activities.length > 0) {
+            console.log('First activity required_cv_count:', data.activities[0].required_cv_count);
+            console.log('First activity uploaded_cv_count:', data.activities[0].uploaded_cv_count);
+          }
+          
           this.dashboardData = data;
-          this.filteredActivities = this.dashboardData?.activities || [];
           this.loading = false;
           
-          // Create charts after data is loaded
-          console.log('Data loaded, creating charts...');
+          // Load interview data and create charts after data is loaded
+          console.log('Data loaded, loading interview data...');
+          this.loadInterviewData().then(() => {
           setTimeout(() => {
             console.log('Creating charts with data:', this.dashboardData);
             this.createCharts();
           }, 200);
+          });
         },
         error: (error) => {
           console.error('Error loading dashboard data:', error);
@@ -1141,48 +1188,10 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
             return;
           }
           
-          // Create fallback data structure for demonstration
-          this.dashboardData = {
-            summary: {
-              total_demands: 3,
-              total_cvs: 8,
-              approved: 3,
-              under_verification: 3,
-              rejected: 2,
-              approval_rate: 37.5
-            },
-            activities: [
-              {
-                id: 1,
-                recruiter_id: this.currentUser.id,
-                demand_id: 1,
-                activity_status: 'processing',
-                opened_at: new Date().toISOString(),
-                cv_list: [],
-                job_title: 'Angular Developer',
-                client_name: 'Tech Corp',
-                skill: 'Angular',
-                no_of_positions: 2,
-                priority: 'high',
-                demand_status: 'open',
-                required_cv_count: 3,
-                uploaded_cv_count: 2,
-                progress_percentage: 66.7,
-                cv_stats: { total: 2, approved: 1, under_verification: 1, rejected: 0 }
-              }
-            ],
-            trend_data: []
-          };
-          
-          this.filteredActivities = this.dashboardData?.activities || [];
+          // Set error message instead of fallback data
+          this.error = error.error?.detail || error.message || 'Failed to load dashboard data. Please try again.';
           this.loading = false;
-          
-          // Create charts with fallback data
-          console.log('Using fallback data, creating charts...');
-          setTimeout(() => {
-            console.log('Creating charts with fallback data:', this.dashboardData);
-            this.createCharts();
-          }, 200);
+          this.dashboardData = null;
         }
       });
   }
@@ -1194,25 +1203,31 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       return;
     }
 
-    // Ensure minimum values for chart visibility
-    this.ensureMinimumValues();
+    // Validate data structure (no hardcoded values)
+    this.validateDataStructure();
 
     // Check if ViewChild references are available
-    if (!this.barChartRef || !this.lineChartRef || !this.pieChartRef || !this.stackedBarChartRef) {
+    if (!this.barChartRef || !this.lineChartRef || !this.stackedBarChartRef || 
+        !this.demandPerformanceChartRef || !this.interviewPieChartRef ||
+        !this.heatmapChartRef) {
       console.log('ViewChild references not available, retrying in 100ms...');
       setTimeout(() => this.createCharts(), 100);
       return;
     }
 
     try {
-      console.log('Creating pie chart...');
-      this.createPieChart();
       console.log('Creating bar chart...');
       this.createBarChart();
       console.log('Creating stacked bar chart...');
       this.createStackedBarChart();
       console.log('Creating line chart...');
       this.createLineChart();
+      console.log('Creating demand performance chart...');
+      this.createDemandPerformanceChart();
+      console.log('Creating interview pie chart...');
+      this.createInterviewPieChart();
+      console.log('Creating heatmap chart...');
+      this.createHeatmapChart();
       console.log('All charts created successfully');
     } catch (error) {
       console.error('Error creating charts:', error);
@@ -1231,69 +1246,23 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
     
     console.log('Bar chart data before processing:', data);
     
-    // If no activities, create sample data for demonstration
+    // If no activities, show empty chart
     if (!data || data.length === 0) {
-      data = [
-        {
-          id: 1,
-          recruiter_id: 1,
-          demand_id: 1,
-          activity_status: 'processing',
-          opened_at: new Date().toISOString(),
-          cv_list: [],
-          job_title: 'Angular Developer',
-          client_name: 'Tech Corp',
-          skill: 'Angular',
-          no_of_positions: 2,
-          priority: 'high',
-          demand_status: 'open',
-          required_cv_count: 3,
-          uploaded_cv_count: 2,
-          progress_percentage: 66.7,
-          cv_stats: { approved: 1, under_verification: 1, rejected: 0, total: 2 }
-        },
-        {
-          id: 2,
-          recruiter_id: 1,
-          demand_id: 2,
-          activity_status: 'processing',
-          opened_at: new Date().toISOString(),
-          cv_list: [],
-          job_title: 'React Developer',
-          client_name: 'Web Corp',
-          skill: 'React',
-          no_of_positions: 3,
-          priority: 'medium',
-          demand_status: 'open',
-          required_cv_count: 4,
-          uploaded_cv_count: 3,
-          progress_percentage: 75.0,
-          cv_stats: { approved: 2, under_verification: 1, rejected: 0, total: 3 }
-        },
-        {
-          id: 3,
-          recruiter_id: 1,
-          demand_id: 3,
-          activity_status: 'hold',
-          opened_at: new Date().toISOString(),
-          cv_list: [],
-          job_title: 'Vue.js Developer',
-          client_name: 'Frontend Corp',
-          skill: 'Vue.js',
-          no_of_positions: 1,
-          priority: 'low',
-          demand_status: 'open',
-          required_cv_count: 2,
-          uploaded_cv_count: 1,
-          progress_percentage: 50.0,
-          cv_stats: { approved: 0, under_verification: 1, rejected: 0, total: 1 }
-        }
-      ];
+      console.log('No activities data available for bar chart');
+      // Show empty state message
+      d3.select(this.barChartRef.nativeElement).selectAll('*').remove();
+      d3.select(this.barChartRef.nativeElement)
+        .append('div')
+        .style('text-align', 'center')
+        .style('padding', '40px')
+        .style('color', '#6b7280')
+        .html('<p>No data available</p>');
+      return;
     }
 
-    const margin = { top: 20, right: 30, bottom: 40, left: 40 };
+    const margin = { top: 20, right: 30, bottom: 20, left: 40 };
     const width = Math.max(this.barChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
-    const height = 350 - margin.top - margin.bottom;
+    const height = 250 - margin.top - margin.bottom;
 
     d3.select(this.barChartRef.nativeElement).selectAll('*').remove();
 
@@ -1368,9 +1337,9 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
           return [];
         }
         return [
-          { key: 'required', value: d.required_cv_count || 0 },
-          { key: 'uploaded', value: d.uploaded_cv_count || 0 },
-          { key: 'approved', value: (d.cv_stats && d.cv_stats.approved) || 0 }
+          { key: 'required', value: d.required_cv_count || 0, label: 'Required CVs' },
+          { key: 'uploaded', value: d.uploaded_cv_count || 0, label: 'Uploaded CVs' },
+          { key: 'approved', value: (d.cv_stats && d.cv_stats.approved) || 0, label: 'Approved CVs' }
         ];
       })
       .enter().append('rect')
@@ -1378,44 +1347,42 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       .attr('width', x1.bandwidth())
       .attr('y', d => {
         const yValue = y(d.value);
-        console.log(`Bar ${d.key}: value=${d.value}, y=${yValue}, height=${height}`);
-        // Ensure bars are positioned correctly from the bottom
-        return Math.min(yValue, height - 2); // Ensure bars don't go below the chart
+        return Math.min(yValue, height - 2);
       })
       .attr('height', d => {
         const barHeight = height - y(d.value);
-        console.log(`Bar ${d.key}: value=${d.value}, y=${y(d.value)}, height=${barHeight}`);
-        // Ensure minimum height for visibility
         const minHeight = 2;
         return Math.max(barHeight, minHeight);
       })
       .attr('fill', d => color(d.key) as string)
       .attr('rx', 2)
       .attr('ry', 2)
-      .on('mouseover', function(event, d) {
+      .on('mouseover', function(event, d: any) {
         d3.select(this).attr('opacity', 0.8);
-        // Add tooltip
         const tooltip = d3.select('body').append('div')
-          .attr('class', 'tooltip')
+          .attr('class', 'chart-tooltip')
           .style('position', 'absolute')
-          .style('background', 'rgba(0,0,0,0.8)')
+          .style('background', 'rgba(0,0,0,0.9)')
           .style('color', 'white')
-          .style('padding', '8px')
-          .style('border-radius', '4px')
-          .style('font-size', '12px')
+          .style('padding', '10px 12px')
+          .style('border-radius', '6px')
+          .style('font-size', '13px')
           .style('pointer-events', 'none')
+          .style('z-index', '1000')
+          .style('box-shadow', '0 4px 6px rgba(0,0,0,0.3)')
           .style('opacity', 0);
         
         tooltip.transition().duration(200).style('opacity', 1);
-        tooltip.html(`${d.key}: ${d.value}`)
+        tooltip.html(`<strong>${d.label}</strong><br/>Count: ${d.value}`)
           .style('left', (event.pageX + 10) + 'px')
           .style('top', (event.pageY - 10) + 'px');
       })
-      .on('mouseout', function(event, d) {
+      .on('mouseout', function() {
         d3.select(this).attr('opacity', 1);
-        d3.selectAll('.tooltip').remove();
+        d3.selectAll('.chart-tooltip').remove();
       });
 
+    // Show x-axis labels
     const xAxis = d3.axisBottom(x0);
     g.append('g')
       .attr('transform', `translate(0,${height})`)
@@ -1424,8 +1391,9 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       .style('text-anchor', 'end')
       .attr('dx', '-.8em')
       .attr('dy', '.15em')
-      .attr('transform', 'rotate(-30)')
-      .style('font-size', '12px');
+      .attr('transform', 'rotate(-45)')
+      .style('font-size', '11px')
+      .style('fill', '#6b7280');
 
     g.append('g')
       .call(d3.axisLeft(y).ticks(5))
@@ -1468,69 +1436,23 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       
       console.log('Stacked bar chart data before processing:', data);
       
-      // If no activities, create sample data for demonstration
+      // If no activities, show empty chart
       if (!data || data.length === 0) {
-        data = [
-          {
-            id: 1,
-            recruiter_id: 1,
-            demand_id: 1,
-            activity_status: 'processing',
-            opened_at: new Date().toISOString(),
-            cv_list: [],
-            job_title: 'Angular Developer',
-            client_name: 'Tech Corp',
-            skill: 'Angular',
-            no_of_positions: 2,
-            priority: 'high',
-            demand_status: 'open',
-            required_cv_count: 5,
-            uploaded_cv_count: 3,
-            progress_percentage: 60.0,
-            cv_stats: { approved: 2, under_verification: 1, rejected: 0, total: 3 }
-          },
-          {
-            id: 2,
-            recruiter_id: 1,
-            demand_id: 2,
-            activity_status: 'processing',
-            opened_at: new Date().toISOString(),
-            cv_list: [],
-            job_title: 'React Developer',
-            client_name: 'Web Corp',
-            skill: 'React',
-            no_of_positions: 3,
-            priority: 'medium',
-            demand_status: 'open',
-            required_cv_count: 4,
-            uploaded_cv_count: 4,
-            progress_percentage: 100.0,
-            cv_stats: { approved: 3, under_verification: 1, rejected: 0, total: 4 }
-          },
-          {
-            id: 3,
-            recruiter_id: 1,
-            demand_id: 3,
-            activity_status: 'hold',
-            opened_at: new Date().toISOString(),
-            cv_list: [],
-            job_title: 'Vue.js Developer',
-            client_name: 'Frontend Corp',
-            skill: 'Vue.js',
-            no_of_positions: 1,
-            priority: 'low',
-            demand_status: 'open',
-            required_cv_count: 3,
-            uploaded_cv_count: 1,
-            progress_percentage: 33.3,
-            cv_stats: { approved: 0, under_verification: 1, rejected: 0, total: 1 }
-          }
-        ];
+        console.log('No activities data available for stacked bar chart');
+        // Show empty state message
+        d3.select(this.stackedBarChartRef.nativeElement).selectAll('*').remove();
+        d3.select(this.stackedBarChartRef.nativeElement)
+          .append('div')
+          .style('text-align', 'center')
+          .style('padding', '40px')
+          .style('color', '#6b7280')
+          .html('<p>No data available</p>');
+        return;
       }
 
-      const margin = { top: 20, right: 30, bottom: 40, left: 40 };
+      const margin = { top: 20, right: 30, bottom: 20, left: 40 };
       const width = Math.max(this.stackedBarChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
-      const height = 350 - margin.top - margin.bottom;
+      const height = 250 - margin.top - margin.bottom;
 
       d3.select(this.stackedBarChartRef.nativeElement).selectAll('*').remove();
 
@@ -1616,29 +1538,31 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
         .attr('ry', 2)
         .on('mouseover', function(event, d) {
           d3.select(this).attr('opacity', 0.8);
-          // Add tooltip
           const tooltip = d3.select('body').append('div')
-            .attr('class', 'tooltip')
+            .attr('class', 'chart-tooltip')
             .style('position', 'absolute')
-            .style('background', 'rgba(0,0,0,0.8)')
+            .style('background', 'rgba(0,0,0,0.9)')
             .style('color', 'white')
-            .style('padding', '8px')
-            .style('border-radius', '4px')
-            .style('font-size', '12px')
+            .style('padding', '10px 12px')
+            .style('border-radius', '6px')
+            .style('font-size', '13px')
             .style('pointer-events', 'none')
+            .style('z-index', '1000')
+            .style('box-shadow', '0 4px 6px rgba(0,0,0,0.3)')
             .style('opacity', 0);
           
           tooltip.transition().duration(200).style('opacity', 1);
-          tooltip.html(`Uploaded: ${d.uploaded_cv_count || 0}<br/>Required: ${d.required_cv_count || 0}`)
+          const progress = d.required_cv_count > 0 ? ((d.uploaded_cv_count || 0) / d.required_cv_count * 100).toFixed(1) : '0';
+          tooltip.html(`<strong>${d.job_title || d.skill || 'Demand'}</strong><br/>Required: ${d.required_cv_count || 0}<br/>Uploaded: ${d.uploaded_cv_count || 0}<br/>Progress: ${progress}%`)
             .style('left', (event.pageX + 10) + 'px')
             .style('top', (event.pageY - 10) + 'px');
         })
-        .on('mouseout', function(event, d) {
+        .on('mouseout', function() {
           d3.select(this).attr('opacity', 1);
-          d3.selectAll('.tooltip').remove();
+          d3.selectAll('.chart-tooltip').remove();
         });
 
-      // Add axes
+      // Show x-axis labels
       g.append('g')
         .attr('transform', `translate(0,${height})`)
         .call(d3.axisBottom(x))
@@ -1646,8 +1570,9 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
         .style('text-anchor', 'end')
         .attr('dx', '-.8em')
         .attr('dy', '.15em')
-        .attr('transform', 'rotate(-30)')
-        .style('font-size', '12px');
+        .attr('transform', 'rotate(-45)')
+        .style('font-size', '11px')
+        .style('fill', '#6b7280');
 
       g.append('g')
         .call(d3.axisLeft(y).ticks(5))
@@ -1656,8 +1581,8 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       // Add value labels on bars
       bars.selectAll('text')
         .data(d => [
-          { key: 'required', value: d.required_cv_count || 0, y: y(d.required_cv_count || 0) - 5 },
-          { key: 'uploaded', value: d.uploaded_cv_count || 0, y: y(d.uploaded_cv_count || 0) - 5 }
+          { key: 'required', value: d.required_cv_count || 0, y: y(d.required_cv_count || 0) - 5, label: 'Required' },
+          { key: 'uploaded', value: d.uploaded_cv_count || 0, y: y(d.uploaded_cv_count || 0) - 5, label: 'Uploaded' }
         ])
         .enter().append('text')
         .attr('x', x.bandwidth() / 2)
@@ -1682,23 +1607,24 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
     let data = this.dashboardData.trend_data || [];
     console.log('Line chart original data:', data);
     
-    // If no trend data, create sample data for demonstration
+    // If no trend data, show empty chart
     if (!data || data.length === 0) {
-      const today = new Date();
-      data = Array.from({ length: 7 }, (_, i) => {
-        const date = new Date(today);
-        date.setDate(date.getDate() - (6 - i));
-        return {
-          date: date.toISOString().split('T')[0],
-          daily_uploads: Math.floor(Math.random() * 5) + 1
-        };
-      });
+      console.log('No trend data available for line chart');
+      // Show empty state message
+      d3.select(this.lineChartRef.nativeElement).selectAll('*').remove();
+      d3.select(this.lineChartRef.nativeElement)
+        .append('div')
+        .style('text-align', 'center')
+        .style('padding', '40px')
+        .style('color', '#6b7280')
+        .html('<p>No trend data available</p>');
+      return;
     }
     console.log('Line chart final data:', data);
 
-    const margin = { top: 20, right: 30, bottom: 40, left: 40 };
+    const margin = { top: 20, right: 30, bottom: 20, left: 40 };
     const width = Math.max(this.lineChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
-    const height = 350 - margin.top - margin.bottom;
+    const height = 250 - margin.top - margin.bottom;
 
     d3.select(this.lineChartRef.nativeElement).selectAll('*').remove();
 
@@ -1764,9 +1690,14 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
       .attr('stroke', '#fff')
       .attr('stroke-width', 2);
 
+    // Show x-axis labels
     g.append('g')
       .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(x).ticks(5).tickFormat((d: any) => d3.timeFormat('%m/%d')(new Date(d))));
+      .call(d3.axisBottom(x).ticks(5).tickFormat((d: any) => d3.timeFormat('%m/%d')(new Date(d))))
+      .selectAll('text')
+      .style('text-anchor', 'middle')
+      .style('font-size', '11px')
+      .style('fill', '#6b7280');
 
     g.append('g')
       .call(d3.axisLeft(y).ticks(5));
@@ -1787,162 +1718,443 @@ export class RecruiterDashboardComponent implements OnInit, OnDestroy, AfterView
     }
   }
 
-  private createPieChart() {
-    try {
-      console.log('createPieChart called, pieChartRef:', this.pieChartRef, 'dashboardData:', this.dashboardData);
-      if (!this.pieChartRef || !this.dashboardData) {
-        console.log('Missing pieChartRef or dashboardData');
+  onTrendFilterChange() {
+    this.loadDashboardData();
+  }
+
+  private getHeaders(): HttpHeaders {
+    const token = localStorage.getItem('access_token');
+    const tokenType = localStorage.getItem('token_type') || 'Bearer';
+    return new HttpHeaders({
+      'Authorization': `${tokenType} ${token}`,
+      'Content-Type': 'application/json'
+    });
+  }
+
+  private loadInterviewData(): Promise<void> {
+    return new Promise((resolve) => {
+      const recruiterId = this.authService.getCurrentUserId();
+      if (!recruiterId) {
+        resolve();
         return;
       }
 
-    // Create pie chart data from CV status counts
-    let data = [
-      { status: 'Approved', count: this.dashboardData.summary.approved },
-      { status: 'Under Verification', count: this.dashboardData.summary.under_verification },
-      { status: 'Rejected', count: this.dashboardData.summary.rejected }
-    ].filter(d => d.count > 0);
-    
-    console.log('Pie chart original data:', data);
-    console.log('Pie chart summary:', this.dashboardData.summary);
-
-    // If no data, create sample data for demonstration
-    if (data.length === 0) {
-      data = [
-        { status: 'Approved', count: 5 },
-        { status: 'Under Verification', count: 3 },
-        { status: 'Rejected', count: 2 }
-      ];
-    }
-    
-    console.log('Pie chart final data:', data);
-
-    const margin = { top: 20, right: 30, bottom: 20, left: 30 };
-    const width = Math.max(this.pieChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
-    const height = 350 - margin.top - margin.bottom;
-    const radius = Math.min(width, height) / 2 - 10;
-
-    d3.select(this.pieChartRef.nativeElement).selectAll('*').remove();
-
-    const svg = d3.select(this.pieChartRef.nativeElement)
-      .append('svg')
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom);
-
-    const g = svg.append('g')
-      .attr('transform', `translate(${width / 2 + margin.left},${height / 2 + margin.top})`);
-
-    const color = d3.scaleOrdinal<string, string>()
-      .domain(data.map(d => d.status))
-      .range(['#22c55e', '#3b82f6', '#ef4444']);
-
-    const pie = d3.pie<{status: string, count: number}>()
-      .value(d => d.count)
-      .sort(null);
-
-    const arc = d3.arc<d3.PieArcDatum<{status: string, count: number}>>()
-      .innerRadius(radius * 0.3)
-      .outerRadius(radius);
-
-    const labelArc = d3.arc<d3.PieArcDatum<{status: string, count: number}>>()
-      .innerRadius(radius * 0.8)
-      .outerRadius(radius * 0.8);
-
-    const arcs = g.selectAll('.arc')
-      .data(pie(data))
-      .enter().append('g')
-      .attr('class', 'arc');
-
-    arcs.append('path')
-      .attr('d', (d) => arc(d) || '')
-      .attr('fill', d => color(d.data.status) as string)
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 2)
-      .on('mouseover', function(event, d) {
-        d3.select(this).attr('opacity', 0.8);
-        // Add tooltip
-        const tooltip = d3.select('body').append('div')
-          .attr('class', 'tooltip')
-          .style('position', 'absolute')
-          .style('background', 'rgba(0,0,0,0.8)')
-          .style('color', 'white')
-          .style('padding', '8px')
-          .style('border-radius', '4px')
-          .style('font-size', '12px')
-          .style('pointer-events', 'none')
-          .style('opacity', 0);
-        
-        tooltip.transition().duration(200).style('opacity', 1);
-        tooltip.html(`${d.data.status}: ${d.data.count}`)
-          .style('left', (event.pageX + 10) + 'px')
-          .style('top', (event.pageY - 10) + 'px');
-      })
-      .on('mouseout', function(event, d) {
-        d3.select(this).attr('opacity', 1);
-        d3.selectAll('.tooltip').remove();
+      this.http.get<any>(`${this.apiUrl}/api/interview-schedule?size=1000`, {
+        headers: this.getHeaders()
+      }).subscribe({
+        next: (response) => {
+          const interviews = response.items || [];
+          this.interviewData = {
+            scheduled: interviews.filter((i: any) => i.status === 'scheduled').length,
+            completed: interviews.filter((i: any) => i.status === 'completed').length,
+            cancelled: interviews.filter((i: any) => i.status === 'cancelled').length
+          };
+          resolve();
+        },
+        error: (error) => {
+          console.error('Error loading interview data:', error);
+          // Set to zeros on error
+          this.interviewData = { scheduled: 0, completed: 0, cancelled: 0 };
+          resolve();
+        }
       });
+    });
+  }
 
-    arcs.append('text')
-      .attr('transform', d => {
-        const centroid = labelArc.centroid(d);
-        return `translate(${centroid[0]},${centroid[1]})`;
-      })
-      .attr('text-anchor', 'middle')
-      .style('font-size', '12px')
-      .style('font-weight', 'bold')
-      .style('fill', 'white')
-      .text(d => d.data.count > 0 ? `${d.data.count}` : '');
+  getDateRange(view: string, month: string = 'all'): { startDate?: string; endDate?: string } {
+    const now = new Date();
+    let startDate = new Date();
+    let endDate = new Date();
 
-    // Add legend
-    const legend = svg.append('g')
-      .attr('transform', `translate(${width + margin.left - 100}, 20)`);
+    if (month !== 'all') {
+      const monthIndex = parseInt(month);
+      const currentYear = now.getFullYear();
+      const monthStart = new Date(currentYear, monthIndex, 1);
+      const monthEnd = new Date(currentYear, monthIndex + 1, 0, 23, 59, 59, 999);
 
-    const legendItems = legend.selectAll('.legend-item')
-      .data(data)
-      .enter().append('g')
-      .attr('class', 'legend-item')
-      .attr('transform', (d, i) => `translate(0, ${i * 20})`);
-
-    legendItems.append('rect')
-      .attr('width', 12)
-      .attr('height', 12)
-      .attr('fill', d => color(d.status) as string)
-      .attr('rx', 2);
-
-    legendItems.append('text')
-      .attr('x', 18)
-      .attr('y', 9)
-      .style('font-size', '12px')
-      .style('fill', '#374151')
-      .text(d => d.status);
-    } catch (error) {
-      console.error('Error creating pie chart:', error);
+      switch (view) {
+        case 'daily':
+          startDate = monthStart;
+          endDate = monthEnd;
+          break;
+        case 'weekly':
+          startDate = monthStart;
+          endDate = monthEnd;
+          break;
+        case 'monthly':
+          startDate = monthStart;
+          endDate = monthEnd;
+          break;
+        default:
+          return {};
+      }
+    } else {
+      switch (view) {
+        case 'daily':
+          startDate.setDate(now.getDate() - 30);
+          endDate.setHours(23, 59, 59, 999);
+          break;
+        case 'weekly':
+          startDate.setDate(now.getDate() - (12 * 7));
+          endDate.setHours(23, 59, 59, 999);
+          break;
+        case 'monthly':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+          break;
+        default:
+          return {};
+      }
     }
-  }
 
-  filterDemands() {
-    this.filteredActivities = this.dashboardData?.activities.filter(activity => {
-      const matchesSearch = !this.searchTerm || 
-        activity.job_title.toLowerCase().indexOf(this.searchTerm.toLowerCase()) !== -1 ||
-        (activity.client_name && activity.client_name.toLowerCase().indexOf(this.searchTerm.toLowerCase()) !== -1);
-      
-      const matchesStatus = !this.statusFilter || activity.activity_status === this.statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    }) || [];
-  }
+    startDate.setHours(0, 0, 0, 0);
 
-  getStatusClass(status: string): string {
-    return status.toLowerCase().replace('_', '-');
-  }
-
-  selectActivity(activity: Activity) {
-    console.log('Selected activity:', activity);
-    // Implement activity selection logic
+    return {
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0]
+    };
   }
 
   viewActivityDetails(activity: Activity) {
     const recruiterId = this.authService.getCurrentUserId();
     if (!recruiterId) return;
     this.router.navigateByUrl(`/recruiter/activity/${recruiterId}/${activity.demand_id}`);
+  }
+
+  private createDemandPerformanceChart() {
+    try {
+      if (!this.demandPerformanceChartRef || !this.dashboardData) return;
+
+      let activities = this.dashboardData.activities || [];
+      const top5 = activities
+        .sort((a, b) => (b.progress_percentage || 0) - (a.progress_percentage || 0))
+        .slice(0, 5)
+        .map(a => ({
+          name: a.job_title || a.skill || 'Unknown',
+          progress: a.progress_percentage || 0,
+          uploaded: a.uploaded_cv_count || 0,
+          required: a.required_cv_count || 0
+        }));
+
+      if (top5.length === 0) {
+        d3.select(this.demandPerformanceChartRef.nativeElement).selectAll('*').remove();
+        d3.select(this.demandPerformanceChartRef.nativeElement)
+          .append('div')
+          .style('text-align', 'center')
+          .style('padding', '40px')
+          .style('color', '#6b7280')
+          .html('<p>No data available</p>');
+        return;
+      }
+
+      const margin = { top: 20, right: 30, bottom: 20, left: 40 };
+      const width = Math.max(this.demandPerformanceChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
+      const height = 250 - margin.top - margin.bottom;
+
+      d3.select(this.demandPerformanceChartRef.nativeElement).selectAll('*').remove();
+
+      const svg = d3.select(this.demandPerformanceChartRef.nativeElement)
+        .append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const x = d3.scaleBand()
+        .domain(top5.map(d => d.name.substring(0, 20)))
+        .rangeRound([0, width])
+        .padding(0.2);
+
+      const y = d3.scaleLinear()
+        .domain([0, 100])
+        .rangeRound([height, 0]);
+
+      g.selectAll('rect')
+        .data(top5)
+        .enter().append('rect')
+        .attr('x', d => x(d.name.substring(0, 20))!)
+        .attr('width', x.bandwidth())
+        .attr('y', d => y(d.progress))
+        .attr('height', d => height - y(d.progress))
+        .attr('fill', '#3b82f6')
+        .attr('rx', 4)
+        .on('mouseover', function(event, d) {
+          d3.select(this).attr('opacity', 0.8);
+          const tooltip = d3.select('body').append('div')
+            .attr('class', 'chart-tooltip')
+            .style('position', 'absolute')
+            .style('background', 'rgba(0,0,0,0.9)')
+            .style('color', 'white')
+            .style('padding', '10px 12px')
+            .style('border-radius', '6px')
+            .style('font-size', '13px')
+            .style('pointer-events', 'none')
+            .style('z-index', '1000')
+            .style('box-shadow', '0 4px 6px rgba(0,0,0,0.3)')
+            .style('opacity', 0);
+          
+          tooltip.transition().duration(200).style('opacity', 1);
+          tooltip.html(`<strong>${d.name}</strong><br/>Progress: ${d.progress.toFixed(1)}%<br/>Uploaded: ${d.uploaded}<br/>Required: ${d.required}`)
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px');
+        })
+        .on('mouseout', function() {
+          d3.select(this).attr('opacity', 1);
+          d3.selectAll('.chart-tooltip').remove();
+        });
+
+      g.selectAll('text')
+        .data(top5)
+        .enter().append('text')
+        .attr('x', d => x(d.name.substring(0, 20))! + x.bandwidth() / 2)
+        .attr('y', d => y(d.progress) - 5)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '12px')
+        .attr('fill', '#1e293b')
+        .text(d => `${d.progress.toFixed(1)}%`);
+
+      // Show x-axis labels
+      g.append('g')
+        .attr('transform', `translate(0,${height})`)
+        .call(d3.axisBottom(x))
+        .selectAll('text')
+        .style('text-anchor', 'end')
+        .attr('dx', '-.8em')
+        .attr('dy', '.15em')
+        .attr('transform', 'rotate(-45)')
+        .style('font-size', '11px')
+        .style('fill', '#6b7280');
+
+      g.append('g')
+        .call(d3.axisLeft(y).ticks(5));
+    } catch (error) {
+      console.error('Error creating demand performance chart:', error);
+    }
+  }
+
+  private createInterviewPieChart() {
+    try {
+      if (!this.interviewPieChartRef || !this.dashboardData) return;
+
+      // Get data from database
+      const data = [
+        { label: 'Scheduled', value: this.interviewData.scheduled, color: '#3b82f6' },
+        { label: 'Completed', value: this.interviewData.completed, color: '#22c55e' },
+        { label: 'Cancelled', value: this.interviewData.cancelled, color: '#ef4444' }
+      ].filter(d => d.value > 0);
+
+      if (data.length === 0) {
+        d3.select(this.interviewPieChartRef.nativeElement).selectAll('*').remove();
+        d3.select(this.interviewPieChartRef.nativeElement)
+          .append('div')
+          .style('text-align', 'center')
+          .style('padding', '40px')
+          .style('color', '#6b7280')
+          .html('<p>No interview data available</p>');
+        return;
+      }
+
+      const margin = { top: 20, right: 30, bottom: 20, left: 40 };
+      const width = Math.max(this.interviewPieChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
+      const height = 250 - margin.top - margin.bottom;
+      const radius = Math.min(width, height) / 2 - 20;
+
+      d3.select(this.interviewPieChartRef.nativeElement).selectAll('*').remove();
+
+      const svg = d3.select(this.interviewPieChartRef.nativeElement)
+        .append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(${(width + margin.left + margin.right) / 2},${(height + margin.top + margin.bottom) / 2})`);
+
+      const pie = d3.pie<any>()
+        .value(d => d.value)
+        .sort(null);
+
+      const arc = d3.arc<any>()
+        .innerRadius(0)
+        .outerRadius(radius);
+
+      const arcs = g.selectAll('arc')
+        .data(pie(data))
+        .enter().append('g')
+        .attr('class', 'arc');
+
+      arcs.append('path')
+        .attr('d', arc)
+        .attr('fill', d => d.data.color)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2)
+        .on('mouseover', function(event, d) {
+          d3.select(this).attr('opacity', 0.8);
+          const tooltip = d3.select('body').append('div')
+            .attr('class', 'chart-tooltip')
+            .style('position', 'absolute')
+            .style('background', 'rgba(0,0,0,0.9)')
+            .style('color', 'white')
+            .style('padding', '10px 12px')
+            .style('border-radius', '6px')
+            .style('font-size', '13px')
+            .style('pointer-events', 'none')
+            .style('z-index', '1000')
+            .style('box-shadow', '0 4px 6px rgba(0,0,0,0.3)')
+            .style('opacity', 0);
+          
+          tooltip.transition().duration(200).style('opacity', 1);
+          const percentage = ((d.data.value / d3.sum(data, d => d.value)) * 100).toFixed(1);
+          tooltip.html(`<strong>${d.data.label}</strong><br/>Count: ${d.data.value}<br/>Percentage: ${percentage}%`)
+            .style('left', (event.pageX + 10) + 'px')
+            .style('top', (event.pageY - 10) + 'px');
+        })
+        .on('mouseout', function() {
+          d3.select(this).attr('opacity', 1);
+          d3.selectAll('.chart-tooltip').remove();
+        });
+
+      arcs.append('text')
+        .attr('transform', d => `translate(${arc.centroid(d)})`)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '12px')
+        .attr('fill', '#1e293b')
+        .attr('font-weight', '600')
+        .text(d => d.data.value > 0 ? d.data.value : '');
+
+      // Legend
+      const legend = svg.append('g')
+        .attr('transform', `translate(${width - 100},${margin.top})`);
+
+      data.forEach((d, i) => {
+        const legendRow = legend.append('g')
+          .attr('transform', `translate(0,${i * 25})`);
+
+        legendRow.append('rect')
+          .attr('width', 15)
+          .attr('height', 15)
+          .attr('fill', d.color);
+
+        legendRow.append('text')
+          .attr('x', 20)
+          .attr('y', 12)
+          .attr('font-size', '12px')
+          .text(d.label);
+      });
+    } catch (error) {
+      console.error('Error creating interview pie chart:', error);
+    }
+  }
+
+  private createHeatmapChart() {
+    try {
+      if (!this.heatmapChartRef || !this.dashboardData) return;
+
+      // Use trend_data from dashboard
+      let data: { date: Date; value: number }[] = [];
+      const trendData = this.dashboardData.trend_data || [];
+      
+      if (trendData.length > 0) {
+        // Use actual trend data
+        data = trendData.map(d => ({
+          date: new Date(d.date),
+          value: d.daily_uploads || 0
+        }));
+      } else {
+        // If no trend data, generate empty data for last 30 days
+        const now = new Date();
+        for (let i = 29; i >= 0; i--) {
+          const date = new Date(now);
+          date.setDate(date.getDate() - i);
+          data.push({ date, value: 0 });
+        }
+      }
+
+      // Ensure we have exactly 30 days of data
+      if (data.length < 30) {
+        const now = new Date();
+        const existingDates = new Set(data.map(d => d.date.toDateString()));
+        for (let i = 29; i >= 0; i--) {
+          const date = new Date(now);
+          date.setDate(date.getDate() - i);
+          if (!existingDates.has(date.toDateString())) {
+            data.push({ date, value: 0 });
+          }
+        }
+        data.sort((a, b) => a.date.getTime() - b.date.getTime());
+        data = data.slice(-30);
+      }
+
+      const margin = { top: 20, right: 30, bottom: 20, left: 40 };
+      const width = Math.max(this.heatmapChartRef.nativeElement.offsetWidth - margin.left - margin.right, 400);
+      const height = 250 - margin.top - margin.bottom;
+
+      d3.select(this.heatmapChartRef.nativeElement).selectAll('*').remove();
+
+      const svg = d3.select(this.heatmapChartRef.nativeElement)
+        .append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+      const cellWidth = width / 7;
+      const cellHeight = height / 5;
+
+      const maxValue = d3.max(data, d => d.value) || 1;
+      // Use a more visible color scale - from light blue to dark blue with better contrast
+      const colorScale = d3.scaleSequential()
+        .domain([0, maxValue])
+        .interpolator(d3.interpolateRgb('#e0f2fe', '#0369a1')); // Light blue to dark blue
+
+      data.forEach((d, i) => {
+        const row = Math.floor(i / 7);
+        const col = i % 7;
+        const x = col * cellWidth;
+        const y = row * cellHeight;
+
+        // Use a more visible color - ensure minimum visibility even for zero values
+        const cellColor = d.value === 0 ? '#f1f5f9' : colorScale(d.value);
+        const cellStroke = d.value === 0 ? '#cbd5e1' : '#fff';
+        
+        g.append('rect')
+          .attr('x', x)
+          .attr('y', y)
+          .attr('width', cellWidth - 2)
+          .attr('height', cellHeight - 2)
+          .attr('fill', cellColor)
+          .attr('rx', 2)
+          .attr('stroke', cellStroke)
+          .attr('stroke-width', d.value === 0 ? 1.5 : 1)
+          .on('mouseover', function(event) {
+            d3.select(this).attr('opacity', 0.8);
+            const tooltip = d3.select('body').append('div')
+              .attr('class', 'chart-tooltip')
+              .style('position', 'absolute')
+              .style('background', 'rgba(0,0,0,0.9)')
+              .style('color', 'white')
+              .style('padding', '10px 12px')
+              .style('border-radius', '6px')
+              .style('font-size', '13px')
+              .style('pointer-events', 'none')
+              .style('z-index', '1000')
+              .style('box-shadow', '0 4px 6px rgba(0,0,0,0.3)')
+              .style('opacity', 0);
+            
+            tooltip.transition().duration(200).style('opacity', 1);
+            const dateStr = d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            tooltip.html(`<strong>Date: ${dateStr}</strong><br/>CVs Uploaded: ${d.value}`)
+              .style('left', (event.pageX + 10) + 'px')
+              .style('top', (event.pageY - 10) + 'px');
+          })
+          .on('mouseout', function() {
+            d3.select(this).attr('opacity', 1);
+            d3.selectAll('.chart-tooltip').remove();
+          });
+      });
+    } catch (error) {
+      console.error('Error creating heatmap chart:', error);
+    }
   }
 }
