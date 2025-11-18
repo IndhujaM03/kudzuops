@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ViewChild, HostListener, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ViewChild, HostListener, ElementRef, ViewChild, HostListener, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, Validators, FormGroup } from '@angular/forms';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -8,6 +8,7 @@ import { AuthService } from '../../services/auth.service';
 import { DataService } from '../../services/data.service';
 import { ToastService } from '../../services/toast.service';
 import { environment } from '../../environments/environment';
+// PDF and DOCX viewing temporarily disabled
 // PDF and DOCX viewing temporarily disabled
 
 interface Demand {
@@ -1280,6 +1281,114 @@ interface CandidateForm {
     
     /* Wrap table if it's too wide */
     .docx-host ::ng-deep table {
+      margin: 10px 0;
+    }
+    
+    .docx-loading, .pdf-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #6b7280;
+      font-size: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .docx-error, .pdf-error {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #dc2626;
+      font-size: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+    
+    .docx-error .btn, .pdf-error .btn {
+      margin-top: 12px;
+      padding: 8px 16px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .docx-error .btn:hover, .pdf-error .btn:hover {
+      background: #2563eb;
+    }
+    
+    /* PDF Preview Styles */
+    .pdf-container {
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      overflow: auto;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 20px;
+    }
+    
+    .pdf-canvas {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* DOCX Preview Styles */
+    .docx-container {
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .docx-host {
+      width: 100%;
+      height: 100%;
+      padding: 20px;
+      background: #ffffff;
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-sizing: border-box;
+      cursor: text;
+    }
+    
+    .docx-host:hover {
+      cursor: grab;
+    }
+    
+    .docx-host:active {
+      cursor: grabbing;
+    }
+    
+    /* Ensure docx content respects margins */
+    .docx-host >>> img,
+    .docx-host >>> table {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+    
+    /* Add proper margins to paragraphs */
+    .docx-host >>> p {
+      margin: 8px 0;
+      line-height: 1.6;
+    }
+    
+    /* Wrap table if it's too wide */
+    .docx-host >>> table {
       margin: 10px 0;
     }
     

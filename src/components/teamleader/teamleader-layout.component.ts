@@ -1,13 +1,15 @@
-import { Component, OnInit, OnDestroy, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterOutlet, RouterLink, RouterLinkActive, NavigationEnd } from '@angular/router';
+import { Router, RouterOutlet, RouterLink, RouterLinkActive, NavigationEnd, RouterLink, RouterLinkActive, NavigationEnd } from '@angular/router';
+import { filter } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-teamleader-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, RouterLink, RouterLinkActive],
   template: `
     <div class="tl-dashboard">
       <div class="tl-sidebar">
@@ -16,6 +18,14 @@ import { Subscription } from 'rxjs';
           <div class="tl-sidebar-subtitle">Operations</div>
         </div>
         <nav class="tl-sidebar-nav">
+          <a routerLink="/teamleader/dashboard" routerLinkActive="active" class="tl-nav-item">
+            <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span>Dashboard</span>
+          </a>
+          <a routerLink="/teamleader/demand-sheet" routerLinkActive="active" class="tl-nav-item">
+            <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
           <a routerLink="/teamleader/dashboard" routerLinkActive="active" class="tl-nav-item">
             <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />

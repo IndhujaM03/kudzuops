@@ -16,7 +16,7 @@ except Exception:
         raise ValueError("DATABASE_URL environment variable is required")
 
 
-router = APIRouter(prefix="/api/clientsettings", tags=["clientsettings"]) 
+router = APIRouter(prefix="/api/api/clientsettings", tags=["clientsettings"]) 
 
 
 # -----------------------------
@@ -266,105 +266,14 @@ def update_client(client_id: int, payload: ClientCreateRequest, _: Dict[str, Any
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Check if client exists
-                cur.execute("SELECT 1 FROM tbl_clients WHERE id=%s", (client_id,))
-                if not cur.fetchone():
-                    raise HTTPException(status_code=404, detail="Client not found")
-                
-                # Check if another client with the same name already exists (excluding current client)
-                cur.execute("SELECT id FROM tbl_clients WHERE client_name = %s AND id != %s", (payload.clientname.strip(), client_id))
-                existing = cur.fetchone()
-                if existing:
-                    raise HTTPException(status_code=400, detail=f"Client with name '{payload.clientname.strip()}' already exists")
-                
-                # Check which columns exist in the table
-                cur.execute("""
-                    SELECT column_name 
-                    FROM information_schema.columns 
-                    WHERE table_name = 'tbl_clients'
-                    AND table_schema = 'public'
-                """)
-                available_columns = {row[0] for row in cur.fetchall()}
-                
-                # Build UPDATE query dynamically based on available columns
-                update_parts = []
-                update_values = []
-                
-                # Always update client_name
-                update_parts.append("client_name = %s")
-                update_values.append(payload.clientname.strip())
-                
-                # Update industry if column exists
-                if 'industry' in available_columns:
-                    update_parts.append("industry = %s")
-                    update_values.append(payload.industry)
-                
-                # Update location if column exists
-                if 'location' in available_columns:
-                    update_parts.append("location = %s")
-                    update_values.append(payload.location)
-                
-                # Handle status column
-                status_value = payload.status or 'inactive'
-                if 'status' in available_columns:
-                    update_parts.append("status = %s")
-                    update_values.append(status_value)
-                elif 'is_active' in available_columns:
-                    update_parts.append("is_active = %s")
-                    update_values.append(status_value == 'active')
-                
-                # Update updated_at if column exists
-                if 'updated_at' in available_columns:
-                    update_parts.append("updated_at = NOW()")
-                
-                # Add client_id for WHERE clause
-                update_values.append(client_id)
-                
-                # Build RETURNING clause based on available columns
-                return_cols = ['id', 'client_name']
-                
-                # Handle industry
-                if 'industry' in available_columns:
-                    return_cols.append('industry')
-                else:
-                    return_cols.append('NULL::VARCHAR as industry')
-                
-                # Handle location
-                if 'location' in available_columns:
-                    return_cols.append('location')
-                else:
-                    return_cols.append('NULL::VARCHAR as location')
-                
-                # Handle email
-                if 'email' in available_columns:
-                    return_cols.append('email')
-                else:
-                    return_cols.append('NULL::VARCHAR as email')
-                
-                # Handle contact_person
-                if 'contact_person' in available_columns:
-                    return_cols.append('contact_person')
-                else:
-                    return_cols.append('NULL::VARCHAR as contact_person')
-                
-                # Handle status
-                if 'status' in available_columns:
-                    return_cols.append('status')
-                elif 'is_active' in available_columns:
-                    return_cols.append("CASE WHEN is_active THEN 'active' ELSE 'inactive' END as status")
-                else:
-                    return_cols.append("'inactive'::VARCHAR as status")
-                
-                # Build the UPDATE query
-                set_clause = ', '.join(update_parts)
-                query = f"""
-                    UPDATE tbl_clients 
-                    SET {set_clause}
-                    WHERE id = %s
-                    RETURNING {', '.join(return_cols)}
-                """
-                
-                cur.execute(query, tuple(update_values))
+                cur.execute(
+                    """
+                    INSERT INTO tbl_clients (client_name, industry, location, is_active)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id, client_name, industry, location, is_active
+                    """,
+                    (payload.clientname.strip(), payload.industry, payload.location, is_active),
+                )
                 row = cur.fetchone()
                 if not row:
                     raise HTTPException(status_code=500, detail="Failed to update client: No row returned")
@@ -392,6 +301,106 @@ def update_client(client_id: int, payload: ClientCreateRequest, _: Dict[str, Any
             except:
                 pass
         raise HTTPException(status_code=500, detail=f"Failed to update client: {str(e)}")
+
+
+@router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_client(client_id: int, _: Dict[str, Any] = Depends(get_current_user)) -> None:
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Check if client exists
+                cur.execute("SELECT 1 FROM tbl_clients WHERE id=%s", (client_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Client not found")
+                
+                # Delete associated SPOCs first
+                cur.execute("DELETE FROM tbl_client_spocs WHERE client_id=%s", (client_id,))
+                
+                # Delete the client
+                cur.execute("DELETE FROM tbl_clients WHERE id=%s", (client_id,))
+                conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete client: {e}")
+
+
+@router.put("/clients/{client_id}", response_model=ClientResponse)
+def update_client(client_id: int, payload: ClientCreateRequest, _: Dict[str, Any] = Depends(get_current_user)) -> ClientResponse:
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Check if client exists
+                cur.execute("SELECT 1 FROM tbl_clients WHERE id=%s", (client_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Client not found")
+                
+                cur.execute(
+                    """
+                    UPDATE tbl_clients 
+                    SET client_name=%s, industry=%s, location=%s, status=%s, updated_at=NOW()
+                    WHERE id=%s
+                    RETURNING id, client_name, industry, location, email, contact_person, status
+                    """,
+                    (payload.clientname.strip(), payload.industry, payload.location, payload.status or 'inactive', client_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=500, detail="Failed to update client: No row returned")
+                conn.commit()
+                return _row_to_client(row)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update client: {e}")
+
+
+@router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_client(client_id: int, _: Dict[str, Any] = Depends(get_current_user)) -> None:
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Check if client exists
+                cur.execute("SELECT 1 FROM tbl_clients WHERE id=%s", (client_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Client not found")
+                
+                # Delete associated SPOCs first
+                cur.execute("DELETE FROM tbl_client_spocs WHERE client_id=%s", (client_id,))
+                
+                # Delete the client
+                cur.execute("DELETE FROM tbl_clients WHERE id=%s", (client_id,))
+                conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete client: {e}")
+
+
+@router.put("/clients/{client_id}", response_model=ClientResponse)
+def update_client(client_id: int, payload: ClientCreateRequest, _: Dict[str, Any] = Depends(get_current_user)) -> ClientResponse:
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Check if client exists
+                cur.execute("SELECT 1 FROM tbl_clients WHERE id=%s", (client_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Client not found")
+                
+                cur.execute(
+                    """
+                    UPDATE tbl_clients 
+                    SET client_name=%s, industry=%s, location=%s, status=%s, updated_at=NOW()
+                    WHERE id=%s
+                    RETURNING id, client_name, industry, location, email, contact_person, status
+                    """,
+                    (payload.clientname.strip(), payload.industry, payload.location, payload.status or 'inactive', client_id),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return _row_to_client(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update client: {e}")
 
 
 @router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

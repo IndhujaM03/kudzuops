@@ -37,6 +37,18 @@ import { SettingsComponent } from './components/recruiter/settings/settings.comp
 import { InterviewScheduleComponent } from './components/recruiter/interview-schedule/interview-schedule.component';
 import { InterviewComponent } from './components/teamleader/interview.component';
 import { OnboardingComponent } from './components/teamleader/onboarding.component';
+import { ViewDemandComponent } from './components/teamleader/view-demand.component';
+import { ToastContainerComponent } from './shared/components/toast-container.component';
+import { DebugAuthComponent } from './components/debug-auth.component';
+import { DemandSheetComponent } from './app/demand/demand_sheet';
+import { ClientSettingsComponent } from './components/clientsettings';
+import { RecruiterComponent } from './components/recruiter/recruiter.component';
+import { RecruiterDashboardComponent } from './components/recruiter/recruiter-dashboard/recruiter-dashboard.component';
+import { DemandManagementComponent } from './components/recruiter/demand-management/demand-management.component';
+import { RecruiterActivityComponent } from './components/recruiter/recruiter-activity.component';
+import { SubmittedComponent } from './components/recruiter/submitted/submitted.component';
+import { SettingsComponent } from './components/recruiter/settings/settings.component';
+import { InterviewScheduleComponent } from './components/recruiter/interview-schedule/interview-schedule.component';
 
 // Simple protected Dashboard (same UI style)
 @Component({
@@ -241,6 +253,7 @@ const roleGuard = (requiredRole: string): CanActivateFn => () => {
       'business_head': ['business_head'],
       'cluster_manager': ['cluster_manager'],
       'recruiter': ['recruiter'],
+      'candidate': ['candidate'],
       'candidate': ['candidate']
     };
     

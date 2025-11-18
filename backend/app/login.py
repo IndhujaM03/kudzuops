@@ -124,6 +124,40 @@ def extract_recruiter_id_from_request(request: Request, query_param: Optional[in
     
     return None
 
+def extract_recruiter_id_from_request(request: Request, query_param: Optional[int] = None) -> Optional[int]:
+    """
+    Extract recruiter_id with multiple fallback options:
+    1. Query parameter (explicit)
+    2. JWT token (uid field)
+    3. Request body (x-recruiter-id header)
+    """
+    # Priority 1: Explicit query parameter
+    if query_param:
+        return query_param
+    
+    # Priority 2: Extract from JWT token
+    try:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+            payload, err = decode_token(token)
+            if not err and payload:
+                user_id = payload.get('uid')
+                if user_id:
+                    return int(user_id)
+    except Exception:
+        pass
+    
+    # Priority 3: Extract from custom header
+    try:
+        recruiter_id_header = request.headers.get('X-Recruiter-ID')
+        if recruiter_id_header:
+            return int(recruiter_id_header)
+    except Exception:
+        pass
+    
+    return None
+
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)) -> Dict[str, Any]:
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -392,6 +426,21 @@ def register(request: RegisterRequest):
         # Now proceed with the transaction for user creation
         with psycopg.connect(DATABASE_DSN) as conn:
             try:
+                # Ensure sequence is in sync with actual data (prevents duplicate key errors)
+                try:
+                    cur.execute("""
+                        SELECT setval('tbl_users_id_seq', 
+                            GREATEST(
+                                (SELECT MAX(id) FROM tbl_users), 
+                                1
+                            ), 
+                            true
+                        )
+                    """)
+                except Exception:
+                    # If sequence doesn't exist or has issues, continue - PostgreSQL will handle it
+                    pass
+                
                 # Hash password before starting transaction
                 password_hash = _hash_password(request.password)
                 

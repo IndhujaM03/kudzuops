@@ -1,10 +1,13 @@
-import { Component, OnInit, inject, signal, computed, HostListener, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, HostListener, ElementRef, ViewChild, ChangeDetectorRef, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { environment } from '../../environments/environment';
+import { ModalService } from '../../services/modal.service';
+import { ToastService } from '../../services/toast.service';
+import { forkJoin } from 'rxjs';
 import { ModalService } from '../../services/modal.service';
 import { ToastService } from '../../services/toast.service';
 import { forkJoin } from 'rxjs';
@@ -149,6 +152,20 @@ export class DemandSheetComponent implements OnInit {
   isRescheduleMode = signal(false);
   rescheduleScheduleId: number | null = null;
   rescheduleRoundKey: string | null = null;
+
+  // Status edit modal state
+  showStatusModal = signal(false);
+  selectedDemandId: number | null = null;
+  selectedDemandStatus: string = '';
+  statusRemark: string = '';
+  selectedStatus: string = 'open';
+
+  // Submitted profiles modal state
+  showSubmittedProfilesModal = signal(false);
+  selectedSubmittedDemand: any = null;
+  submittedProfiles = signal<any[]>([]);
+  profileSelections = signal<Map<number, boolean>>(new Map()); // Map of profile index to selected (true = accept, false = reject)
+  profileRemarks = signal<Map<number, string>>(new Map()); // Map of profile index to remark text
 
   ngOnInit(): void {
     console.log('🔧 API Base URL:', this.apiBase);
@@ -435,102 +452,45 @@ export class DemandSheetComponent implements OnInit {
           
           // Count submitted profiles (status = 1) and filter out those with interview_status = "scheduled"
           let submittedCount = 0;
+          const demandId = activity.demand_id;
+          if (!demandId) return;
+          
+          // Count submitted profiles (status = 1)
+          let submittedCount = 0;
           if (Array.isArray(activity.cv_list)) {
-            const submittedCvs = activity.cv_list.filter((cv: any) => {
-              const status = cv.status;
-              const isSubmitted = status === 1 || status === "1";
-              const interviewStatus = cv.interview_status;
-              const isNotScheduled = !interviewStatus || interviewStatus !== "scheduled";
-              return isSubmitted && isNotScheduled;
-            });
-            submittedCount = submittedCvs.length;
-            
-            // Only add to demand map if there are submitted CVs without interview_status = "scheduled"
-            if (submittedCount > 0) {
-              if (!demandMap.has(demandId)) {
-                demandMap.set(demandId, {
-                  demand_id: demandId,
-                  client_name: activity.client_name,
-                  spoc_name: activity.spoc_name,
-                  skill: activity.skill,
-                  cv_count: 0,
-                  // Store all activities for this demand for modal display
-                  activities: []
-                });
-              }
-              
-              const demandData = demandMap.get(demandId);
-              demandData.cv_count += submittedCount;
-              // Store activity for modal (with approved CVs only, excluding scheduled ones)
-              demandData.activities.push({
-                ...activity,
-                submitted_cvs: submittedCvs
+            submittedCount = activity.cv_list.filter((cv: any) => 
+              cv.status === 1 || cv.status === "1"
+            ).length;
+          }
+          
+          if (submittedCount > 0) {
+            if (!demandMap.has(demandId)) {
+              demandMap.set(demandId, {
+                demand_id: demandId,
+                client_name: activity.client_name,
+                spoc_name: activity.spoc_name,
+                skill: activity.skill,
+                cv_count: 0,
+                // Store all activities for this demand for modal display
+                activities: []
               });
             }
+            
+            const demandData = demandMap.get(demandId);
+            demandData.cv_count += submittedCount;
+            // Store activity for modal (with approved CVs only)
+            demandData.activities.push({
+              ...activity,
+              submitted_cvs: activity.cv_list?.filter((cv: any) => 
+                cv.status === 1 || cv.status === "1"
+              ) || []
+            });
           }
         });
         
         // Convert map to array
         const groupedData = Array.from(demandMap.values());
         this.submitted.set(groupedData);
-      },
-      error: () => this.submitted.set([]),
-    });
-  }
-
-  loadReschedule(): void {
-    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
-    const headers: any = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    this.http.get<{ items: any[], total: number }>(`${this.apiBase}/interview-schedule/all`, { headers }).subscribe({
-      next: (response) => {
-        const schedules = response.items || [];
-        
-        // Filter schedules where status = "reschedule"
-        const rescheduleSchedules = schedules.filter(schedule => schedule.status === 'reschedule');
-        
-        // Process each schedule to extract rounds with round_status = 1
-        const rescheduleData: any[] = [];
-        
-        rescheduleSchedules.forEach(schedule => {
-          const interviewSchedules = schedule.interview_schedules || {};
-          
-          // Parse if string
-          let parsedSchedules = interviewSchedules;
-          if (typeof interviewSchedules === 'string') {
-            try {
-              parsedSchedules = JSON.parse(interviewSchedules);
-            } catch (e) {
-              console.error('Failed to parse interview_schedules:', e);
-              return;
-            }
-          }
-          
-          // Check each round for round_status = 1
-          Object.keys(parsedSchedules).forEach(roundKey => {
-            const roundData = parsedSchedules[roundKey];
-            if (roundData && roundData.round_status === 1) {
-              // Add to reschedule list
-              rescheduleData.push({
-                schedule_id: schedule.id,
-                demand_id: schedule.demand_id,
-                recruiter_id: schedule.recruiter_id,
-                recruiter_name: schedule.recruiter_name || `Recruiter ${schedule.recruiter_id}`,
-                candidate_name: schedule.candidate_name,
-                candidate_email: schedule.candidate_email,
-                candidate_phone: schedule.candidate_phone,
-                round: roundKey,
-                round_data: roundData,
-                interview_schedules: parsedSchedules
-              });
-            }
-          });
-        });
-        
-        this.reschedule.set(rescheduleData);
       },
       error: (error) => {
         console.error('Failed to load reschedule data:', error);
@@ -1274,6 +1234,30 @@ export class DemandSheetComponent implements OnInit {
     this.showRecruiterDropdown = false;
     this.showTeamLeaderDropdown = false;
     this.showAssignedToDropdown = false;
+  }
+
+  // Handle blur event for assigned to input
+  onAssignedToInputBlur(): void {
+    // Close dropdown when input loses focus
+    // Use setTimeout to allow for potential clicks on dropdown items
+    setTimeout(() => {
+      // Check if focus moved to another element within the dropdown
+      const activeElement = document.activeElement;
+      const isWithinDropdown = activeElement && (
+        activeElement.closest('.unified-dropdown') ||
+        activeElement.closest('.dropdown-list') ||
+        activeElement.closest('.selected-section')
+      );
+      
+      if (this.showAssignedToDropdown && !isWithinDropdown) {
+        this.closeAssignedToDropdown();
+      }
+    }, 200);
+  }
+
+  // Remove recruiter from selected list
+  removeRecruiter(id: number): void {
+    this.selectedRecruiterIds.delete(id);
   }
 
   // Handle blur event for assigned to input
@@ -2229,6 +2213,359 @@ export class DemandSheetComponent implements OnInit {
         this.toastService.error('Failed to fetch current schedule');
       }
     });
+  }
+
+  // Status editing methods
+  private clickTimer: number | null = null;
+  
+  handleStatusClick(event: Event): void {
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+  }
+
+  handleStatusDoubleClick(event: Event, demandId: number, currentStatus: string): void {
+    console.log('Double-click detected on status cell. Demand ID:', demandId, 'Status:', currentStatus);
+    event.stopPropagation();
+    event.preventDefault();
+    
+    if (this.clickTimer) {
+      clearTimeout(this.clickTimer);
+      this.clickTimer = null;
+    }
+    
+    if (!demandId || demandId === null || demandId === undefined || isNaN(demandId)) {
+      console.error('Invalid demand ID:', demandId);
+      this.errorMsg.set('Invalid demand ID: ' + demandId);
+      return;
+    }
+    
+    console.log('Opening modal with demand ID:', demandId);
+    this.openStatusModal(demandId, currentStatus);
+  }
+
+  openStatusModal(demandId: number, currentStatus: string): void {
+    console.log('Opening status modal for demand:', demandId, 'with status:', currentStatus);
+    this.selectedDemandId = demandId;
+    this.selectedDemandStatus = currentStatus;
+    // Map database status to UI status
+    const statusMap: { [key: string]: string } = {
+      'open': 'open',
+      'in_progress': 'open',
+      'on_hold': 'hold',
+      'closed': 'close',
+      'rejected': 'cancel'  // Database "rejected" maps to UI "cancel"
+    };
+    this.selectedStatus = statusMap[currentStatus?.toLowerCase()] || 'open';
+    this.statusRemark = '';
+    this.showStatusModal.set(true);
+    console.log('Status modal signal set to:', this.showStatusModal());
+  }
+
+  closeStatusModal(): void {
+    this.showStatusModal.set(false);
+    this.selectedDemandId = null;
+    this.selectedDemandStatus = '';
+    this.statusRemark = '';
+    this.selectedStatus = 'open';
+  }
+
+  saveStatus(): void {
+    if (!this.selectedDemandId) {
+      this.errorMsg.set('No demand selected');
+      return;
+    }
+
+    // Map UI status to database status
+    const statusMap: { [key: string]: string } = {
+      'open': 'open',
+      'hold': 'on_hold',
+      'close': 'closed',
+      'cancel': 'rejected'  // Cancel maps to rejected in database
+    };
+
+    const dbStatus = statusMap[this.selectedStatus] || 'open';
+
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    this.http.post<any>(
+      `${this.apiBase}/demand/${this.selectedDemandId}/status`,
+      {
+        status: dbStatus,
+        spoc_remark: this.statusRemark || null
+      },
+      { headers }
+    ).subscribe({
+      next: () => {
+        this.successMsg.set('Status updated successfully');
+        this.closeStatusModal();
+        // Reload data
+        this.loadUnassigned();
+        this.loadAssigned();
+        this.loadCvReceived();
+        setTimeout(() => this.successMsg.set(null), 3000);
+      },
+      error: (err) => {
+        console.error('Error updating status:', err);
+        this.errorMsg.set('Failed to update status: ' + (err.error?.detail || err.message));
+        setTimeout(() => this.errorMsg.set(null), 5000);
+      }
+    });
+  }
+
+  formatStatus(status: string): string {
+    if (!status) return 'Open';
+    const statusMap: { [key: string]: string } = {
+      'open': 'Open',
+      'in_progress': 'Open',
+      'on_hold': 'Hold',
+      'closed': 'Closed',
+      'rejected': 'Cancel',  // Database "rejected" displays as "Cancel" in UI
+      'hold': 'Hold',
+      'close': 'Closed',
+      'cancel': 'Cancel'
+    };
+    return statusMap[status.toLowerCase()] || status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  getStatusBadgeClass(status: string): string {
+    if (!status) return 'status-open';
+    const normalizedStatus = status.toLowerCase();
+    if (normalizedStatus === 'open' || normalizedStatus === 'in_progress') {
+      return 'status-open';
+    } else if (normalizedStatus === 'on_hold' || normalizedStatus === 'hold') {
+      return 'status-hold';
+    } else if (normalizedStatus === 'closed' || normalizedStatus === 'close' || normalizedStatus === 'cancel' || normalizedStatus === 'rejected') {
+      return 'status-closed';
+    }
+    return 'status-open';
+  }
+
+  // Submitted profiles modal methods
+  openSubmittedProfilesModal(demand: any): void {
+    console.log('Opening submitted profiles modal for demand:', demand);
+    this.selectedSubmittedDemand = demand;
+    
+    // Flatten all submitted CVs from all activities for this demand
+    const allProfiles: any[] = [];
+    let profileIndex = 0;
+    
+    if (demand.activities && Array.isArray(demand.activities)) {
+      demand.activities.forEach((activity: any) => {
+        if (activity.submitted_cvs && Array.isArray(activity.submitted_cvs)) {
+          activity.submitted_cvs.forEach((cv: any) => {
+            // Construct CV URL from file_path if cv_url is null
+            let cvUrl = cv.cv_url;
+            let cvAvailable = cv.cv_available !== false;
+            
+            if (!cvUrl && cv.file_path) {
+              // Parse file_path to extract recruiter_id, demand_id, and filename
+              // Format: C:/Users/.../src/assets/cv_uploads/<recruiter_id>/<demand_id>/<filename>
+              // or: src/assets/cv_uploads/<recruiter_id>/<demand_id>/<filename>
+              const filePath = cv.file_path.replace(/\\/g, '/');
+              const parts = filePath.split('/');
+              const idx = parts.findIndex((p: string) => p === 'cv_uploads');
+              
+              if (idx >= 0 && parts.length >= idx + 4) {
+                const rid = parts[idx + 1];
+                const did = parts[idx + 2];
+                const fname = parts.slice(idx + 3).join('/');
+                
+                if (rid && did && fname) {
+                  cvUrl = `${this.apiBase}/cv-file/${encodeURIComponent(rid)}/${encodeURIComponent(did)}/${encodeURIComponent(fname)}`;
+                  cvAvailable = true;
+                }
+              } else if (cv.filename && activity.recruiter_id && demand.demand_id) {
+                // Fallback: use filename with recruiter_id and demand_id from activity
+                const encodedFilename = encodeURIComponent(cv.filename);
+                cvUrl = `${this.apiBase}/cv-file/${activity.recruiter_id}/${demand.demand_id}/${encodedFilename}`;
+                cvAvailable = true;
+              }
+            }
+            
+            allProfiles.push({
+              ...cv,
+              recruiter_name: activity.recruiter_name || activity.recruiter_email,
+              recruiter_id: activity.recruiter_id,
+              activity_id: activity.id,
+              demand_id: demand.demand_id,
+              profile_index: profileIndex++,
+              cv_url: cvUrl || null,
+              cv_available: cvAvailable
+            });
+          });
+        }
+      });
+    }
+    
+    this.submittedProfiles.set(allProfiles);
+    this.profileSelections.set(new Map());
+    this.showSubmittedProfilesModal.set(true);
+  }
+
+  closeSubmittedProfilesModal(): void {
+    this.showSubmittedProfilesModal.set(false);
+    this.selectedSubmittedDemand = null;
+    this.submittedProfiles.set([]);
+    this.profileSelections.set(new Map());
+    this.profileRemarks.set(new Map());
+  }
+
+  toggleProfileSelection(profileIndex: number, isAccept: boolean): void {
+    const currentSelections = this.profileSelections();
+    const newSelections = new Map(currentSelections);
+    
+    // If already selected with same action, deselect
+    if (newSelections.get(profileIndex) === isAccept) {
+      newSelections.delete(profileIndex);
+    } else {
+      // Set new selection (mutually exclusive - if accept is selected, remove reject and vice versa)
+      newSelections.set(profileIndex, isAccept);
+    }
+    
+    this.profileSelections.set(newSelections);
+  }
+
+  isProfileSelected(profileIndex: number, isAccept: boolean): boolean {
+    return this.profileSelections().get(profileIndex) === isAccept;
+  }
+
+  updateProfileRemark(profileIndex: number, remark: string): void {
+    const currentRemarks = this.profileRemarks();
+    const newRemarks = new Map(currentRemarks);
+    newRemarks.set(profileIndex, remark);
+    this.profileRemarks.set(newRemarks);
+  }
+
+  getProfileRemark(profileIndex: number): string {
+    return this.profileRemarks().get(profileIndex) || '';
+  }
+
+  saveProfileSelections(): void {
+    if (!this.selectedSubmittedDemand) {
+      this.errorMsg.set('No demand selected');
+      return;
+    }
+
+    const selections = this.profileSelections();
+    const profiles = this.submittedProfiles();
+    const demandId = this.selectedSubmittedDemand.demand_id;
+
+    if (selections.size === 0) {
+      this.errorMsg.set('Please select at least one profile to accept or reject');
+      return;
+    }
+
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Store the indices to remove before making API calls
+    const removedIndices = new Set(Array.from(selections.keys()));
+    
+    // Process each selection and create HTTP observables
+    const httpRequests: any[] = [];
+    
+    selections.forEach((isAccept, profileIndex) => {
+      // Find profile by profile_index (not array index)
+      const profile = profiles.find((p: any) => p.profile_index === profileIndex);
+      if (!profile) {
+        console.warn('Profile not found for index:', profileIndex);
+        return;
+      }
+
+      const remark = this.profileRemarks().get(profileIndex) || '';
+
+      const action = {
+        recruiter_id: profile.recruiter_id,
+        candidate_name: profile.candidate_name,
+        candidate_email: profile.email || null,
+        candidate_phone: profile.phone || null,
+        cv_url: profile.cv_url || null,
+        shortlisted: isAccept ? 1 : 0,
+        feedback: remark || null
+      };
+
+      httpRequests.push(
+        this.http.post<any>(
+          `${this.apiBase}/demand/${demandId}/profile-action`,
+          action,
+          { headers }
+        )
+      );
+    });
+
+    // Execute all HTTP requests using forkJoin
+    if (httpRequests.length > 0) {
+      forkJoin(httpRequests).subscribe({
+        next: () => {
+          // Show success snackbar notification
+          this.toastService.success('Profile selections saved successfully');
+          
+          // Get current profiles and filter out the ones that were saved
+          const currentProfiles = [...this.submittedProfiles()]; // Create a copy
+          console.log('Before removal - Total profiles:', currentProfiles.length);
+          console.log('Removing indices:', Array.from(removedIndices));
+          console.log('Current profile indices:', currentProfiles.map(p => p.profile_index));
+          
+          // Filter out removed profiles - create new array to ensure change detection
+          // Convert all indices to numbers for comparison to handle string/number mismatches
+          const removedIndicesNum = new Set(Array.from(removedIndices).map(idx => Number(idx)));
+          const remaining: any[] = currentProfiles.filter((p: any) => {
+            const profileIdx = Number(p.profile_index);
+            const shouldRemove = removedIndicesNum.has(profileIdx);
+            if (shouldRemove) {
+              console.log('Removing profile:', profileIdx, p.candidate_name);
+            }
+            return !shouldRemove;
+          });
+          
+          console.log('After removal - Remaining profiles:', remaining.length);
+          
+          // Create a completely new array reference to ensure change detection
+          const newProfilesArray = remaining.length > 0 ? remaining.map(p => ({ ...p })) : [];
+          console.log('Setting new profiles array, length:', newProfilesArray.length);
+          
+          // Update the profiles list immediately
+          this.submittedProfiles.set(newProfilesArray);
+          console.log('Signal updated, current value length:', this.submittedProfiles().length);
+          
+          // Force change detection to ensure UI updates immediately
+          this.cdr.detectChanges();
+          
+          // Clear selections and remarks after successful save
+          this.profileSelections.set(new Map());
+          this.profileRemarks.set(new Map());
+          
+          // Always reload the submitted tab to update the main table with correct counts
+          this.loadSubmitted();
+          
+          // If no profiles remain in modal, close it
+          if (remaining.length === 0) {
+            setTimeout(() => {
+              this.closeSubmittedProfilesModal();
+            }, 300);
+          }
+        },
+        error: (err) => {
+          console.error('Error saving profile selections:', err);
+          this.toastService.error('Failed to save selections: ' + (err.error?.detail || err.message));
+        }
+      });
+    }
+  }
+
+  viewSubmittedCv(cvUrl: string): void {
+    if (cvUrl) {
+      window.open(cvUrl, '_blank');
+    }
   }
 }
 

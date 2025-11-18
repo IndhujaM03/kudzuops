@@ -39,7 +39,7 @@ except ImportError:
     def require_admin_or_manager(current_user: Dict[str, Any] = Depends(get_current_user)):
         return current_user
 
-router = APIRouter(prefix="/api/demand", tags=["demand"])
+router = APIRouter(prefix="/api/demand", prefix="/api/demand", tags=["demand"])
 
 # Pydantic Models
 class DemandCreateRequest(BaseModel):
@@ -972,6 +972,125 @@ async def accept_reject_profile(
                         today,
                         submission_week
                     ))
+                
+                conn.commit()
+                
+                action = "accepted" if shortlisted == 1 else "rejected"
+                return {"message": f"Profile {action} successfully"}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process profile action: {str(e)}")
+
+class ProfileActionRequest(BaseModel):
+    recruiter_id: int
+    candidate_name: str
+    candidate_email: Optional[str] = None
+    candidate_phone: Optional[str] = None
+    cv_url: Optional[str] = None
+    shortlisted: int  # 1 for accept, 0 for reject
+    feedback: Optional[str] = None
+
+@router.post("/{demand_id}/profile-action")
+async def accept_reject_profile(
+    demand_id: int,
+    request: ProfileActionRequest,
+    current_user: Dict[str, Any] = Depends(require_admin_or_manager)
+):
+    """Accept or reject a submitted profile - insert into tbl_submissions"""
+    try:
+        recruiter_id = request.recruiter_id
+        candidate_name = request.candidate_name
+        candidate_email = request.candidate_email
+        candidate_phone = request.candidate_phone
+        shortlisted = request.shortlisted  # 1 for accept, 0 for reject
+        feedback = request.feedback
+        
+        if not recruiter_id or not candidate_name:
+            raise HTTPException(status_code=400, detail="recruiter_id and candidate_name are required")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get demand details to extract spoc_id and skill
+                cur.execute("""
+                    SELECT spoc_id, skill 
+                    FROM tbl_demand_sheet 
+                    WHERE id = %s
+                """, (demand_id,))
+                demand_row = cur.fetchone()
+                
+                if not demand_row:
+                    raise HTTPException(status_code=404, detail="Demand not found")
+                
+                spoc_id = demand_row[0]
+                skill = demand_row[1]
+                
+                # Calculate submission week (week of year)
+                from datetime import date
+                today = date.today()
+                submission_week = today.isocalendar()[1]
+                
+                # Check if record already exists for this candidate
+                cur.execute("""
+                    SELECT id FROM tbl_submissions 
+                    WHERE demand_id = %s 
+                    AND recruiter_id = %s 
+                    AND candidate_name = %s
+                    AND submission_date = %s
+                """, (demand_id, recruiter_id, candidate_name, today))
+                
+                existing = cur.fetchone()
+                
+                if existing:
+                    # Update existing record
+                    cur.execute("""
+                        UPDATE tbl_submissions 
+                        SET shortlisted = %s, 
+                            candidate_email = COALESCE(%s, candidate_email),
+                            candidate_phone = COALESCE(%s, candidate_phone),
+                            feedback = COALESCE(%s, feedback),
+                            updated_at = NOW()
+                        WHERE id = %s
+                    """, (shortlisted, candidate_email, candidate_phone, feedback, existing[0]))
+                else:
+                    # Insert new record
+                    cur.execute("""
+                        INSERT INTO tbl_submissions 
+                        (demand_id, recruiter_id, spoc_id, skill, candidate_name, 
+                         candidate_email, candidate_phone, shortlisted, feedback, submission_date, submission_week, 
+                         no_of_submissions, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW())
+                    """, (
+                        demand_id,
+                        recruiter_id,
+                        spoc_id,
+                        skill,
+                        candidate_name,
+                        candidate_email or None,
+                        candidate_phone or None,
+                        shortlisted,
+                        feedback or None,
+                        today,
+                        submission_week
+                    ))
+                
+                # Count only accepted submissions (shortlisted = 1) for this demand_id and update all records
+                cur.execute("""
+                    SELECT COUNT(*) 
+                    FROM tbl_submissions 
+                    WHERE demand_id = %s AND shortlisted = 1
+                """, (demand_id,))
+                total_submissions = cur.fetchone()[0]
+                
+                # Update all records for this demand_id with the same no_of_submissions value
+                # This ensures all records (accepted and rejected) show the count of accepted submissions
+                cur.execute("""
+                    UPDATE tbl_submissions 
+                    SET no_of_submissions = %s,
+                        updated_at = NOW()
+                    WHERE demand_id = %s
+                """, (total_submissions, demand_id))
                 
                 conn.commit()
                 
