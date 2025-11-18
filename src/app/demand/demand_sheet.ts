@@ -90,11 +90,16 @@ export class DemandSheetComponent implements OnInit {
   selectedAssignedToIds: Set<number> = new Set<number>();
 
   // Tabs state
-  activeTab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' = 'unassigned';
+  activeTab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' | 'reschedule' = 'unassigned';
   unassigned = signal<any[]>([]);
   assigned = signal<any[]>([]);
   cvReceived = signal<any[]>([]);
   submitted = signal<any[]>([]);
+  reschedule = signal<any[]>([]);
+  rescheduleAvailable = signal(false);
+  showRescheduleProfilesModal = signal(false);
+  rescheduleProfiles = signal<any[]>([]);
+  selectedRescheduleDemand: any = null;
   assignInput: Record<number, number> = {};
 
   // Assigned tab search
@@ -136,12 +141,21 @@ export class DemandSheetComponent implements OnInit {
   profileSelections = signal<Map<number, boolean>>(new Map()); // Map of profile index to selected (true = accept, false = reject)
   profileRemarks = signal<Map<number, string>>(new Map()); // Map of profile index to remark text
 
+  // Schedule interview modal state
+  showScheduleInterviewModal = signal(false);
+  selectedCandidateForSchedule: any = null;
+  interviewRounds = signal<Array<{ round: string; slots: Array<{ date: string; time: string }> }>>([
+    { round: '', slots: [{ date: '', time: '' }] },
+  ]);
+  private rescheduleMode = signal(false);
+
   ngOnInit(): void {
     console.log('🔧 API Base URL:', this.apiBase);
     this.fetchClients();
     this.loadUnassigned();
     this.fetchTeamLeads();
     this.fetchAssignedToRecruiters();
+    this.loadReschedule();
     
     // Subscribe to modal service for opening create demand modal
     this.modalService.openCreateDemand$.subscribe(shouldOpen => {
@@ -278,12 +292,17 @@ export class DemandSheetComponent implements OnInit {
       });
   }
 
-  setTab(tab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted') {
+  setTab(tab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' | 'reschedule') {
     this.activeTab = tab;
     if (tab === 'unassigned') this.loadUnassigned();
     if (tab === 'assigned') this.loadAssigned();
     if (tab === 'cv_received') this.loadCvReceived();
     if (tab === 'submitted') this.loadSubmitted();
+    if (tab === 'reschedule') this.loadReschedule();
+  }
+
+  hasRescheduleRecords(): boolean {
+    return this.rescheduleAvailable();
   }
 
   loadUnassigned(): void {
@@ -411,12 +430,19 @@ export class DemandSheetComponent implements OnInit {
           const demandId = activity.demand_id;
           if (!demandId) return;
           
-          // Count submitted profiles (status = 1)
+          // Count submitted profiles (status = 1) excluding scheduled interviews
           let submittedCount = 0;
+          let submittedCvs: any[] = [];
           if (Array.isArray(activity.cv_list)) {
-            submittedCount = activity.cv_list.filter((cv: any) => 
-              cv.status === 1 || cv.status === "1"
-            ).length;
+            submittedCvs = activity.cv_list.filter((cv: any) => {
+              const cvStatus = cv.status;
+              const interviewStatus = (cv.interview_status || cv.interviewStatus || '').toLowerCase();
+              if (interviewStatus === 'scheduled') {
+                return false;
+              }
+              return cvStatus === 1 || cvStatus === "1";
+            });
+            submittedCount = submittedCvs.length;
           }
           
           if (submittedCount > 0) {
@@ -437,9 +463,7 @@ export class DemandSheetComponent implements OnInit {
             // Store activity for modal (with approved CVs only)
             demandData.activities.push({
               ...activity,
-              submitted_cvs: activity.cv_list?.filter((cv: any) => 
-                cv.status === 1 || cv.status === "1"
-              ) || []
+              submitted_cvs: submittedCvs
             });
           }
         });
@@ -449,6 +473,70 @@ export class DemandSheetComponent implements OnInit {
         this.submitted.set(groupedData);
       },
       error: () => this.submitted.set([]),
+    });
+  }
+
+  loadReschedule(): void {
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const tokenType = localStorage.getItem('token_type') || 'Bearer';
+    const headers: Record<string, string> = token ? { Authorization: `${tokenType} ${token}` } : {};
+
+    this.http.get<{ items: any[] }>(`${this.apiBase}/interview-schedule/reschedule`, { headers }).subscribe({
+      next: (response) => {
+        const items = response?.items || [];
+        this.rescheduleAvailable.set(items.length > 0);
+        const demandMap = new Map<number, any>();
+
+        items.forEach((record: any) => {
+          const demandId = record.demand_id;
+          if (!demandId) {
+            return;
+          }
+
+          if (!demandMap.has(demandId)) {
+            demandMap.set(demandId, {
+              demand_id: demandId,
+              client_name: record.client_name || '-',
+              spoc_name: record.spoc_name || '-',
+              skill: record.skill || '-',
+              reschedule_candidates: [] as any[],
+            });
+          }
+
+          const demandEntry = demandMap.get(demandId);
+          const rounds = record.reschedule_rounds || [];
+          rounds.forEach((round: any) => {
+            demandEntry.reschedule_candidates.push({
+              schedule_id: record.id,
+              round_key: round.round_key,
+              slots: round.slots || [],
+              candidate_name: record.candidate_name,
+              candidate_email: record.candidate_email,
+              candidate_phone: record.candidate_phone,
+              recruiter_id: record.recruiter_id,
+              recruiter_name: record.recruiter_name,
+              demand_id: demandId,
+              client_name: demandEntry.client_name,
+              spoc_name: demandEntry.spoc_name,
+              skill: demandEntry.skill,
+              interview_schedules: record.interview_schedules,
+            });
+          });
+        });
+
+        const aggregated = Array.from(demandMap.values())
+          .filter((entry) => (entry.reschedule_candidates || []).length > 0)
+          .map((entry) => ({
+            ...entry,
+            cv_count: entry.reschedule_candidates.length,
+          }));
+        this.reschedule.set(aggregated);
+      },
+      error: (error) => {
+        console.error('Failed to load reschedule list:', error);
+        this.rescheduleAvailable.set(false);
+        this.reschedule.set([]);
+      },
     });
   }
 
@@ -499,6 +587,18 @@ export class DemandSheetComponent implements OnInit {
     });
   }
   closeAssignModal(): void { this.showAssign = false; this.assignTarget = null; }
+
+  openRescheduleProfilesModal(row: any): void {
+    this.selectedRescheduleDemand = row;
+    this.rescheduleProfiles.set(row?.reschedule_candidates || []);
+    this.showRescheduleProfilesModal.set(true);
+  }
+
+  closeRescheduleProfilesModal(): void {
+    this.showRescheduleProfilesModal.set(false);
+    this.selectedRescheduleDemand = null;
+    this.rescheduleProfiles.set([]);
+  }
 
   // TL/Recruiter filters
   fetchAllRecruiters(): void {
@@ -880,6 +980,281 @@ export class DemandSheetComponent implements OnInit {
     this.showProfileModal = false;
     this.selectedDemand = null;
     this.profiles.set([]);
+  }
+
+  handleScheduleInterviewClick(event: Event | null, profile: any): void {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    this.rescheduleMode.set(false);
+    this.selectedCandidateForSchedule = this.buildScheduleCandidate(profile);
+    this.initializeInterviewRounds(this.selectedCandidateForSchedule?.interview_schedules);
+    this.showScheduleInterviewModal.set(true);
+  }
+
+  handleRescheduleCandidateClick(event: Event | null, candidate: any): void {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    const enriched = {
+      ...candidate,
+      reschedule_round_key: candidate.round_key || candidate.reschedule_round_key,
+      schedule_id: candidate.schedule_id || candidate.scheduleId || candidate.id,
+    };
+    this.rescheduleMode.set(true);
+    this.selectedCandidateForSchedule = this.buildScheduleCandidate(enriched);
+    this.initializeInterviewRounds(enriched.interview_schedules);
+    this.showScheduleInterviewModal.set(true);
+    this.closeRescheduleProfilesModal();
+  }
+
+  closeScheduleInterviewModal(): void {
+    this.showScheduleInterviewModal.set(false);
+    this.selectedCandidateForSchedule = null;
+    this.rescheduleMode.set(false);
+    this.resetInterviewRounds();
+  }
+
+  isRescheduleMode(): boolean {
+    return this.rescheduleMode();
+  }
+
+  addSlotToRound(roundIndex: number): void {
+    const rounds = this.interviewRounds();
+    if (!rounds[roundIndex]) {
+      return;
+    }
+    const updated = [...rounds];
+    updated[roundIndex] = {
+      ...updated[roundIndex],
+      slots: [...updated[roundIndex].slots, { date: '', time: '' }],
+    };
+    this.interviewRounds.set(updated);
+  }
+
+  removeSlotFromRound(roundIndex: number, slotIndex: number): void {
+    const rounds = this.interviewRounds();
+    if (!rounds[roundIndex] || rounds[roundIndex].slots.length <= 1) {
+      return;
+    }
+    const updatedSlots = rounds[roundIndex].slots.filter((_, idx) => idx !== slotIndex);
+    const updated = [...rounds];
+    updated[roundIndex] = { ...updated[roundIndex], slots: updatedSlots };
+    this.interviewRounds.set(updated);
+  }
+
+  saveInterviewSchedule(): void {
+    if (!this.selectedCandidateForSchedule) {
+      this.errorMsg.set('No candidate selected for scheduling');
+      return;
+    }
+
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const tokenType = localStorage.getItem('token_type') || 'Bearer';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `${tokenType} ${token}`;
+    }
+
+    if (this.isRescheduleMode()) {
+      const rounds = this.interviewRounds();
+      const targetRound = rounds[0];
+      if (!targetRound) {
+        this.errorMsg.set('Round information missing');
+        return;
+      }
+      const validSlots = targetRound.slots.filter((slot) => slot.date && slot.time);
+      if (!validSlots.length) {
+        this.errorMsg.set('Please provide at least one valid slot');
+        return;
+      }
+      const roundKey =
+        this.selectedCandidateForSchedule.reschedule_round_key ||
+        targetRound.round ||
+        this.selectedCandidateForSchedule.round_key;
+      if (!roundKey) {
+        this.errorMsg.set('Round information missing');
+        return;
+      }
+      const slotsPayload = validSlots.map((slot) => ({
+        date: slot.date,
+        time: this.formatTimeForApi(slot.time),
+      }));
+      this.http
+        .post(
+          `${this.apiBase}/interview-schedule/${this.selectedCandidateForSchedule.schedule_id}/reschedule`,
+          {
+            round_key: roundKey,
+            slots: slotsPayload,
+          },
+          { headers }
+        )
+        .subscribe({
+          next: () => {
+            this.successMsg.set('Interview slots updated successfully');
+            this.closeScheduleInterviewModal();
+            this.loadReschedule();
+            this.loadSubmitted();
+          },
+          error: (err) => {
+            console.error('Failed to update reschedule slots:', err);
+            this.errorMsg.set(err?.error?.detail || 'Failed to update reschedule slots');
+          },
+        });
+      return;
+    }
+
+    const schedulePayload = this.buildInterviewSchedulePayload();
+    if (!schedulePayload || Object.keys(schedulePayload).length === 0) {
+      this.errorMsg.set('Please provide at least one valid slot');
+      return;
+    }
+
+    const candidate = this.selectedCandidateForSchedule;
+    const payload: Record<string, any> = {
+      submission_id: candidate.submission_id || candidate.activity_id || candidate.id || null,
+      recruiter_id: candidate.recruiter_id || candidate.recruiter_email || null,
+      candidate_name: candidate.candidate_name || candidate.profile_name || 'Candidate',
+      demand_id: candidate.demand_id || this.selectedDemand?.demand_id || this.selectedDemand?.id || null,
+      candidate_email: candidate.candidate_email || candidate.email || null,
+      candidate_phone: candidate.candidate_phone || candidate.phone || null,
+      interview_schedules: JSON.stringify(schedulePayload),
+      status: 'scheduled',
+    };
+
+    this.http.post(`${this.apiBase}/interview-schedule/multiple-slots`, payload, { headers }).subscribe({
+      next: () => {
+        this.successMsg.set('Interview schedule saved successfully');
+        this.closeScheduleInterviewModal();
+        this.loadReschedule();
+        if (this.activeTab === 'cv_received') {
+          this.loadCvReceived();
+        } else if (this.activeTab === 'submitted') {
+          this.loadSubmitted();
+        }
+      },
+      error: (err) => {
+        console.error('Failed to save interview schedule:', err);
+        this.errorMsg.set(err?.error?.detail || 'Failed to save interview schedule');
+      },
+    });
+  }
+
+  saveRescheduleSchedule(): void {
+    this.saveInterviewSchedule();
+  }
+
+  private buildScheduleCandidate(profile: any): any {
+    return {
+      ...profile,
+      demand_id: profile.demand_id || this.selectedDemand?.demand_id || this.selectedDemand?.id,
+      recruiter_id: profile.recruiter_id || this.selectedDemand?.recruiter_id,
+      recruiter_name: profile.recruiter_name || profile.recruiter_email || this.selectedDemand?.recruiter_name,
+      submission_id: profile.submission_id || profile.id || profile.activity_id || null,
+      schedule_id: profile.schedule_id || profile.scheduleId || profile.id || null,
+      reschedule_round_key: profile.reschedule_round_key || profile.round_key || null,
+      interview_schedules: profile.interview_schedules || this.selectedCandidateForSchedule?.interview_schedules,
+    };
+  }
+
+  private initializeInterviewRounds(rawSchedules: any): void {
+    const parsed = this.parseInterviewSchedules(rawSchedules || this.selectedCandidateForSchedule?.interview_schedules);
+    let rounds: Array<{ round: string; slots: Array<{ date: string; time: string }> }> = [];
+
+    if (this.isRescheduleMode() && this.selectedCandidateForSchedule?.reschedule_round_key) {
+      const roundKey = this.selectedCandidateForSchedule.reschedule_round_key;
+      const target = parsed[roundKey];
+      if (target) {
+        const slots = Array.isArray(target?.slots)
+          ? target.slots.map((slot: any) => ({
+              date: slot?.date || '',
+              time: this.normalizeTimeForInput(slot?.time || ''),
+            }))
+          : [{ date: '', time: '' }];
+        rounds = [{ round: roundKey, slots }];
+      }
+    } else {
+      Object.entries(parsed).forEach(([key, roundData]) => {
+        const data = roundData as any;
+        const slots = Array.isArray(data?.slots)
+          ? data.slots.map((slot: any) => ({
+              date: slot?.date || '',
+              time: this.normalizeTimeForInput(slot?.time || ''),
+            }))
+          : [{ date: '', time: '' }];
+        rounds.push({ round: key, slots });
+      });
+    }
+
+    if (rounds.length === 0) {
+      this.resetInterviewRounds();
+    } else {
+      this.interviewRounds.set(rounds);
+    }
+  }
+
+  private resetInterviewRounds(): void {
+    this.interviewRounds.set([{ round: '', slots: [{ date: '', time: '' }] }]);
+  }
+
+  private parseInterviewSchedules(raw: any): Record<string, any> {
+    if (!raw) return {};
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    }
+    return raw;
+  }
+
+  private normalizeTimeForInput(time: string): string {
+    if (!time) return '';
+    const upper = time.toUpperCase();
+    if (!upper.includes('AM') && !upper.includes('PM')) {
+      return time;
+    }
+    const [timePart, ampm] = upper.split(' ');
+    const [hours, minutes = '00'] = timePart.split(':');
+    let hour = parseInt(hours, 10);
+    if (ampm === 'PM' && hour !== 12) {
+      hour += 12;
+    } else if (ampm === 'AM' && hour === 12) {
+      hour = 0;
+    }
+    return `${hour.toString().padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+  }
+
+  private formatTimeForApi(time: string): string {
+    if (!time) return '';
+    const [hours, minutes = '00'] = time.split(':');
+    let hour = parseInt(hours, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    return `${hour}:${minutes} ${ampm}`;
+  }
+
+  private buildInterviewSchedulePayload(): Record<string, any> {
+    const payload: Record<string, any> = {};
+    this.interviewRounds().forEach((round, index) => {
+      const validSlots = round.slots.filter((slot) => slot.date && slot.time);
+      if (validSlots.length === 0) {
+        return;
+      }
+      const roundKey = round.round?.trim() || `R${index + 1}`;
+      payload[roundKey] = {
+        round_status: 0,
+        slots: validSlots.map((slot) => ({
+          date: slot.date,
+          time: this.formatTimeForApi(slot.time),
+          slot_status: 0,
+        })),
+      };
+    });
+    return payload;
   }
 
   // CV Modal methods

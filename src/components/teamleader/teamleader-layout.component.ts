@@ -28,6 +28,18 @@ import { Subscription } from 'rxjs';
             </svg>
             <span>Demand Sheet</span>
           </a>
+          <a routerLink="/teamleader/interview" routerLinkActive="active" class="tl-nav-item">
+            <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>Interviews</span>
+          </a>
+          <a routerLink="/teamleader/onboarding" routerLinkActive="active" class="tl-nav-item">
+            <svg class="tl-nav-icon" fill="none" stroke="#ffffff" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 110 4m0-4a2 2 0 100 4m-6 8h12a2 2 0 002-2v-4a2 2 0 00-2-2H6a2 2 0 00-2 2v4a2 2 0 002 2zm2 4h8" />
+            </svg>
+            <span>Onboarding</span>
+          </a>
         </nav>
         <div class="tl-sidebar-footer">
           <button (click)="logout()" class="tl-logout-button">

@@ -297,8 +297,98 @@ class SlotAssignment(BaseModel):
     round_key: str  # e.g., "R1"
     slot_index: int  # Index of the slot in the slots array
 
+
 class RejectAllSlots(BaseModel):
     round_key: str  # e.g., "R1"
+
+
+class InterviewFinalizeRequest(BaseModel):
+    schedule_id: int
+    round_key: str
+
+
+def _update_cv_interview_status(
+    cur: psycopg.Cursor,
+    demand_id: Optional[int],
+    recruiter_id: Optional[int],
+    candidate_email: Optional[str],
+    candidate_name: Optional[str],
+    interview_status: str,
+) -> None:
+    """Update interview_status inside tbl_recruiter_activity.cv_list."""
+    if not demand_id or not interview_status:
+        return
+
+    cur.execute(
+        """
+        SELECT id, cv_list
+        FROM tbl_recruiter_activity
+        WHERE demand_id = %s
+          AND (%s IS NULL OR recruiter_id = %s)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (demand_id, recruiter_id, recruiter_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        return
+
+    activity_id, cv_list = row
+    if not cv_list:
+        return
+
+    if isinstance(cv_list, str):
+        try:
+            cv_list = json.loads(cv_list)
+        except json.JSONDecodeError:
+            return
+
+    if not isinstance(cv_list, list):
+        return
+
+    lookup_name = (candidate_name or "").strip().lower()
+    lookup_email = (candidate_email or "").strip().lower()
+    updated = False
+
+    for entry in cv_list:
+        entry_name = str(entry.get("candidate_name") or "").strip().lower()
+        entry_email = str(entry.get("candidate_email") or entry.get("email") or "").strip().lower()
+
+        if lookup_email and lookup_email == entry_email:
+            entry["interview_status"] = interview_status
+            updated = True
+            break
+        if not lookup_email and lookup_name and lookup_name == entry_name:
+            entry["interview_status"] = interview_status
+            updated = True
+            break
+
+    if updated:
+        cur.execute(
+            """
+            UPDATE tbl_recruiter_activity
+            SET cv_list = %s::jsonb,
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (json.dumps(cv_list), activity_id),
+        )
+class InterviewScheduleRequest(BaseModel):
+    submission_id: Optional[int] = None
+    recruiter_id: Optional[int] = None
+    recruiter_name: Optional[str] = None
+    candidate_name: str
+    candidate_email: Optional[str] = None
+    candidate_phone: Optional[str] = None
+    demand_id: Optional[int] = None
+    interview_schedules: Any
+    status: str = "scheduled"
+
+
+class RescheduleUpdateRequest(BaseModel):
+    round_key: str
+    slots: List[Dict[str, str]]
 
 def _ensure_interview_schedule_table():
     """Ensure interview schedule table exists with new structure"""
@@ -311,6 +401,10 @@ def _ensure_interview_schedule_table():
                         candidate_name VARCHAR(255) NOT NULL,
                         recruiter_name VARCHAR(255),
                         recruiter_id BIGINT,
+                        submission_id BIGINT,
+                        demand_id BIGINT,
+                        candidate_email VARCHAR(255),
+                        candidate_phone VARCHAR(50),
                         round VARCHAR(50),
                         status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
                         interview_schedules JSONB,
@@ -318,6 +412,13 @@ def _ensure_interview_schedule_table():
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
                 """)
+                # Ensure legacy tables include new columns
+                cur.execute("ALTER TABLE tbl_interview_schedule ADD COLUMN IF NOT EXISTS submission_id BIGINT;")
+                cur.execute("ALTER TABLE tbl_interview_schedule ADD COLUMN IF NOT EXISTS demand_id BIGINT;")
+                cur.execute("ALTER TABLE tbl_interview_schedule ADD COLUMN IF NOT EXISTS candidate_email VARCHAR(255);")
+                cur.execute("ALTER TABLE tbl_interview_schedule ADD COLUMN IF NOT EXISTS candidate_phone VARCHAR(50);")
+                cur.execute("ALTER TABLE tbl_interview_schedule ADD COLUMN IF NOT EXISTS recruiter_name VARCHAR(255);")
+
                 # Create indexes
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_interview_schedule_status 
@@ -326,6 +427,14 @@ def _ensure_interview_schedule_table():
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_interview_schedule_recruiter_id 
                     ON tbl_interview_schedule(recruiter_id);
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_interview_schedule_submission_id 
+                    ON tbl_interview_schedule(submission_id);
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_interview_schedule_demand_id 
+                    ON tbl_interview_schedule(demand_id);
                 """)
                 cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_interview_schedule_json 
@@ -673,6 +782,604 @@ def reject_all_slots(schedule_id: int, reject: RejectAllSlots) -> Dict[str, Any]
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reject slots: {str(e)}")
+
+
+@router.get("/interview-schedule/reschedule")
+def get_reschedule_candidates(
+    page: int = Query(1, ge=1),
+    size: int = Query(1000, ge=1, le=10000),
+    search: Optional[str] = Query(None),
+) -> Dict[str, Any]:
+    """Get candidates whose interviews require rescheduling (status='reschedule')."""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                where_conditions = ["s.status = 'reschedule'"]
+                params: List[Any] = []
+
+                if search:
+                    like = f"%{search}%"
+                    where_conditions.append("(s.candidate_name ILIKE %s OR s.recruiter_name ILIKE %s)")
+                    params.extend([like, like])
+
+                where_clause = " AND ".join(where_conditions)
+
+                cur.execute(f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}", params)
+                total = int(cur.fetchone()[0])
+
+                query = f"""
+                    SELECT
+                        s.id,
+                        s.submission_id,
+                        s.recruiter_id,
+                        s.recruiter_name,
+                        s.candidate_name,
+                        s.candidate_email,
+                        s.candidate_phone,
+                        s.demand_id,
+                        s.round,
+                        s.status,
+                        s.interview_schedules,
+                        s.created_at,
+                        s.updated_at,
+                        d.client_id,
+                        c.client_name AS client_name,
+                        cs.spoc_name AS spoc_name,
+                        d.skill
+                    FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
+                    LEFT JOIN tbl_clients c ON d.client_id = c.id
+                    LEFT JOIN tbl_client_spocs cs ON d.spoc_id = cs.id
+                    WHERE {where_clause}
+                    ORDER BY s.created_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                params.extend([size, (page - 1) * size])
+                cur.execute(query, params)
+
+                rows = cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
+                items: List[Dict[str, Any]] = []
+
+                for row in rows:
+                    record = dict(zip(cols, row))
+                    schedules_json = record.get("interview_schedules") or {}
+                    if isinstance(schedules_json, str):
+                        try:
+                            schedules_json = json.loads(schedules_json)
+                        except json.JSONDecodeError:
+                            schedules_json = {}
+
+                    reschedule_rounds = []
+                    for round_key, round_value in schedules_json.items():
+                        if isinstance(round_value, dict) and round_value.get("round_status") == 1:
+                            reschedule_rounds.append(
+                                {
+                                    "round_key": round_key,
+                                    "slots": round_value.get("slots") or [],
+                                }
+                            )
+
+                    if not reschedule_rounds:
+                        continue
+
+                    record["interview_schedules"] = schedules_json
+                    record["reschedule_rounds"] = reschedule_rounds
+                    if record.get("created_at") and hasattr(record["created_at"], "isoformat"):
+                        record["created_at"] = record["created_at"].isoformat()
+                    if record.get("updated_at") and hasattr(record["updated_at"], "isoformat"):
+                        record["updated_at"] = record["updated_at"].isoformat()
+                    items.append(record)
+
+                return {"items": items, "total": len(items), "page": page, "size": size}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch reschedule candidates: {str(e)}")
+
+
+@router.post("/interview-schedule/finalize")
+def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, Any]:
+    """Finalize an interview schedule and create/update onboarding record."""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        s.id,
+                        s.candidate_name,
+                        s.candidate_email,
+                        s.candidate_phone,
+                        s.recruiter_id,
+                        s.demand_id,
+                        s.submission_id,
+                        s.interview_schedules,
+                        d.client_id,
+                        d.skill,
+                        COALESCE(
+                            NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                            u.email,
+                            CAST(u.id AS TEXT)
+                        ) AS recruiter_name
+                    FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
+                    LEFT JOIN tbl_users u ON s.recruiter_id = u.id
+                    WHERE s.id = %s
+                    """,
+                    (payload.schedule_id,),
+                )
+                schedule_row = cur.fetchone()
+                if not schedule_row:
+                    raise HTTPException(status_code=404, detail="Interview schedule not found")
+
+                column_names = [desc[0] for desc in cur.description]
+                schedule = dict(zip(column_names, schedule_row))
+
+                schedules_json = schedule.get("interview_schedules") or {}
+                if isinstance(schedules_json, str):
+                    try:
+                        schedules_json = json.loads(schedules_json)
+                    except json.JSONDecodeError:
+                        schedules_json = {}
+
+                round_data = schedules_json.get(payload.round_key)
+                if not round_data:
+                    raise HTTPException(status_code=400, detail="Round not found in interview schedule")
+
+                round_data["round_status"] = 2
+                slots = round_data.get("slots") or []
+                for slot in slots:
+                    if slot.get("slot_status") == 0:
+                        slot["slot_status"] = 2
+                schedules_json[payload.round_key] = round_data
+
+                cur.execute(
+                    """
+                    UPDATE tbl_interview_schedule
+                    SET interview_schedules = %s::jsonb,
+                        status = 'completed',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (json.dumps(schedules_json), payload.schedule_id),
+                )
+
+                cur.execute(
+                    "ALTER TABLE tbl_candidate_onboarding ADD COLUMN IF NOT EXISTS demand_id BIGINT;"
+                )
+
+                cv_path = None
+                demand_id = schedule.get("demand_id")
+                recruiter_id = schedule.get("recruiter_id")
+                if demand_id:
+                    cur.execute(
+                        """
+                        SELECT cv_list
+                        FROM tbl_recruiter_activity
+                        WHERE demand_id = %s
+                          AND (%s IS NULL OR recruiter_id = %s)
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """,
+                        (demand_id, recruiter_id, recruiter_id),
+                    )
+                    cv_row = cur.fetchone()
+                if cv_row and cv_row[0]:
+                    cv_list = cv_row[0]
+                    if isinstance(cv_list, str):
+                        try:
+                            cv_list = json.loads(cv_list)
+                        except json.JSONDecodeError:
+                            cv_list = []
+                    if isinstance(cv_list, list):
+                        lookup_name = (schedule.get("candidate_name") or "").strip().lower()
+                        lookup_email = (schedule.get("candidate_email") or "").strip().lower()
+                        for entry in cv_list:
+                            entry_name = str(entry.get("candidate_name") or "").strip().lower()
+                            entry_email = str(entry.get("candidate_email") or entry.get("email") or "").strip().lower()
+                            entry_status = str(entry.get("status") or "").lower()
+                            if entry_status not in {"1", "submitted", "approved"}:
+                                continue
+                            if (lookup_email and lookup_email == entry_email) or (
+                                lookup_name and lookup_name == entry_name
+                            ):
+                                cv_path = entry.get("cv_url") or entry.get("file_path") or entry.get("cv_path")
+                                break
+
+                onboarding_rounds = {
+                    payload.round_key: {
+                        "round_status": 2,
+                        "slots": slots,
+                    }
+                }
+
+                candidate_email = schedule.get("candidate_email")
+                candidate_name = schedule.get("candidate_name")
+
+                existing_onboarding_id = None
+                lookup_clauses = []
+                lookup_params: List[Any] = []
+                if candidate_email:
+                    lookup_clauses.append("candidate_email = %s")
+                    lookup_params.append(candidate_email)
+                if demand_id is not None:
+                    lookup_clauses.append("demand_id = %s")
+                    lookup_params.append(demand_id)
+                if not candidate_email and candidate_name:
+                    lookup_clauses.append("candidate_name = %s")
+                    lookup_params.append(candidate_name)
+
+                if lookup_clauses:
+                    cur.execute(
+                        f"""
+                        SELECT id FROM tbl_candidate_onboarding
+                        WHERE {" AND ".join(lookup_clauses)}
+                        ORDER BY id DESC
+                        LIMIT 1
+                        """,
+                        lookup_params,
+                    )
+                    match = cur.fetchone()
+                    if match:
+                        existing_onboarding_id = match[0]
+
+                status_value = "pending"
+                if existing_onboarding_id:
+                    cur.execute(
+                        """
+                        UPDATE tbl_candidate_onboarding
+                        SET candidate_name = %s,
+                            candidate_email = %s,
+                            candidate_phone = %s,
+                            client_id = %s,
+                            recruiter_id = %s,
+                            cv_path = COALESCE(%s, cv_path),
+                            interview_schedules = %s::jsonb,
+                            status = %s,
+                            demand_id = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            candidate_name,
+                            candidate_email,
+                            schedule.get("candidate_phone"),
+                            schedule.get("client_id"),
+                            recruiter_id,
+                            cv_path,
+                            json.dumps(onboarding_rounds),
+                            status_value,
+                            demand_id,
+                            existing_onboarding_id,
+                        ),
+                    )
+                    onboarding_id = existing_onboarding_id
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO tbl_candidate_onboarding (
+                            candidate_name,
+                            candidate_email,
+                            candidate_phone,
+                            client_id,
+                            recruiter_id,
+                            cv_path,
+                            interview_schedules,
+                            status,
+                            demand_id
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                        RETURNING id
+                        """,
+                        (
+                            candidate_name,
+                            candidate_email,
+                            schedule.get("candidate_phone"),
+                            schedule.get("client_id"),
+                            recruiter_id,
+                            cv_path,
+                            json.dumps(onboarding_rounds),
+                            status_value,
+                            demand_id,
+                        ),
+                    )
+                    onboarding_id = cur.fetchone()[0]
+
+                conn.commit()
+
+        return {
+            "message": "Interview finalized and onboarding entry created",
+            "schedule_id": payload.schedule_id,
+            "onboarding_id": onboarding_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to finalize interview: {exc}") from exc
+
+
+@router.post("/interview-schedule/{schedule_id}/reschedule")
+def update_reschedule_slots(schedule_id: int, payload: RescheduleUpdateRequest) -> Dict[str, Any]:
+    """Replace slots for an existing round and move status back to scheduled."""
+    _ensure_interview_schedule_table()
+    if not payload.slots:
+        raise HTTPException(status_code=400, detail="At least one slot is required")
+
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT interview_schedules, recruiter_id, demand_id, candidate_email, candidate_name
+                    FROM tbl_interview_schedule
+                    WHERE id = %s
+                    """,
+                    (schedule_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Interview schedule not found")
+
+                schedules_json, recruiter_id, demand_id, candidate_email, candidate_name = row
+                if not schedules_json:
+                    schedules_json = {}
+                elif isinstance(schedules_json, str):
+                    try:
+                        schedules_json = json.loads(schedules_json)
+                    except json.JSONDecodeError:
+                        schedules_json = {}
+
+                round_data = schedules_json.get(payload.round_key)
+                if not round_data:
+                    raise HTTPException(status_code=400, detail=f"Round {payload.round_key} not found")
+
+                new_slots = []
+                for slot in payload.slots:
+                    date_value = slot.get("date")
+                    time_value = slot.get("time")
+                    if not date_value or not time_value:
+                        continue
+                    new_slots.append(
+                        {
+                            "date": date_value,
+                            "time": time_value,
+                            "slot_status": 0,
+                        }
+                    )
+
+                if not new_slots:
+                    raise HTTPException(status_code=400, detail="Valid slots are required")
+
+                round_data["slots"] = new_slots
+                round_data["round_status"] = 0
+                schedules_json[payload.round_key] = round_data
+
+                cur.execute(
+                    """
+                    UPDATE tbl_interview_schedule
+                    SET interview_schedules = %s::jsonb,
+                        status = 'scheduled',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (json.dumps(schedules_json), schedule_id),
+                )
+
+                if demand_id:
+                    _update_cv_interview_status(
+                        cur,
+                        demand_id,
+                        recruiter_id,
+                        candidate_email,
+                        candidate_name,
+                        "scheduled",
+                    )
+
+                conn.commit()
+
+        return {"message": "Interview schedule updated", "schedule_id": schedule_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to update reschedule slots: {exc}") from exc
+
+
+@router.get("/interview-schedule/all")
+def get_all_interview_schedules(
+    page: int = Query(1, ge=1),
+    size: int = Query(1000, ge=1, le=10000),
+    search: Optional[str] = Query(None)
+) -> Dict[str, Any]:
+    """Get all interview schedules without filtering by status"""
+    _ensure_interview_schedule_table()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                where_conditions = ["TRUE"]
+                params: List[Any] = []
+
+                if search:
+                    search_pattern = f"%{search}%"
+                    where_conditions.append(
+                        "(s.candidate_name ILIKE %s OR s.recruiter_name ILIKE %s)"
+                    )
+                    params.extend([search_pattern, search_pattern])
+
+                where_clause = " AND ".join(where_conditions)
+
+                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}"
+                cur.execute(count_query, params)
+                total = int(cur.fetchone()[0])
+
+                query = f"""
+                    SELECT 
+                        s.id,
+                        s.submission_id,
+                        s.recruiter_id,
+                        COALESCE(
+                            NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                            s.recruiter_name,
+                            'N/A'
+                        ) AS recruiter_name,
+                        s.candidate_name,
+                        s.candidate_email,
+                        s.candidate_phone,
+                        s.demand_id,
+                        s.round,
+                        s.status,
+                        s.interview_schedules,
+                        s.created_at,
+                        s.updated_at
+                    FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_users u ON s.recruiter_id = u.id
+                    WHERE {where_clause}
+                    ORDER BY s.created_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                params.extend([size, (page - 1) * size])
+                cur.execute(query, params)
+
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                items = [dict(zip(cols, row)) for row in rows]
+
+                # Serialize timestamps and normalize JSON
+                for item in items:
+                    if item.get("created_at") and hasattr(item["created_at"], "isoformat"):
+                        item["created_at"] = item["created_at"].isoformat()
+                    if item.get("updated_at") and hasattr(item["updated_at"], "isoformat"):
+                        item["updated_at"] = item["updated_at"].isoformat()
+                    schedules = item.get("interview_schedules")
+                    if schedules and isinstance(schedules, str):
+                        try:
+                            item["interview_schedules"] = json.loads(schedules)
+                        except json.JSONDecodeError:
+                            item["interview_schedules"] = {}
+
+                return {"items": items, "total": total, "page": page, "size": size}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch interview schedules: {str(e)}")
+
+
+@router.post("/interview-schedule/multiple-slots")
+def create_or_update_interview_schedule(payload: InterviewScheduleRequest) -> Dict[str, Any]:
+    """Create or update an interview schedule with multiple slots"""
+    _ensure_interview_schedule_table()
+    try:
+        schedules_json = payload.interview_schedules
+        if isinstance(schedules_json, str):
+            try:
+                schedules_json = json.loads(schedules_json)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="Invalid interview_schedules JSON")
+
+        if not isinstance(schedules_json, dict) or not schedules_json:
+            raise HTTPException(status_code=400, detail="interview_schedules must be a non-empty object")
+
+        first_round_key = next(iter(schedules_json.keys()), None)
+        status_value = (payload.status or "scheduled").lower()
+        schedules_text = json.dumps(schedules_json)
+
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                existing_id: Optional[int] = None
+                if payload.submission_id:
+                    cur.execute(
+                        "SELECT id FROM tbl_interview_schedule WHERE submission_id = %s",
+                        (payload.submission_id,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        existing_id = row[0]
+
+                if existing_id:
+                    cur.execute(
+                        """
+                        UPDATE tbl_interview_schedule
+                        SET recruiter_id = %s,
+                            recruiter_name = %s,
+                            candidate_name = %s,
+                            candidate_email = %s,
+                            candidate_phone = %s,
+                            demand_id = %s,
+                            round = %s,
+                            status = %s,
+                            interview_schedules = %s::jsonb,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (
+                            payload.recruiter_id,
+                            payload.recruiter_name,
+                            payload.candidate_name,
+                            payload.candidate_email,
+                            payload.candidate_phone,
+                            payload.demand_id,
+                            first_round_key,
+                            status_value,
+                            schedules_text,
+                            existing_id,
+                        ),
+                    )
+                    schedule_id = existing_id
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO tbl_interview_schedule (
+                            candidate_name,
+                            recruiter_name,
+                            recruiter_id,
+                            submission_id,
+                            demand_id,
+                            candidate_email,
+                            candidate_phone,
+                            round,
+                            status,
+                            interview_schedules
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        RETURNING id
+                        """,
+                        (
+                            payload.candidate_name,
+                            payload.recruiter_name,
+                            payload.recruiter_id,
+                            payload.submission_id,
+                            payload.demand_id,
+                            payload.candidate_email,
+                            payload.candidate_phone,
+                            first_round_key,
+                            status_value,
+                            schedules_text,
+                        ),
+                    )
+                    schedule_id = cur.fetchone()[0]
+
+                if payload.demand_id:
+                    _update_cv_interview_status(
+                        cur,
+                        payload.demand_id,
+                        payload.recruiter_id,
+                        payload.candidate_email,
+                        payload.candidate_name,
+                        "scheduled",
+                    )
+
+                conn.commit()
+
+        return {
+            "message": "Interview schedule saved successfully",
+            "schedule_id": schedule_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save interview schedule: {exc}") from exc
 
 @router.get("/interview-schedule/test")
 def test_interview_schedule_endpoint() -> Dict[str, Any]:

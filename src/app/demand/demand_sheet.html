@@ -97,11 +97,11 @@
                   <div class="form-group slot-select-group" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
                     <div class="slot-label-row" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                       <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Slot</label>
-                      <button (click)="addSlotToRound(0)" class="btn-add-slot-inline" title="Add Slot" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: none; background: white; color: var(--kudzu-primary, #182D17); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                      <button (click)="addSlotToRound(0)" class="btn-add-slot-inline" [class.icon-only]="isRescheduleMode()" title="Add Slot" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: none; background: white; color: var(--kudzu-primary, #182D17); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
                         </svg>
-                        Add Slot
+                        <span *ngIf="!isRescheduleMode()">Add Slot</span>
                       </button>
                     </div>
                     <div class="slots-container" style="display: flex; flex-direction: column; gap: 10px;" *ngIf="interviewRounds()[0].slots">
@@ -554,26 +554,28 @@
             <tr>
               <th>S.No</th>
               <th>Demand ID</th>
-              <th>Recruiter Name</th>
-              <th>Candidate Name</th>
-              <th>Round</th>
+              <th>Submitted CV Count</th>
+              <th>Client</th>
+              <th>SPOC</th>
+              <th>Skills</th>
               <th>Schedule Interview</th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let item of reschedule(); let i = index">
+            <tr *ngFor="let row of reschedule(); let i = index" class="submitted-row" (dblclick)="openRescheduleProfilesModal(row)" style="cursor: pointer;">
               <td>{{ i + 1 }}</td>
-              <td>{{ item.demand_id || '-' }}</td>
-              <td>{{ item.recruiter_name || '-' }}</td>
-              <td>{{ item.candidate_name || '-' }}</td>
-              <td>{{ item.round || '-' }}</td>
+              <td>{{ row.demand_id || '-' }}</td>
+              <td>
+                <span class="cv-count-badge">{{ row.reschedule_candidates?.length || 0 }}</span>
+              </td>
+              <td>{{ row.client_name || '-' }}</td>
+              <td>{{ row.spoc_name || '-' }}</td>
+              <td>{{ row.skill || '-' }}</td>
               <td style="min-width: 60px; text-align: center;">
-                <button class="btn-schedule-interview" 
-                        (click)="openRescheduleModal($event, item)" 
-                        title="Reschedule Interview"
-                        type="button"
-                        style="display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s; border: none; background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); color: white; pointer-events: auto !important; position: relative; z-index: 100; min-width: 40px; height: 40px;">
-                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+                <button class="btn-schedule-interview icon-only"
+                        (click)="openRescheduleProfilesModal(row); $event.stopPropagation()"
+                        title="Open Reschedule Candidates">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                   </svg>
                 </button>
@@ -710,6 +712,66 @@
     <div class="modal-footer status-modal-footer">
       <div class="action-buttons status-action-buttons">
         <button (click)="closeSubmittedProfilesModal(); $event.stopPropagation()" class="btn-cancel" title="Close">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reschedule Profiles Modal -->
+<div [style.display]="showRescheduleProfilesModal() ? 'flex' : 'none'"
+     [style.position]="'fixed'"
+     [style.top]="'0'"
+     [style.left]="'0'"
+     [style.right]="'0'"
+     [style.bottom]="'0'"
+     [style.z-index]="'100000'"
+     class="modal-overlay status-modal-overlay"
+     (click)="closeRescheduleProfilesModal()"
+     style="display: none !important;">
+  <div class="modal-card status-modal-card submitted-profiles-modal" (click)="$event.stopPropagation()">
+    <div class="modal-header status-modal-header">
+      <div class="modal-title">Reschedule Candidates - Demand ID: {{ selectedRescheduleDemand?.demand_id }}</div>
+      <button class="modal-close" (click)="closeRescheduleProfilesModal(); $event.stopPropagation()">✕</button>
+    </div>
+    <div class="modal-body status-modal-body" style="max-height: 60vh; overflow-y: auto;">
+      <div *ngIf="rescheduleProfiles().length === 0" class="text-gray-600">No candidates pending reschedule</div>
+      <div *ngIf="rescheduleProfiles().length > 0" class="table-wrapper">
+        <table class="glassy-table">
+          <thead>
+            <tr>
+              <th>Recruiter</th>
+              <th>Candidate</th>
+              <th>Round</th>
+              <th>Schedule</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let candidate of rescheduleProfiles()">
+              <td>{{ candidate.recruiter_name || '-' }}</td>
+              <td>{{ candidate.candidate_name || '-' }}</td>
+              <td>{{ candidate.round_key || '-' }}</td>
+              <td style="min-width: 60px; text-align: center;">
+                <button class="btn-schedule-interview icon-only"
+                        (click)="handleRescheduleCandidateClick($event, candidate)"
+                        title="Schedule Interview">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer status-modal-footer">
+      <div class="action-buttons status-action-buttons">
+        <button (click)="closeRescheduleProfilesModal(); $event.stopPropagation()" class="btn-cancel" title="Close">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>

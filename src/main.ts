@@ -27,6 +27,8 @@ import { SuperAdminLayoutComponent } from './components/superadmin/superadmin-la
 import { TeamLeaderLayoutComponent } from './components/teamleader/teamleader-layout.component';
 import { TeamLeaderDashboardComponent } from './components/teamleader/teamleader-dashboard.component';
 import { ViewDemandComponent } from './components/teamleader/view-demand.component';
+import { InterviewComponent } from './components/teamleader/interview.component';
+import { OnboardingComponent as TeamLeaderOnboardingComponent } from './components/teamleader/onboarding.component';
 import { ToastContainerComponent } from './shared/components/toast-container.component';
 import { DebugAuthComponent } from './components/debug-auth.component';
 import { DemandSheetComponent } from './app/demand/demand_sheet';
@@ -414,6 +416,8 @@ const routes: Routes = [
       { path: 'dashboard', component: TeamLeaderDashboardComponent },
       { path: 'demand-sheet', component: DemandSheetComponent },
       { path: 'view-demand', component: ViewDemandComponent },
+      { path: 'interview', component: InterviewComponent },
+      { path: 'onboarding', component: TeamLeaderOnboardingComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

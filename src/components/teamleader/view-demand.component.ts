@@ -55,6 +55,16 @@ export class ViewDemandComponent implements OnInit {
   // CV Received count
   cvReceivedCount = computed(() => this.cvReceived().length);
 
+  // Schedule interview modal state
+  showScheduleInterviewModal = signal(false);
+  selectedCandidateForSchedule: any = null;
+  interviewRounds = signal<Array<{ round: string; slots: Array<{ date: string; time: string }> }>>([
+    {
+      round: '',
+      slots: [{ date: '', time: '' }],
+    },
+  ]);
+
   ngOnInit(): void {
     console.log('ViewDemandComponent initialized - Status edit feature enabled');
     this.loadUnassigned();
@@ -457,6 +467,218 @@ export class ViewDemandComponent implements OnInit {
     if (url) {
       window.open(url, '_blank');
     }
+  }
+
+  handleScheduleInterviewClick(event: Event, profile: any): void {
+    event?.stopPropagation();
+    const enrichedProfile = {
+      ...profile,
+      demand_id: profile.demand_id || this.selectedDemand?.demand_id || this.selectedDemand?.id,
+      recruiter_id: profile.recruiter_id || this.selectedDemand?.recruiter_id,
+      recruiter_name: profile.recruiter_name || this.selectedDemand?.recruiter_name || profile.recruiter_email,
+      submission_id: profile.submission_id || profile.id || profile.activity_id || null,
+    };
+    this.selectedCandidateForSchedule = enrichedProfile;
+    this.initializeInterviewRounds(enrichedProfile?.interview_schedules);
+    this.showScheduleInterviewModal.set(true);
+  }
+
+  closeScheduleInterviewModal(): void {
+    this.showScheduleInterviewModal.set(false);
+    this.selectedCandidateForSchedule = null;
+    this.resetInterviewRounds();
+  }
+
+  addInterviewRound(): void {
+    const currentRounds = this.interviewRounds();
+    this.interviewRounds.set([
+      ...currentRounds,
+      {
+        round: '',
+        slots: [{ date: '', time: '' }],
+      },
+    ]);
+  }
+
+  removeInterviewRound(index: number): void {
+    const currentRounds = this.interviewRounds();
+    if (currentRounds.length <= 1) {
+      return;
+    }
+    const updated = currentRounds.filter((_, i) => i !== index);
+    this.interviewRounds.set(updated);
+  }
+
+  addSlotToRound(roundIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    const target = currentRounds[roundIndex];
+    if (!target) {
+      return;
+    }
+    const updatedRound = {
+      ...target,
+      slots: [...target.slots, { date: '', time: '' }],
+    };
+    const updatedRounds = [...currentRounds];
+    updatedRounds[roundIndex] = updatedRound;
+    this.interviewRounds.set(updatedRounds);
+  }
+
+  removeSlotFromRound(roundIndex: number, slotIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    const target = currentRounds[roundIndex];
+    if (!target || target.slots.length <= 1) {
+      return;
+    }
+    const updatedRound = {
+      ...target,
+      slots: target.slots.filter((_, i) => i !== slotIndex),
+    };
+    const updatedRounds = [...currentRounds];
+    updatedRounds[roundIndex] = updatedRound;
+    this.interviewRounds.set(updatedRounds);
+  }
+
+  saveInterviewSchedule(): void {
+    if (!this.selectedCandidateForSchedule) {
+      this.errorMsg.set('No candidate selected for scheduling');
+      return;
+    }
+
+    const schedulePayload = this.buildInterviewSchedulePayload();
+    if (!schedulePayload || Object.keys(schedulePayload).length === 0) {
+      this.errorMsg.set('Please provide at least one round with a valid slot');
+      return;
+    }
+
+    const candidate = this.selectedCandidateForSchedule;
+    const payload: Record<string, any> = {
+      submission_id: candidate.submission_id || candidate.activity_id || candidate.id || null,
+      recruiter_id: candidate.recruiter_id || candidate.recruiter_email || null,
+      candidate_name: candidate.candidate_name || candidate.profile_name || 'Candidate',
+      demand_id: candidate.demand_id || this.selectedDemand?.demand_id || this.selectedDemand?.id || null,
+      candidate_email: candidate.candidate_email || candidate.email || null,
+      candidate_phone: candidate.candidate_phone || candidate.phone || null,
+      interview_schedules: JSON.stringify(schedulePayload),
+      status: 'scheduled',
+    };
+
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    this.http.post(`${this.apiBase}/interview-schedule/multiple-slots`, payload, { headers }).subscribe({
+      next: () => {
+        this.successMsg.set('Interview schedule saved successfully');
+        this.closeScheduleInterviewModal();
+        this.loadCvReceived();
+        this.loadSubmitted();
+      },
+      error: (err) => {
+        console.error('Failed to save interview schedule:', err);
+        this.errorMsg.set(err?.error?.detail || 'Failed to save interview schedule');
+      },
+    });
+  }
+
+  private initializeInterviewRounds(rawSchedules: any): void {
+    const parsed = this.parseInterviewSchedules(rawSchedules || this.selectedCandidateForSchedule?.interview_schedules);
+    const rounds: Array<{ round: string; slots: Array<{ date: string; time: string }> }> = [];
+
+    Object.entries(parsed).forEach(([roundKey, roundValue]) => {
+      const data = roundValue as any;
+      const slots = Array.isArray(data?.slots)
+        ? data.slots.map((slot: any) => ({
+            date: slot?.date || '',
+            time: this.normalizeTimeForInput(slot?.time || ''),
+          }))
+        : [{ date: '', time: '' }];
+      rounds.push({
+        round: roundKey,
+        slots,
+      });
+    });
+
+    if (rounds.length === 0) {
+      this.resetInterviewRounds();
+    } else {
+      this.interviewRounds.set(rounds);
+    }
+  }
+
+  private resetInterviewRounds(): void {
+    this.interviewRounds.set([
+      {
+        round: '',
+        slots: [{ date: '', time: '' }],
+      },
+    ]);
+  }
+
+  private parseInterviewSchedules(raw: any): Record<string, any> {
+    if (!raw) {
+      return {};
+    }
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    }
+    return raw;
+  }
+
+  private normalizeTimeForInput(time: string): string {
+    if (!time) {
+      return '';
+    }
+    const upper = time.toUpperCase();
+    if (!upper.includes('AM') && !upper.includes('PM')) {
+      return time;
+    }
+    const [timePart, ampm] = upper.split(' ');
+    const [hours, minutes = '00'] = timePart.split(':');
+    let hour = parseInt(hours, 10);
+    if (ampm === 'PM' && hour !== 12) {
+      hour += 12;
+    } else if (ampm === 'AM' && hour === 12) {
+      hour = 0;
+    }
+    return `${hour.toString().padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+  }
+
+  private formatTimeForApi(time: string): string {
+    if (!time) {
+      return '';
+    }
+    const [hours, minutes = '00'] = time.split(':');
+    let hour = parseInt(hours, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    return `${hour}:${minutes} ${ampm}`;
+  }
+
+  private buildInterviewSchedulePayload(): Record<string, any> {
+    const payload: Record<string, any> = {};
+    this.interviewRounds().forEach((roundData, index) => {
+      const validSlots = roundData.slots.filter((slot) => slot.date && slot.time);
+      if (validSlots.length === 0) {
+        return;
+      }
+      const roundKey = roundData.round?.trim() || `R${index + 1}`;
+      payload[roundKey] = {
+        round_status: 0,
+        slots: validSlots.map((slot) => ({
+          date: slot.date,
+          time: this.formatTimeForApi(slot.time),
+          slot_status: 0,
+        })),
+      };
+    });
+    return payload;
   }
 
   // Status editing methods

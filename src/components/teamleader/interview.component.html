@@ -233,8 +233,8 @@
                   <div class="round-row">
                     <div class="form-group round-select-group" style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
                       <label style="font-size: 14px; font-weight: 600; color: #374151;">Interview Round</label>
-                      <select class="form-control" [ngModel]="selectedInterviewForAction?.round || ''" disabled style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: #f3f4f6; width: 100%; cursor: not-allowed;">
-                        <option [value]="selectedInterviewForAction?.round || ''">{{ selectedInterviewForAction?.round || 'Select Round' }}</option>
+                      <select class="form-control" [ngModel]="selectedInterviewForAction.round || ''" disabled style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: #f3f4f6; width: 100%; cursor: not-allowed;">
+                        <option [value]="selectedInterviewForAction.round || ''">{{ selectedInterviewForAction.round || 'Select Round' }}</option>
                       </select>
                     </div>
                   </div>
@@ -450,8 +450,8 @@
                     <div class="round-row">
                       <div class="form-group round-select-group" style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
                         <label style="font-size: 14px; font-weight: 600; color: #374151;">Interview Round</label>
-                        <select class="form-control" [ngModel]="selectedConfirmedInterview?.round || ''" disabled style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: #f3f4f6; width: 100%; cursor: not-allowed;">
-                          <option [value]="selectedConfirmedInterview?.round || ''">{{ selectedConfirmedInterview?.round || 'Select Round' }}</option>
+                        <select class="form-control" [ngModel]="selectedConfirmedInterview.round || ''" disabled style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: #f3f4f6; width: 100%; cursor: not-allowed;">
+                          <option [value]="selectedConfirmedInterview.round || ''">{{ selectedConfirmedInterview.round || 'Select Round' }}</option>
                         </select>
                       </div>
                     </div>

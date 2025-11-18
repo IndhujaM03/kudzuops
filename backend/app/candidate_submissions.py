@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Any, Dict, List, Optional
 
 import psycopg
@@ -344,3 +345,71 @@ def admin_demand_submitted(demand_id: int) -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch demand submissions: {e}")
 
+
+@router.get("/candidate-onboarding/all")
+def list_candidate_onboarding(
+    page: int = Query(1, ge=1),
+    size: int = Query(100, ge=1, le=500),
+    search: Optional[str] = Query(None, description="Candidate name/email/skills search"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    demand_id: Optional[int] = Query(None, description="Filter by demand id"),
+) -> Dict[str, Any]:
+    """Lightweight onboarding list for Team Leader UI."""
+    _ensure_tables()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                where_parts: List[str] = []
+                params: List[Any] = []
+
+                if search:
+                    like = f"%{search}%"
+                    where_parts.append(
+                        "(o.candidate_name ILIKE %s OR o.candidate_email ILIKE %s OR o.skill ILIKE %s)"
+                    )
+                    params.extend([like, like, like])
+
+                if status:
+                    where_parts.append("LOWER(o.status) = LOWER(%s)")
+                    params.append(status)
+
+                if demand_id:
+                    where_parts.append("o.demand_id = %s")
+                    params.append(demand_id)
+
+                where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+                cur.execute(f"SELECT COUNT(*) FROM tbl_candidate_onboarding o {where_clause}", params)
+                total = int(cur.fetchone()[0])
+
+                query = f"""
+                    SELECT
+                        o.*,
+                        c.client_name,
+                        COALESCE(
+                            NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                            u.email,
+                            CAST(u.id AS TEXT)
+                        ) AS recruiter_name
+                    FROM tbl_candidate_onboarding o
+                    LEFT JOIN tbl_clients c ON c.id = o.client_id
+                    LEFT JOIN tbl_users u ON u.id = o.recruiter_id
+                    {where_clause}
+                    ORDER BY o.updated_at DESC
+                    LIMIT %s OFFSET %s
+                """
+                cur.execute(query, params + [size, (page - 1) * size])
+                rows = cur.fetchall()
+                columns = [desc[0] for desc in cur.description]
+                items = [dict(zip(columns, row)) for row in rows]
+
+                return {
+                    "items": items,
+                    "total": total,
+                    "page": page,
+                    "size": size,
+                }
+    except psycopg.errors.UndefinedTable:
+        raise HTTPException(status_code=404, detail="tbl_candidate_onboarding table not found")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to load onboarding records: {exc}") from exc
