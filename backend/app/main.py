@@ -188,6 +188,19 @@ def create_app() -> FastAPI:
         else:
             print(f"⚠️  Alternative CV uploads directory not found: {alt_path}")
 
+    onboarding_assets_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "assets", "onboarding")
+    if os.path.exists(onboarding_assets_path):
+        app.mount("/onboarding-files", StaticFiles(directory=onboarding_assets_path), name="onboarding-files")
+        print(f"📁 Onboarding assets directory mounted: {onboarding_assets_path}")
+    else:
+        print(f"⚠️  Onboarding assets directory not found: {onboarding_assets_path}")
+        onboarding_alt_path = os.path.join(os.path.dirname(__file__), "..", "src", "assets", "onboarding")
+        if os.path.exists(onboarding_alt_path):
+            app.mount("/onboarding-files", StaticFiles(directory=onboarding_alt_path), name="onboarding-files")
+            print(f"📁 Onboarding assets directory mounted (alt): {onboarding_alt_path}")
+        else:
+            print(f"⚠️  Alternative onboarding assets directory not found: {onboarding_alt_path}")
+
     # -----------------------------
     # Built-in Routes
     # -----------------------------

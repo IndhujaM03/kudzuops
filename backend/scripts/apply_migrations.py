@@ -31,19 +31,35 @@ def apply_sql_files(migrations_dir: str) -> int:
         return 0
 
     dsn = get_dsn()
+    failed_files = []
     try:
         with psycopg.connect(dsn) as conn:
             with conn.cursor() as cur:
                 for path in files:
-                    print(f"Applying migration: {os.path.basename(path)}")
-                    with open(path, "r", encoding="utf-8") as f:
-                        sql_text = f.read()
-                    cur.execute(sql_text)
-            conn.commit()
-        print("All migrations applied successfully.")
-        return 0
+                    filename = os.path.basename(path)
+                    try:
+                        print(f"Applying migration: {filename}")
+                        with open(path, "r", encoding="utf-8") as f:
+                            sql_text = f.read()
+                        cur.execute(sql_text)
+                        conn.commit()  # Commit after each successful migration
+                    except Exception as e:
+                        print(f"  ⚠️  Warning: {filename} failed: {e}")
+                        print(f"  Continuing with next migration...")
+                        conn.rollback()  # Rollback the failed migration
+                        failed_files.append((filename, str(e)))
+                        # Continue with next migration instead of stopping
+        if failed_files:
+            print(f"\n⚠️  {len(failed_files)} migration(s) had errors:")
+            for filename, error in failed_files:
+                print(f"  - {filename}: {error}")
+            print("\n✅ Other migrations completed successfully.")
+            return 1
+        else:
+            print("✅ All migrations applied successfully.")
+            return 0
     except Exception as e:
-        print(f"Migration failed: {e}")
+        print(f"❌ Fatal error: {e}")
         print(f"Using DSN: {dsn}")
         return 1
 

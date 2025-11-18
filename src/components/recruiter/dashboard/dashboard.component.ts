@@ -127,6 +127,83 @@ interface SubmissionStats {
         </div>
       </div>
 
+      <!-- Submissions Table -->
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">My Submissions</h2>
+          <p class="card-subtitle">View your submitted candidate profiles</p>
+        </div>
+        <div class="card-body">
+          <!-- Loading State -->
+          <div *ngIf="submissionsLoading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>Loading submissions...</p>
+          </div>
+
+          <!-- Submissions Table -->
+          <div *ngIf="!submissionsLoading && submissions.length > 0" class="table-container">
+            <div class="table-wrapper">
+              <table class="submissions-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Candidate Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Demand ID</th>
+                    <th>Job Title</th>
+                    <th>Client</th>
+                    <th>Status</th>
+                    <th>Submitted At</th>
+                    <th>Resume</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let submission of submissions" class="submission-row">
+                    <td class="submission-id">{{ submission.id }}</td>
+                    <td class="candidate-name">{{ submission.candidate_name }}</td>
+                    <td class="candidate-email">{{ submission.candidate_email }}</td>
+                    <td class="candidate-phone">{{ submission.candidate_phone }}</td>
+                    <td class="demand-id">#{{ submission.demand_id }}</td>
+                    <td class="job-title">{{ submission.job_title }}</td>
+                    <td class="client-name">{{ submission.client_name }}</td>
+                    <td class="status">
+                      <span class="status-badge" [ngClass]="'status-' + (submission.status || 'pending')">
+                        {{ submission.status || 'Pending' }}
+                      </span>
+                    </td>
+                    <td class="submitted-date">{{ submission.submitted_at | date:'short' }}</td>
+                    <td class="resume-link">
+                      <a *ngIf="submission.resume_url" [href]="submission.resume_url" target="_blank" class="resume-btn">
+                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        View
+                      </a>
+                      <span *ngIf="!submission.resume_url" class="muted">N/A</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <button class="btn btn-secondary sm" (click)="prevSubmissionsPage()" [disabled]="submissionsPage <= 1">Prev</button>
+              <span class="page-info">Page {{ submissionsPage }} / {{ submissionsTotalPages }}</span>
+              <button class="btn btn-secondary sm" (click)="nextSubmissionsPage()" [disabled]="submissionsPage >= submissionsTotalPages">Next</button>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div *ngIf="!submissionsLoading && submissions.length === 0" class="empty-state">
+            <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 class="empty-title">No submissions yet</h3>
+            <p class="empty-description">You haven't submitted any candidate profiles yet.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Quick Links to Assigned Demands -->
       <div class="card">
         <div class="card-header">
@@ -361,6 +438,10 @@ interface SubmissionStats {
     .status-completed { background: #d1fae5; color: #065f46; }
     .status-closed { background: #f3f4f6; color: #6b7280; }
     .status-loading { background: #f3f4f6; color: #6b7280; }
+    .status-pending { background: #fef3c7; color: #92400e; }
+    .status-selected { background: #d1fae5; color: #065f46; }
+    .status-rejected { background: #fecaca; color: #dc2626; }
+    .status-under_verification { background: #dbeafe; color: #1e40af; }
 
     .assigned-date {
       color: #6b7280;
@@ -547,6 +628,65 @@ interface SubmissionStats {
       margin: 0 0 20px 0;
     }
 
+    .submissions-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .submissions-table th,
+    .submissions-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .submissions-table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #4b5563;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 12px;
+    }
+
+    .submission-row:hover {
+      background: #f9fafb;
+    }
+
+    .submission-id {
+      font-weight: 600;
+      color: #3b82f6;
+    }
+
+    .resume-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      background: var(--kudzu-primary-light);
+      color: var(--kudzu-primary);
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .resume-btn:hover {
+      background: var(--kudzu-primary);
+      color: white;
+    }
+
+    .resume-btn .icon {
+      width: 14px;
+      height: 14px;
+    }
+
+    .muted {
+      color: #9ca3af;
+      font-size: 12px;
+    }
+
     .modal-overlay {
       position: fixed;
       top: 0;
@@ -697,6 +837,13 @@ export class DashboardComponent implements OnInit {
   };
   submissionStats: SubmissionStats = { today: 0, this_week: 0, total: 0 };
   
+  // Submissions
+  submissions: any[] = [];
+  submissionsLoading = false;
+  submissionsPage = 1;
+  submissionsSize = 10;
+  submissionsTotal = 0;
+  
   loading = false;
   error: string | null = null;
   page = 1;
@@ -713,6 +860,10 @@ export class DashboardComponent implements OnInit {
 
   get totalPages() { 
     return Math.max(1, Math.ceil(this.total / this.size)); 
+  }
+
+  get submissionsTotalPages() {
+    return Math.max(1, Math.ceil(this.submissionsTotal / this.submissionsSize));
   }
 
   getStatusDisplayText(status: string): string {
@@ -797,10 +948,11 @@ export class DashboardComponent implements OnInit {
     this.loading = true;
     this.error = null;
 
-    // Load process count and demands in parallel
+    // Load process count, submission stats, and submissions in parallel
     Promise.all([
       this.loadProcessCount(recruiterId),
-      this.loadSubmissionStats(recruiterId)
+      this.loadSubmissionStats(recruiterId),
+      this.loadSubmissions(recruiterId)
     ]).finally(() => {
       this.loading = false;
     });
@@ -808,22 +960,44 @@ export class DashboardComponent implements OnInit {
 
   loadProcessCount(recruiterId: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      // CRITICAL: Always use path param with recruiter_id for compatibility
-      this.http.get<ProcessCount>(`${this.api}/recruiter/${recruiterId}/dashboard`).subscribe({
+      // Fetch dashboard data to get accurate process counts
+      this.http.get<any>(`${this.api}/recruiter/${recruiterId}/dashboard`).subscribe({
         next: (data) => {
-          // Extract process count from dashboard data if available
-          if (data && (data as any).summary) {
+          // Extract process count from dashboard data
+          if (data && data.summary) {
+            // Get total assigned from summary
+            const total_assigned = data.summary.total_demands || 0;
+            
+            // Count current processes (activities with status 'processing' or 'open' or 'hold')
+            const current_processes = data.activities?.filter((a: any) => 
+              a.activity_status === 'processing' || 
+              a.activity_status === 'open' || 
+              a.activity_status === 'hold'
+            ).length || 0;
+            
+            // Count completed processes (activities with status 'closed')
+            const completed_processes = data.activities?.filter((a: any) => 
+              a.activity_status === 'closed'
+            ).length || 0;
+            
             this.processCount = {
-              total_assigned: (data as any).summary.total_demands || 0,
-              current_processes: (data as any).activities?.filter((a: any) => a.activity_status === 'processing').length || 0,
-              completed_processes: (data as any).activities?.filter((a: any) => a.activity_status === 'closed').length || 0
+              total_assigned: total_assigned,
+              current_processes: current_processes,
+              completed_processes: completed_processes
+            };
+          } else {
+            // If no data structure, set to zeros
+            this.processCount = {
+              total_assigned: 0,
+              current_processes: 0,
+              completed_processes: 0
             };
           }
           resolve();
         },
         error: (error) => {
           console.error('Error loading process count:', error);
-          // Set mock values for development
+          // Set to zeros on error (no hardcoded mock values)
           this.processCount = {
             total_assigned: 0,
             current_processes: 0,
@@ -856,6 +1030,49 @@ export class DashboardComponent implements OnInit {
         }
       });
     });
+  }
+
+  loadSubmissions(recruiterId: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.submissionsLoading = true;
+      this.http.get<any>(`${this.api}/submissions/recruiter/${recruiterId}`, {
+        params: { page: this.submissionsPage, size: this.submissionsSize }
+      }).subscribe({
+        next: (response) => {
+          this.submissions = response?.items || [];
+          this.submissionsTotal = response?.total || 0;
+          this.submissionsLoading = false;
+          resolve();
+        },
+        error: (error) => {
+          console.error('Error loading submissions:', error);
+          this.submissions = [];
+          this.submissionsTotal = 0;
+          this.submissionsLoading = false;
+          resolve();
+        }
+      });
+    });
+  }
+
+  nextSubmissionsPage(): void {
+    if (this.submissionsPage < this.submissionsTotalPages) {
+      this.submissionsPage++;
+      const recruiterId = this.authService.getCurrentUserId();
+      if (recruiterId) {
+        this.loadSubmissions(recruiterId);
+      }
+    }
+  }
+
+  prevSubmissionsPage(): void {
+    if (this.submissionsPage > 1) {
+      this.submissionsPage--;
+      const recruiterId = this.authService.getCurrentUserId();
+      if (recruiterId) {
+        this.loadSubmissions(recruiterId);
+      }
+    }
   }
 
   nextPage(): void {

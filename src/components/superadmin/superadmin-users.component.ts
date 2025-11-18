@@ -179,6 +179,7 @@ type RoleTab = 'recruiter' | 'team_leader' | 'manager' | 'business_head' | 'clus
         </div>
       </div>
     </div>
+
   `,
   styles: [`
     .superadmin-section-title {
@@ -609,6 +610,7 @@ type RoleTab = 'recruiter' | 'team_leader' | 'manager' | 'business_head' | 'clus
       cursor: not-allowed;
       opacity: 0.7;
     }
+
   `]
 })
 export class SuperAdminUsersComponent implements OnInit {

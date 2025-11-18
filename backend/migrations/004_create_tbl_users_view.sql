@@ -1,6 +1,8 @@
 -- Create or replace a compatibility view so code can reference tbl_users
 -- while the canonical storage remains the users table
-CREATE OR REPLACE VIEW tbl_users AS
+-- Drop view first if it exists to avoid conflicts
+DROP VIEW IF EXISTS tbl_users CASCADE;
+CREATE VIEW tbl_users AS
 SELECT
     id,
     first_name,

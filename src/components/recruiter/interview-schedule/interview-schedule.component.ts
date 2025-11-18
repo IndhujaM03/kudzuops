@@ -1,479 +1,732 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
+import { FormsModule } from '@angular/forms';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { AuthService } from '../../../services/auth.service';
 import { environment } from '../../../environments/environment';
 
-interface Interview {
+interface InterviewSchedule {
   id: number;
   candidate_name: string;
-  candidate_email: string;
-  demand_id: number;
-  job_title: string;
-  client_name: string;
-  interview_date: string;
-  mode: 'online' | 'offline';
-  status: 'scheduled' | 'completed' | 'cancelled';
-  recruiter_id: number;
-  created_at: string;
+  recruiter_name?: string;
+  recruiter_id?: number;
+  email?: string;
+  round?: string;
+  status: 'scheduled' | 'slot_allocated' | 'reschedule';
+  interview_schedules?: {
+    [key: string]: {
+      slots: Array<{
+        date: string;
+        time: string;
+        slot_status: number;
+      }>;
+      round_status: number;
+    };
+  };
+  all_slots?: Array<{
+    date: string;
+    time: string;
+    slot_status: number;
+    round: string;
+  }>;
+  created_at?: string;
 }
+
+type TabType = 'waiting' | 'scheduled';
 
 @Component({
   selector: 'app-interview-schedule',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
-    <div class="interview-schedule-container recruiter-theme">
-      <!-- Header -->
-      <div class="card">
-        <div class="card-header">
-          <h2 class="card-title">Interview Schedule</h2>
-          <p class="card-subtitle">Manage scheduled interviews for your candidates</p>
-        </div>
+    <div class="superadmin-card superadmin-card-elevated">
+      <!-- Tabs -->
+      <div class="superadmin-tabs">
+        <button 
+          class="superadmin-tab"
+          [class.active]="activeTab() === 'waiting'"
+          (click)="setActiveTab('waiting')">
+          Waiting
+        </button>
+        <button 
+          class="superadmin-tab"
+          [class.active]="activeTab() === 'scheduled'"
+          (click)="setActiveTab('scheduled')">
+          Scheduled
+        </button>
       </div>
 
-      <!-- Interviews Table -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">Scheduled Interviews</h3>
-          <div class="card-actions">
-            <button class="btn btn-primary" (click)="loadInterviews()">
-              <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
+      <!-- Search Filter -->
+      <div class="superadmin-search-container">
+        <input 
+          type="text" 
+          class="superadmin-search-input"
+          placeholder="Search by candidate name..."
+          [(ngModel)]="searchQuery"
+          (input)="onSearchChange()">
+      </div>
+
+      <!-- Loading State -->
+      <div *ngIf="loading" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">⏳</div>
+        <h3 class="superadmin-empty-title">Loading...</h3>
+        <p class="superadmin-empty-description">Please wait while we fetch the data.</p>
+      </div>
+
+      <!-- Error State -->
+      <div *ngIf="error && !loading" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">⚠️</div>
+        <h3 class="superadmin-empty-title">Error Loading Data</h3>
+        <p class="superadmin-empty-description">{{ error }}</p>
+        <button class="superadmin-btn superadmin-btn-approve" (click)="loadCandidates()" style="margin-top: 16px;">
+          Retry
+        </button>
+      </div>
+
+      <!-- Table -->
+      <div *ngIf="!loading && !error && filteredCandidates().length > 0" class="superadmin-table-container">
+        <table class="superadmin-table">
+          <thead>
+            <tr>
+              <th>Candidate Name</th>
+              <th>Round</th>
+              <th>Available Slots</th>
+              <th>Status</th>
+              <th *ngIf="activeTab() === 'waiting'">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let candidate of paginatedCandidates()">
+              <td>{{ candidate.candidate_name }}</td>
+              <td>
+                <span class="superadmin-role-badge">{{ getRoundLabel(candidate) }}</span>
+              </td>
+              <td>
+                <div class="slots-container">
+                  <div 
+                    *ngFor="let slotInfo of getAllSlots(candidate)" 
+                    class="slot-item"
+                    [class.slot-allocated]="slotInfo.slot_status === 1">
+                    <div class="slot-date">{{ slotInfo.date }}</div>
+                    <div class="slot-time">{{ slotInfo.time }}</div>
+                  </div>
+                  <div *ngIf="getAllSlots(candidate).length === 0" class="no-slots">
+                    No slots available
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="status-pill" [ngClass]="getStatusClass(candidate)">
+                  {{ getStatusLabel(candidate) }}
+                </span>
+              </td>
+              <td *ngIf="activeTab() === 'waiting'">
+                <button 
+                  class="superadmin-btn superadmin-btn-approve"
+                  (click)="openAssignSlotModal(candidate)"
+                  style="padding: 6px 12px; font-size: 12px;">
+                  Assign Slot
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Empty State -->
+      <div *ngIf="!loading && !error && filteredCandidates().length === 0" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">📅</div>
+        <h3 class="superadmin-empty-title">No candidates found</h3>
+        <p class="superadmin-empty-description">
+          {{ searchQuery ? 'No candidates match your search criteria.' : 
+            (activeTab() === 'waiting' ? 'No candidates are waiting for slot assignment.' : 
+            'No candidates have scheduled slots.') }}
+        </p>
+      </div>
+
+      <!-- Pagination -->
+      <div *ngIf="!loading && !error && filteredCandidates().length > 0" class="superadmin-pagination">
+        <div class="superadmin-pagination-info">
+          Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ filteredCandidates().length }} candidates
+        </div>
+        <div class="superadmin-pagination-controls">
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === 1"
+            (click)="goToPage(currentPage() - 1)">
+            Previous
+          </button>
+          <div class="superadmin-pagination-pages">
+            <button 
+              *ngFor="let page of visiblePages()"
+              class="superadmin-pagination-page"
+              [class.active]="page === currentPage()"
+              [class.ellipsis]="page === -1"
+              (click)="goToPage(page)"
+              [disabled]="page === -1">
+              {{ page === -1 ? '...' : page }}
+            </button>
+          </div>
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === totalPages()"
+            (click)="goToPage(currentPage() + 1)">
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assign Slot Modal -->
+    <div *ngIf="showAssignModal" class="superadmin-modal-overlay" (click)="closeAssignModal()">
+      <div class="superadmin-modal" (click)="$event.stopPropagation()">
+        <div class="superadmin-modal-header">
+          <h3>Assign Slot</h3>
+          <button class="superadmin-modal-close" (click)="closeAssignModal()">×</button>
+        </div>
+        <div class="superadmin-modal-body" *ngIf="selectedCandidate">
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Candidate</label>
+            <p class="modal-value">{{ selectedCandidate.candidate_name }}</p>
+          </div>
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Round</label>
+            <p class="modal-value">{{ getFirstRound(selectedCandidate) || 'N/A' }}</p>
+          </div>
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Available Slots</label>
+            <div class="slots-selection">
+              <div 
+                *ngFor="let slot of getAvailableSlots(selectedCandidate); let i = index"
+                class="slot-option"
+                [class.selected]="selectedSlotIndex === i"
+                (click)="selectSlot(i)">
+                <div class="slot-date">{{ slot.date }}</div>
+                <div class="slot-time">{{ slot.time }}</div>
+              </div>
+              <div *ngIf="getAvailableSlots(selectedCandidate).length === 0" class="no-slots">
+                No available slots
+              </div>
+            </div>
+          </div>
+          <div class="superadmin-modal-footer">
+            <button 
+              class="superadmin-btn superadmin-btn-secondary" 
+              (click)="rejectAllSlots()"
+              [disabled]="assigningSlot">
+              Reject All Slots
+            </button>
+            <div style="flex: 1;"></div>
+            <button 
+              class="superadmin-btn superadmin-btn-secondary" 
+              (click)="closeAssignModal()">
+              Cancel
+            </button>
+            <button 
+              class="superadmin-btn superadmin-btn-approve" 
+              (click)="assignSlot()"
+              [disabled]="selectedSlotIndex === null || assigningSlot">
+              {{ assigningSlot ? 'Assigning...' : 'Assign Slot' }}
             </button>
           </div>
         </div>
-
-        <!-- Loading State -->
-        <div *ngIf="loading" class="loading-state">
-          <div class="loading-spinner"></div>
-          <p>Loading interviews...</p>
-        </div>
-
-        <!-- Error State -->
-        <div *ngIf="error && !loading" class="error-state">
-          <svg class="error-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h3 class="error-title">Error Loading Interviews</h3>
-          <p class="error-message">{{ error }}</p>
-          <button class="btn btn-primary" (click)="loadInterviews()">Retry</button>
-        </div>
-
-        <!-- Interviews Table -->
-        <div *ngIf="!loading && !error && interviews.length > 0" class="table-container">
-          <div class="table-wrapper">
-            <table class="interviews-table">
-              <thead>
-                <tr>
-                  <th>Candidate Name</th>
-                  <th>Email</th>
-                  <th>Demand ID</th>
-                  <th>Job Title</th>
-                  <th>Client</th>
-                  <th>Interview Date</th>
-                  <th>Mode</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let interview of interviews" class="interview-row">
-                  <td class="candidate-name">{{ interview.candidate_name }}</td>
-                  <td class="candidate-email">{{ interview.candidate_email }}</td>
-                  <td class="demand-id">#{{ interview.demand_id }}</td>
-                  <td class="job-title">{{ interview.job_title }}</td>
-                  <td class="client-name">{{ interview.client_name }}</td>
-                  <td class="interview-date">{{ interview.interview_date | date:'short' }}</td>
-                  <td class="mode">
-                    <span class="mode-badge" [ngClass]="'mode-' + interview.mode">
-                      {{ interview.mode | titlecase }}
-                    </span>
-                  </td>
-                  <td class="status">
-                    <span class="status-badge" [ngClass]="'status-' + interview.status">
-                      {{ interview.status | titlecase }}
-                    </span>
-                  </td>
-                  <td class="actions">
-                    <button 
-                      class="btn btn-sm btn-success" 
-                      (click)="updateInterviewStatus(interview, 'completed')"
-                      [disabled]="isCompleted(interview)"
-                      title="Mark as Completed"
-                      *ngIf="isScheduled(interview)"
-                    >
-                      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                    <button 
-                      class="btn btn-sm btn-warning" 
-                      (click)="updateInterviewStatus(interview, 'cancelled')"
-                      [disabled]="isCancelled(interview)"
-                      title="Cancel Interview"
-                      *ngIf="isScheduled(interview)"
-                    >
-                      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                    <span *ngIf="isCompleted(interview)" class="completed-text">Completed</span>
-                    <span *ngIf="isCancelled(interview)" class="cancelled-text">Cancelled</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="pagination">
-            <button class="btn btn-secondary sm" (click)="prevPage()" [disabled]="page <= 1">Prev</button>
-            <span class="page-info">Page {{ page }} / {{ totalPages }}</span>
-            <button class="btn btn-secondary sm" (click)="nextPage()" [disabled]="page >= totalPages">Next</button>
-          </div>
-        </div>
-
-        <!-- Empty State -->
-        <div *ngIf="!loading && !error && interviews.length === 0" class="empty-state">
-          <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <h3 class="empty-title">No interviews scheduled</h3>
-          <p class="empty-description">No interviews have been scheduled for your candidates yet.</p>
-        </div>
       </div>
+    </div>
 
-      <!-- Toast Notifications -->
-      <div class="toast-container" *ngIf="toasts.length > 0">
-        <div *ngFor="let toast of toasts" class="toast" [ngClass]="'toast-' + toast.type">
-          {{ toast.text }}
-          <button class="toast-close" (click)="removeToast(toast.id)">×</button>
+    <!-- Rejection Confirmation Modal -->
+    <div *ngIf="showRejectModal" class="superadmin-modal-overlay" (click)="closeRejectModal()">
+      <div class="superadmin-modal" (click)="$event.stopPropagation()">
+        <div class="superadmin-modal-header">
+          <h3>Confirm Rejection</h3>
+          <button class="superadmin-modal-close" (click)="closeRejectModal()">×</button>
+        </div>
+        <div class="superadmin-modal-body">
+          <p>Are you sure you want to reject all slots? The candidate will be moved to reschedule.</p>
+        </div>
+        <div class="superadmin-modal-footer">
+          <button class="superadmin-btn superadmin-btn-secondary" (click)="closeRejectModal()">Cancel</button>
+          <button 
+            class="superadmin-btn superadmin-btn-danger" 
+            (click)="confirmRejectAllSlots()"
+            [disabled]="assigningSlot">
+            {{ assigningSlot ? 'Processing...' : 'Reject All Slots' }}
+          </button>
         </div>
       </div>
     </div>
   `,
   styles: [`
-    .interview-schedule-container {
-      padding: 20px;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
-
-    .card {
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-      margin-bottom: 20px;
-    }
-
-    .card-header {
-      padding: 20px;
-      border-bottom: 1px solid #e5e7eb;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .card-title {
-      font-size: 18px;
+    .superadmin-section-title {
+      font-size: 20px;
       font-weight: 600;
-      color: #1e293b;
-      margin: 0;
+      color: #2d3748;
+      margin-bottom: 24px;
     }
 
-    .card-subtitle {
-      font-size: 14px;
-      color: #6b7280;
-      margin: 4px 0 0 0;
+    .superadmin-card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+      border: 1px solid rgba(24, 45, 23, 0.1);
+      overflow: visible;
+      min-height: 400px;
     }
 
-    .card-actions {
+    .superadmin-card-elevated { 
+      box-shadow: 0 10px 18px rgba(24, 45, 23, 0.15); 
+      border-color: rgba(24, 45, 23, 0.2); 
+    }
+
+    /* Tabs */
+    .superadmin-tabs {
       display: flex;
       gap: 8px;
+      padding: 16px 24px;
+      border-bottom: 1px solid #e2e8f0;
+      flex-wrap: wrap;
     }
 
-    .btn {
+    .superadmin-tab {
       padding: 8px 16px;
-      border-radius: 6px;
-      font-weight: 500;
-      font-size: 14px;
-      cursor: pointer;
       border: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s;
+      background: transparent;
+      color: #4a5568;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+      border-bottom: 2px solid transparent;
     }
 
-    .btn-primary {
-      background: var(--kudzu-primary);
-      color: white;
+    .superadmin-tab:hover {
+      background: #f7fafc;
+      color: #2d3748;
     }
 
-    .btn-primary:hover {
-      background: var(--kudzu-primary-dark);
-    }
-
-    .btn-success {
-      background: var(--kudzu-primary);
-      color: white;
-    }
-
-    .btn-success:hover {
-      background: var(--kudzu-primary-dark);
-    }
-
-    .btn-warning {
-      background: var(--kudzu-primary);
-      color: white;
-    }
-
-    .btn-warning:hover {
-      background: var(--kudzu-primary-dark);
-    }
-
-    .btn-secondary {
-      background: var(--kudzu-primary-light);
+    .superadmin-tab.active {
       color: var(--kudzu-primary);
+      border-bottom-color: var(--kudzu-primary);
+      background: rgba(102, 126, 234, 0.05);
     }
 
-    .btn-secondary:hover {
-      background: var(--kudzu-primary);
-      color: white;
+    /* Search */
+    .superadmin-search-container {
+      padding: 16px 24px;
+      border-bottom: 1px solid #e2e8f0;
     }
 
-    .btn-sm {
-      padding: 4px 8px;
-      font-size: 12px;
+    .superadmin-search-input {
+      width: 100%;
+      max-width: 400px;
+      padding: 10px 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #2d3748;
+      transition: border-color 0.2s ease;
     }
 
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .superadmin-search-input:focus {
+      outline: none;
+      border-color: var(--kudzu-primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
 
-    .icon {
-      width: 16px;
-      height: 16px;
-    }
-
-    .table-container {
+    /* Table */
+    .superadmin-table-container {
       overflow-x: auto;
     }
 
-    .table-wrapper {
-      min-width: 100%;
-    }
-
-    .interviews-table {
+    .superadmin-table {
       width: 100%;
       border-collapse: collapse;
     }
 
-    .interviews-table th,
-    .interviews-table td {
-      padding: 12px;
+    .superadmin-table th {
+      background: #f7fafc;
+      padding: 16px 24px;
       text-align: left;
-      border-bottom: 1px solid #e5e7eb;
-    }
-
-    .interviews-table th {
-      background: #f8fafc;
       font-weight: 600;
-      color: #374151;
+      color: #4a5568;
       font-size: 14px;
+      border-bottom: 1px solid #e2e8f0;
     }
 
-    .interview-row:hover {
+    .superadmin-table td {
+      padding: 16px 24px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #2d3748;
+      vertical-align: middle;
+    }
+
+    .superadmin-table tr:hover {
       background: #f8fafc;
     }
 
-    .mode-badge {
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
+    .superadmin-role-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      background: #f7fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 14px;
       font-weight: 500;
+      color: #2d3748;
     }
 
-    .mode-online {
-      background: #dbeafe;
-      color: #1e40af;
-    }
-
-    .mode-offline {
-      background: #fef3c7;
-      color: #92400e;
-    }
-
-    .status-badge {
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 500;
-    }
-
-    .status-scheduled {
-      background: #dbeafe;
-      color: #1e40af;
-    }
-
-    .status-completed {
-      background: #d1fae5;
-      color: #065f46;
-    }
-
-    .status-cancelled {
-      background: #fecaca;
-      color: #dc2626;
-    }
-
-    .completed-text {
-      color: #065f46;
-      font-weight: 500;
-      font-size: 12px;
-    }
-
-    .cancelled-text {
-      color: #dc2626;
-      font-weight: 500;
-      font-size: 12px;
-    }
-
-    .pagination {
+    .slots-container {
       display: flex;
-      justify-content: center;
-      align-items: center;
+      flex-direction: column;
       gap: 12px;
-      padding: 20px;
+      max-width: 320px;
     }
 
-    .page-info {
-      font-size: 14px;
-      color: #6b7280;
-    }
-
-    .loading-state {
+    .slot-item {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
-      color: #6b7280;
+      gap: 6px;
+      padding: 8px 8px;
+      border: 1px solid #e3efe5;
+      border-left: 4px solid var(--kudzu-primary);
+      border-radius: 14px;
+      background: #f8fcf9;
+      width: 100%;
+      box-shadow: 0 2px 6px rgba(24, 45, 23, 0.08);
+      font-family: 'Inter', sans-serif;
     }
 
-    .loading-spinner {
-      width: 40px;
-      height: 40px;
-      border: 4px solid #e5e7eb;
-      border-top: 4px solid #3b82f6;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 16px;
+    .slot-item.slot-allocated {
+      border-left-color: #0d9c6a;
+      background: #e6fff4;
+      box-shadow: 0 3px 8px rgba(13, 156, 106, 0.18);
     }
 
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .error-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
-      text-align: center;
-    }
-
-    .error-icon {
-      width: 48px;
-      height: 48px;
-      color: #ef4444;
-      margin-bottom: 16px;
-    }
-
-    .error-title {
-      font-size: 18px;
+    .slot-date {
+      font-size: 13px;
       font-weight: 600;
-      color: #1e293b;
-      margin: 0 0 8px 0;
+      color: #1f2933;
     }
 
-    .error-message {
-      font-size: 14px;
-      color: #6b7280;
-      margin: 0 0 20px 0;
+    .slot-time {
+      font-size: 12px;
+      font-weight: 500;
+      color: #4a5568;
     }
 
-    .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 60px 20px;
-      text-align: center;
-    }
-
-    .empty-icon {
-      width: 64px;
-      height: 64px;
+    .no-slots {
       color: #9ca3af;
-      margin-bottom: 16px;
-    }
-
-    .empty-title {
-      font-size: 18px;
-      font-weight: 600;
-      color: #1e293b;
-      margin: 0 0 8px 0;
-    }
-
-    .empty-description {
       font-size: 14px;
-      color: #6b7280;
-      margin: 0;
+      font-style: italic;
     }
 
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 1000;
+    /* Pagination */
+    .superadmin-pagination {
       display: flex;
-      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+      border-top: 1px solid #e2e8f0;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .superadmin-pagination-info {
+      font-size: 14px;
+      color: #4a5568;
+    }
+
+    .superadmin-pagination-controls {
+      display: flex;
+      align-items: center;
       gap: 8px;
     }
 
-    .toast {
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .status-waiting {
+      background: #fef3c7;
+      color: #b45309;
+      border: 1px solid #fde68a;
+    }
+
+    .status-allocated {
+      background: #d1fae5;
+      color: #047857;
+      border: 1px solid #6ee7b7;
+    }
+
+    .status-reschedule {
+      background: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+
+    .superadmin-pagination-btn {
+      padding: 8px 16px;
+      border: 1px solid #e2e8f0;
       background: white;
-      border: 1px solid #e5e7eb;
+      color: #4a5568;
       border-radius: 6px;
-      padding: 12px 16px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .superadmin-pagination-btn:hover:not(:disabled) {
+      background: #f7fafc;
+      border-color: var(--kudzu-primary);
+      color: var(--kudzu-primary);
+    }
+
+    .superadmin-pagination-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .superadmin-pagination-pages {
+      display: flex;
+      gap: 4px;
+    }
+
+    .superadmin-pagination-page {
+      min-width: 36px;
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #4a5568;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .superadmin-pagination-page:hover {
+      background: #f7fafc;
+      border-color: var(--kudzu-primary);
+    }
+
+    .superadmin-pagination-page.active {
+      background: var(--kudzu-primary);
+      color: white;
+      border-color: var(--kudzu-primary);
+    }
+
+    .superadmin-pagination-page.ellipsis {
+      border: none;
+      background: transparent;
+      cursor: default;
+      min-width: auto;
+      padding: 0 8px;
+    }
+
+    /* Buttons */
+    .superadmin-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .superadmin-btn-secondary {
+      background: #e2e8f0;
+      color: #2d3748;
+    }
+
+    .superadmin-btn-secondary:hover {
+      background: #cbd5e0;
+    }
+
+    .superadmin-btn-approve {
+      background: var(--kudzu-primary);
+      color: white;
+    }
+
+    .superadmin-btn-approve:hover {
+      background: var(--kudzu-primary-dark);
+    }
+
+    .superadmin-btn-danger {
+      background: #e53e3e;
+      color: white;
+    }
+
+    .superadmin-btn-danger:hover {
+      background: #c53030;
+    }
+
+    .superadmin-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Empty State */
+    .superadmin-empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #718096;
+    }
+
+    .superadmin-empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .superadmin-empty-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #4a5568;
+    }
+
+    .superadmin-empty-description {
+      font-size: 14px;
+      color: #718096;
+    }
+
+    /* Modal Styles */
+    .superadmin-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      min-width: 300px;
+      justify-content: center;
+      z-index: 10000;
     }
 
-    .toast-success { border-left: 4px solid #10b981; }
-    .toast-error { border-left: 4px solid #ef4444; }
-    .toast-warning { border-left: 4px solid #f59e0b; }
-    .toast-info { border-left: 4px solid #3b82f6; }
+    .superadmin-modal {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      max-width: 600px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
 
-    .toast-close {
+    .superadmin-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 24px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .superadmin-modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #2d3748;
+    }
+
+    .superadmin-modal-close {
       background: none;
       border: none;
-      font-size: 18px;
+      font-size: 24px;
+      color: #718096;
       cursor: pointer;
-      color: #6b7280;
       padding: 0;
-      margin-left: 12px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
     }
 
-    .toast-close:hover {
-      color: #374151;
+    .superadmin-modal-close:hover {
+      background: #f7fafc;
+      color: #2d3748;
+    }
+
+    .superadmin-modal-body {
+      padding: 24px;
+    }
+
+    .superadmin-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      padding: 20px 24px;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    /* Form Styles */
+    .superadmin-form-group {
+      margin-bottom: 20px;
+    }
+
+    .superadmin-form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #4a5568;
+      margin-bottom: 8px;
+    }
+
+    .modal-value {
+      font-size: 14px;
+      color: #2d3748;
+      margin: 0;
+    }
+
+    .slots-selection {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .slot-option {
+      padding: 12px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+      min-width: 120px;
+    }
+
+    .slot-option:hover {
+      border-color: var(--kudzu-primary);
+      background: rgba(102, 126, 234, 0.05);
+    }
+
+    .slot-option.selected {
+      border-color: var(--kudzu-primary);
+      background: rgba(102, 126, 234, 0.1);
+    }
+
+    .assigned-slot-display {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
     }
   `]
 })
@@ -482,105 +735,314 @@ export class InterviewScheduleComponent implements OnInit {
   private authService = inject(AuthService);
   api = environment.apiBase;
 
-  interviews: Interview[] = [];
+  candidates = signal<InterviewSchedule[]>([]);
+  activeTab = signal<TabType>('waiting');
+  searchQuery = '';
   loading = false;
   error: string | null = null;
-  page = 1;
-  size = 10;
-  total = 0;
-  toasts: { id: number; text: string; type: string }[] = [];
+  currentPage = signal(1);
+  itemsPerPage = 10;
 
-  get totalPages() { return Math.max(1, Math.ceil(this.total / this.size)); }
+  // Modal state
+  showAssignModal = false;
+  showRejectModal = false;
+  selectedCandidate: InterviewSchedule | null = null;
+  selectedSlotIndex: number | null = null;
+  assigningSlot = false;
+
+  // Computed values
+  filteredCandidates = computed(() => {
+    const candidates = this.candidates();
+    if (!this.searchQuery.trim()) {
+      return candidates;
+    }
+    const query = this.searchQuery.toLowerCase().trim();
+    return candidates.filter(c => 
+      c.candidate_name?.toLowerCase().includes(query)
+    );
+  });
+
+  totalPages = computed(() => Math.max(1, Math.ceil(this.filteredCandidates().length / this.itemsPerPage)));
+
+  startIndex = computed(() => (this.currentPage() - 1) * this.itemsPerPage);
+  endIndex = computed(() => Math.min(this.startIndex() + this.itemsPerPage, this.filteredCandidates().length));
+
+  paginatedCandidates = computed(() => {
+    const filtered = this.filteredCandidates();
+    const start = this.startIndex();
+    const end = this.endIndex();
+    return filtered.slice(start, end);
+  });
+
+  visiblePages = computed(() => {
+    const total = this.totalPages();
+    const current = this.currentPage();
+    const pages: number[] = [];
+    
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (current <= 3) {
+        for (let i = 1; i <= 5; i++) {
+          pages.push(i);
+        }
+        pages.push(-1); // ellipsis
+        pages.push(total);
+      } else if (current >= total - 2) {
+        pages.push(1);
+        pages.push(-1); // ellipsis
+        for (let i = total - 4; i <= total; i++) {
+          pages.push(i);
+        }
+      } else {
+        pages.push(1);
+        pages.push(-1); // ellipsis
+        for (let i = current - 1; i <= current + 1; i++) {
+          pages.push(i);
+        }
+        pages.push(-1); // ellipsis
+        pages.push(total);
+      }
+    }
+    
+    return pages;
+  });
 
   ngOnInit(): void {
-    this.loadInterviews();
+    this.loadCandidates();
   }
 
-  loadInterviews(): void {
-    const recruiterId = this.authService.getCurrentUserId();
-    if (!recruiterId) {
-      this.error = 'Unable to identify recruiter ID';
-      return;
+  getStatusLabel(candidate: InterviewSchedule): string {
+    const status = (candidate.status ?? '') as string;
+    switch (status) {
+      case 'scheduled':
+        return 'WAITING';
+      case 'slot_allocated':
+        return 'ALLOCATED';
+      case 'reschedule':
+        return 'RESCHEDULE';
+      default:
+        return status ? status.toUpperCase() : 'N/A';
     }
+  }
 
+  getStatusClass(candidate: InterviewSchedule): string {
+    const status = (candidate.status ?? '') as string;
+    switch (status) {
+      case 'slot_allocated':
+        return 'status-allocated';
+      case 'reschedule':
+        return 'status-reschedule';
+      default:
+        return 'status-waiting';
+    }
+  }
+
+  setActiveTab(tab: TabType): void {
+    this.activeTab.set(tab);
+    this.currentPage.set(1);
+    this.loadCandidates();
+  }
+
+  loadCandidates(): void {
     this.loading = true;
     this.error = null;
 
-    this.http.get<any>(`${this.api}/interviews/recruiter/${recruiterId}`, {
-      params: { page: this.page, size: this.size }
-    }).subscribe({
+    const endpoint = this.activeTab() === 'waiting' 
+      ? '/interview-schedule/waiting' 
+      : '/interview-schedule/scheduled';
+
+    let params = new HttpParams()
+      .set('page', '1')
+      .set('size', '1000'); // Load all for client-side pagination
+    
+    if (this.searchQuery && this.searchQuery.trim()) {
+      params = params.set('search', this.searchQuery.trim());
+    }
+
+    this.http.get<any>(`${this.api}${endpoint}`, { params }).subscribe({
       next: (res) => {
-        this.interviews = res?.items || [];
-        this.total = res?.total || 0;
+        this.candidates.set(res?.items || []);
         this.loading = false;
       },
       error: (error) => {
-        console.error('Error loading interviews:', error);
-        this.interviews = [];
-        this.total = 0;
+        console.error('Error loading candidates:', error);
+        this.candidates.set([]);
         this.loading = false;
-        this.error = 'Failed to load interviews';
-        this.showToast('Failed to load interviews', 'error');
+        this.error = error?.error?.detail || error?.error?.message || 'Failed to load candidates';
       }
     });
   }
 
-  nextPage(): void {
-    if (this.page < this.totalPages) {
-      this.page++;
-      this.loadInterviews();
+  onSearchChange(): void {
+    this.currentPage.set(1);
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages()) {
+      this.currentPage.set(page);
     }
   }
 
-  prevPage(): void {
-    if (this.page > 1) {
-      this.page--;
-      this.loadInterviews();
+  getAllSlots(candidate: InterviewSchedule): Array<{date: string; time: string; slot_status: number; round: string}> {
+    // Use all_slots from backend if available
+    // For waiting tab: all slots with round_status=0
+    // For scheduled tab: only slots with slot_status=1
+    if (candidate.all_slots && candidate.all_slots.length > 0) {
+      return candidate.all_slots;
     }
+    
+    // Fallback: extract from interview_schedules
+    const slots: Array<{date: string; time: string; slot_status: number; round: string}> = [];
+    if (!candidate.interview_schedules) return slots;
+    
+    for (const [roundKey, roundData] of Object.entries(candidate.interview_schedules)) {
+      if (roundData.slots) {
+        for (const slot of roundData.slots) {
+          // For scheduled tab, only show slots with slot_status = 1
+          if (this.activeTab() === 'scheduled' && slot.slot_status !== 1) {
+            continue;
+          }
+          slots.push({
+            ...slot,
+            round: roundKey
+          });
+        }
+      }
+    }
+    return slots;
   }
 
-  updateInterviewStatus(interview: Interview, status: 'completed' | 'cancelled'): void {
-    this.http.patch<any>(`${this.api}/interviews/${interview.id}/status`, {
-      status: status
+  getRoundLabel(candidate: InterviewSchedule): string {
+    if (candidate.all_slots && candidate.all_slots.length > 0) {
+      return candidate.all_slots[0].round;
+    }
+
+    if (candidate.round) {
+      return candidate.round;
+    }
+
+    if (candidate.interview_schedules) {
+      const roundKeys = Object.keys(candidate.interview_schedules);
+      if (roundKeys.length > 0) {
+        return roundKeys[0];
+      }
+    }
+
+    return 'N/A';
+  }
+
+  getAvailableSlots(candidate: InterviewSchedule): Array<{date: string; time: string; slot_status: number}> {
+    if (!candidate.interview_schedules) return [];
+    const firstRound = this.getFirstRound(candidate);
+    if (!firstRound) return [];
+    
+    const roundData = candidate.interview_schedules[firstRound];
+    if (!roundData || !roundData.slots) return [];
+    
+    return roundData.slots.filter(slot => slot.slot_status === 0);
+  }
+
+
+  getFirstRound(candidate: InterviewSchedule): string | null {
+    if (!candidate.interview_schedules) return null;
+    const rounds = Object.keys(candidate.interview_schedules);
+    return rounds.length > 0 ? rounds[0] : null;
+  }
+
+  openAssignSlotModal(candidate: InterviewSchedule): void {
+    this.selectedCandidate = candidate;
+    this.selectedSlotIndex = null;
+    this.showAssignModal = true;
+  }
+
+  closeAssignModal(): void {
+    this.showAssignModal = false;
+    this.selectedCandidate = null;
+    this.selectedSlotIndex = null;
+  }
+
+  selectSlot(index: number): void {
+    this.selectedSlotIndex = index;
+  }
+
+  assignSlot(): void {
+    if (!this.selectedCandidate || this.selectedSlotIndex === null) return;
+    
+    const firstRound = this.getFirstRound(this.selectedCandidate);
+    if (!firstRound) return;
+
+    const availableSlots = this.getAvailableSlots(this.selectedCandidate);
+    if (this.selectedSlotIndex >= availableSlots.length) return;
+
+    // Find the original index in the slots array
+    const roundData = this.selectedCandidate.interview_schedules![firstRound];
+    const allSlots = roundData.slots;
+    const selectedSlot = availableSlots[this.selectedSlotIndex];
+    
+    // Find the index in the original array
+    let originalIndex = -1;
+    for (let i = 0; i < allSlots.length; i++) {
+      if (allSlots[i].date === selectedSlot.date && 
+          allSlots[i].time === selectedSlot.time && 
+          allSlots[i].slot_status === 0) {
+        originalIndex = i;
+        break;
+      }
+    }
+
+    if (originalIndex === -1) return;
+
+    this.assigningSlot = true;
+    this.http.post<any>(`${this.api}/interview-schedule/${this.selectedCandidate.id}/assign-slot`, {
+      round_key: firstRound,
+      slot_index: originalIndex
     }).subscribe({
       next: (response) => {
-        interview.status = status;
-        this.showToast(`Interview ${status} successfully`, 'success');
+        this.assigningSlot = false;
+        this.closeAssignModal();
+        this.loadCandidates(); // Reload to refresh the list
       },
       error: (error) => {
-        console.error('Error updating interview status:', error);
-        this.showToast('Failed to update interview status', 'error');
+        console.error('Error assigning slot:', error);
+        this.assigningSlot = false;
+        alert(error?.error?.detail || 'Failed to assign slot');
       }
     });
   }
 
-  showToast(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success'): void {
-    const toast = {
-      id: Date.now(),
-      text: message,
-      type: type
-    };
-    this.toasts.push(toast);
+  rejectAllSlots(): void {
+    if (!this.selectedCandidate) return;
+    this.showRejectModal = true;
+  }
+
+  confirmRejectAllSlots(): void {
+    if (!this.selectedCandidate) return;
     
-    setTimeout(() => {
-      this.removeToast(toast.id);
-    }, 5000);
+    const firstRound = this.getFirstRound(this.selectedCandidate);
+    if (!firstRound) return;
+
+    this.assigningSlot = true;
+    this.http.post<any>(`${this.api}/interview-schedule/${this.selectedCandidate.id}/reject-all-slots`, {
+      round_key: firstRound
+    }).subscribe({
+      next: (response) => {
+        this.assigningSlot = false;
+        this.closeRejectModal();
+        this.closeAssignModal();
+        this.loadCandidates(); // Reload to refresh the list
+      },
+      error: (error) => {
+        console.error('Error rejecting slots:', error);
+        this.assigningSlot = false;
+        alert(error?.error?.detail || 'Failed to reject slots');
+      }
+    });
   }
 
-  removeToast(id: number): void {
-    this.toasts = this.toasts.filter(t => t.id !== id);
-  }
-
-  // Helper methods for status checking
-  isScheduled(interview: any): boolean {
-    return interview.status === 'scheduled';
-  }
-
-  isCompleted(interview: any): boolean {
-    return interview.status === 'completed';
-  }
-
-  isCancelled(interview: any): boolean {
-    return interview.status === 'cancelled';
+  closeRejectModal(): void {
+    this.showRejectModal = false;
   }
 }
