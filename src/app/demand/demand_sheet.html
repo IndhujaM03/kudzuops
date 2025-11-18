@@ -25,11 +25,126 @@
           <span *ngIf="cvReceivedCount() > 0" class="tab-badge">{{ cvReceivedCount() }}</span>
         </button>
         <button class="chrome-tab" [class.active]="activeTab==='submitted'" (click)="setTab('submitted')">Submitted</button>
+        <button *ngIf="hasRescheduleRecords()" class="chrome-tab" [class.active]="activeTab==='reschedule'" (click)="setTab('reschedule')">Reschedule</button>
       </div>
     </div>
 
     <div *ngIf="errorMsg()" class="mb-4 p-3 rounded border border-red-200 bg-red-50 text-red-700">{{ errorMsg() }}</div>
     <div *ngIf="successMsg()" class="mb-4 p-3 rounded border border-green-200 bg-green-50 text-green-700">{{ successMsg() }}</div>
+
+    <!-- Schedule Interview Modal - Placed early to ensure it's in DOM -->
+    <div id="schedule-interview-modal-overlay"
+         class="modal-overlay schedule-interview-modal-overlay" 
+         (click)="closeScheduleInterviewModal()"
+         [style.position]="'fixed'"
+         [style.top]="'0'"
+         [style.left]="'0'"
+         [style.right]="'0'"
+         [style.bottom]="'0'"
+         [style.z-index]="showScheduleInterviewModal() ? '999999' : '-1'"
+         [style.display]="showScheduleInterviewModal() ? 'flex' : 'none'"
+         [style.align-items]="'center'"
+         [style.justify-content]="'center'"
+         [style.background]="'rgba(0, 0, 0, 0.5)'"
+         [style.opacity]="showScheduleInterviewModal() ? '1' : '0'"
+         [style.visibility]="showScheduleInterviewModal() ? 'visible' : 'hidden'"
+         [style.pointer-events]="showScheduleInterviewModal() ? 'auto' : 'none'"
+         [attr.hidden]="!showScheduleInterviewModal() ? '' : null">
+      <div class="modal-card schedule-interview-modal" (click)="$event.stopPropagation()" style="max-width: 700px; width: 90%; z-index: 1000011 !important; position: relative !important; background: white !important; border-radius: 12px !important; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3) !important; pointer-events: auto;">
+        <div class="modal-header">
+          <div class="modal-title">Schedule Interview - {{ selectedCandidateForSchedule?.candidate_name || 'Unknown Candidate' }}</div>
+          <button class="modal-close" (click)="closeScheduleInterviewModal(); $event.stopPropagation()" type="button">✕</button>
+        </div>
+        <div class="modal-body">
+          <!-- Header Row: Recruiter Name and Candidate Name in single row -->
+          <div class="candidate-info-section" style="margin-bottom: 16px; padding: 12px; background: #f9fafb; border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+              <div class="detail-item" style="display: flex; align-items: center; gap: 8px;">
+                <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Recruiter Name:</label>
+                <span style="font-size: 14px; color: #6b7280;">{{ selectedCandidateForSchedule?.recruiter_name || selectedCandidateForSchedule?.recruiter_email || 'N/A' }}</span>
+              </div>
+              <div class="detail-item" style="display: flex; align-items: center; gap: 8px;">
+                <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Candidate Name:</label>
+                <span style="font-size: 14px; color: #6b7280;">{{ selectedCandidateForSchedule?.candidate_name || selectedCandidateForSchedule?.email?.split('@')[0] || 'N/A' }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Round & Slot Selection -->
+          <div class="interview-schedule-form" *ngIf="interviewRounds().length > 0 && interviewRounds()[0]">
+            <!-- Combined Round & Slot Card -->
+            <div class="round-section" style="margin-bottom: 12px;">
+              <div class="round-header">
+                <!-- First Row: Round -->
+                <div class="round-row">
+                  <div class="form-group round-select-group" style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+                    <label style="font-size: 14px; font-weight: 600; color: #374151;">Interview Round</label>
+                    <select class="form-control" [(ngModel)]="interviewRounds()[0].round" [disabled]="isRescheduleMode()" style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: white; width: 100%;" [style.background-color]="isRescheduleMode() ? '#f3f4f6' : 'white'" [style.cursor]="isRescheduleMode() ? 'not-allowed' : 'pointer'">
+                      <option value="">Select Round</option>
+                      <option value="R1">R1</option>
+                      <option value="R2">R2</option>
+                      <option value="R3">R3</option>
+                      <option value="R4">R4</option>
+                      <option value="R5">R5</option>
+                      <option value="Selected">Selected</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <!-- Next Row: Slot -->
+                <div class="slot-row-container">
+                  <div class="form-group slot-select-group" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                    <div class="slot-label-row" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                      <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Slot</label>
+                      <button (click)="addSlotToRound(0)" class="btn-add-slot-inline" title="Add Slot" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: none; background: white; color: var(--kudzu-primary, #182D17); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Add Slot
+                      </button>
+                    </div>
+                    <div class="slots-container" style="display: flex; flex-direction: column; gap: 10px;" *ngIf="interviewRounds()[0].slots">
+                      <div *ngFor="let slot of interviewRounds()[0].slots; let slotIndex = index" class="slot-row" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; padding: 10px; background: white; border-radius: 8px; border: 1px solid var(--kudzu-border, #e5e7eb);">
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                          <label style="font-size: 13px; font-weight: 500; color: #374151;">Date</label>
+                          <input type="date" class="form-control" [(ngModel)]="slot.date" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                        </div>
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                          <label style="font-size: 13px; font-weight: 500; color: #374151;">Time</label>
+                          <input type="time" class="form-control" [(ngModel)]="slot.time" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                        </div>
+                        <div class="slot-actions" style="display: flex; align-items: flex-end; justify-content: center; height: 38px; margin-bottom: 0;">
+                          <button *ngIf="interviewRounds()[0].slots.length > 1" (click)="removeSlotFromRound(0, slotIndex)" class="btn-remove-slot" title="Remove Slot" style="padding: 2px; border: none; background: #dc2626; color: white; border-radius: 3px; cursor: pointer; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 0; font-size: 12px; line-height: 1;">
+                            <span style="font-size: 14px; font-weight: bold;">×</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Footer with buttons at bottom-right -->
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 20px; border-top: 1px solid var(--kudzu-border, #e5e7eb); margin-top: 20px;">
+          <button (click)="closeScheduleInterviewModal(); $event.stopPropagation()" class="btn-cancel" title="Cancel" type="button" style="padding: 10px 20px; border: 1px solid var(--kudzu-border, #d1d5db); background: transparent; color: var(--kudzu-text-secondary, #6b7280); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+            Close
+          </button>
+          <button (click)="isRescheduleMode() ? saveRescheduleSchedule() : saveInterviewSchedule()" class="btn-save" [title]="isRescheduleMode() ? 'Save Reschedule' : 'Save Interview Schedule'" style="padding: 10px 20px; border: 1px solid var(--kudzu-primary, #182D17); background: var(--kudzu-primary, #182D17); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Create Demand Modal -->
     <div *ngIf="showForm" class="modal-overlay" (click)="closeCreateModal()">
@@ -429,10 +544,51 @@
           </table>
         </div>
     </div>
-  </div>
-</div>
 
-<!-- Status Edit Modal - Always in DOM, visibility controlled by display style -->
+    <!-- Reschedule Tab Content -->
+    <div *ngIf="activeTab==='reschedule'">
+      <div *ngIf="reschedule().length===0" class="text-gray-600">No candidates require rescheduling</div>
+      <div *ngIf="reschedule().length>0" class="table-wrapper">
+        <table class="glassy-table">
+          <thead>
+            <tr>
+              <th>S.No</th>
+              <th>Demand ID</th>
+              <th>Recruiter Name</th>
+              <th>Candidate Name</th>
+              <th>Round</th>
+              <th>Schedule Interview</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of reschedule(); let i = index">
+              <td>{{ i + 1 }}</td>
+              <td>{{ item.demand_id || '-' }}</td>
+              <td>{{ item.recruiter_name || '-' }}</td>
+              <td>{{ item.candidate_name || '-' }}</td>
+              <td>{{ item.round || '-' }}</td>
+              <td style="min-width: 60px; text-align: center;">
+                <button class="btn-schedule-interview" 
+                        (click)="openRescheduleModal($event, item)" 
+                        title="Reschedule Interview"
+                        type="button"
+                        style="display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s; border: none; background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); color: white; pointer-events: auto !important; position: relative; z-index: 100; min-width: 40px; height: 40px;">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <!-- End of nested div (max-w-6xl), modals follow below INSIDE root div -->
+
+  <!-- All Modals - Must be inside root div -->
+  
+  <!-- Status Edit Modal - Always in DOM, visibility controlled by display style -->
 <div [style.display]="(showStatusModal() || showStatusModalProperty) ? 'flex' : 'none'" 
      [style.position]="'fixed'"
      [style.top]="'0'"
@@ -490,7 +646,6 @@
     </div>
   </div>
 </div>
-</div>
 
 <!-- Submitted Profiles Modal - Always in DOM, visibility controlled by display style -->
 <div [style.display]="(showSubmittedProfilesModal() || showSubmittedProfilesModalProperty) ? 'flex' : 'none'" 
@@ -518,9 +673,7 @@
                 <th>Recruiter Name</th>
                 <th>Candidate Name</th>
                 <th>CV Profile</th>
-                <th>Accept</th>
-                <th>Reject</th>
-                <th>Remark</th>
+                <th>Schedule Interview</th>
               </tr>
             </thead>
             <tbody>
@@ -538,27 +691,16 @@
                   </button>
                   <span *ngIf="!profile.cv_url || profile.cv_available === false" class="text-gray-400">-</span>
                 </td>
-                <td style="text-align: center;">
-                  <input type="checkbox" 
-                         [checked]="isProfileSelected(profile.profile_index, true)"
-                         (change)="toggleProfileSelection(profile.profile_index, true)"
-                         class="profile-checkbox accept-checkbox"
-                         title="Accept candidate">
-                </td>
-                <td style="text-align: center;">
-                  <input type="checkbox" 
-                         [checked]="isProfileSelected(profile.profile_index, false)"
-                         (change)="toggleProfileSelection(profile.profile_index, false)"
-                         class="profile-checkbox reject-checkbox"
-                         title="Reject candidate">
-                </td>
-                <td>
-                  <input type="text" 
-                         [value]="getProfileRemark(profile.profile_index)"
-                         (input)="updateProfileRemark(profile.profile_index, $any($event.target).value)"
-                         class="profile-remark-input"
-                         placeholder="Enter remark..."
-                         title="Add remark for this profile">
+                <td style="min-width: 60px; text-align: center;">
+                  <button class="btn-schedule-interview" 
+                          (click)="handleScheduleInterviewClick($event, profile)" 
+                          title="Schedule Interview"
+                          type="button"
+                          style="display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s; border: none; background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); color: white; pointer-events: auto !important; position: relative; z-index: 100; min-width: 40px; height: 40px;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    </svg>
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -567,17 +709,11 @@
     </div>
     <div class="modal-footer status-modal-footer">
       <div class="action-buttons status-action-buttons">
-        <button (click)="saveProfileSelections()" class="btn-save" title="Save Selections">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-          </svg>
-          Save
-        </button>
-        <button (click)="closeSubmittedProfilesModal(); $event.stopPropagation()" class="btn-cancel" title="Cancel">
+        <button (click)="closeSubmittedProfilesModal(); $event.stopPropagation()" class="btn-cancel" title="Close">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
-          Cancel
+          Close
         </button>
       </div>
     </div>
@@ -905,9 +1041,7 @@
                 <th>Recruiter Name</th>
                 <th>Candidate Name</th>
                 <th>CV Profile</th>
-                <th>Accept</th>
-                <th>Reject</th>
-                <th>Remark</th>
+                <th>Schedule Interview</th>
               </tr>
             </thead>
             <tbody>
@@ -925,27 +1059,16 @@
                   </button>
                   <span *ngIf="!profile.cv_url || profile.cv_available === false" class="text-gray-400">-</span>
                 </td>
-                <td style="text-align: center;">
-                  <input type="checkbox" 
-                         [checked]="isProfileSelected(profile.profile_index, true)"
-                         (change)="toggleProfileSelection(profile.profile_index, true)"
-                         class="profile-checkbox accept-checkbox"
-                         title="Accept candidate">
-                </td>
-                <td style="text-align: center;">
-                  <input type="checkbox" 
-                         [checked]="isProfileSelected(profile.profile_index, false)"
-                         (change)="toggleProfileSelection(profile.profile_index, false)"
-                         class="profile-checkbox reject-checkbox"
-                         title="Reject candidate">
-                </td>
-                <td>
-                  <input type="text" 
-                         [value]="getProfileRemark(profile.profile_index)"
-                         (input)="updateProfileRemark(profile.profile_index, $any($event.target).value)"
-                         class="profile-remark-input"
-                         placeholder="Enter remark..."
-                         title="Add remark for this profile">
+                <td style="min-width: 60px; text-align: center;">
+                  <button class="btn-schedule-interview" 
+                          (click)="handleScheduleInterviewClick($event, profile)" 
+                          title="Schedule Interview"
+                          type="button"
+                          style="display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s; border: none; background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); color: white; pointer-events: auto !important; position: relative; z-index: 100; min-width: 40px; height: 40px;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    </svg>
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -954,104 +1077,12 @@
     </div>
     <div class="modal-footer status-modal-footer">
       <div class="action-buttons status-action-buttons">
-        <button (click)="saveProfileSelections()" class="btn-save" title="Save Selections">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-          </svg>
-          Save
-        </button>
-        <button (click)="closeSubmittedProfilesModal()" class="btn-cancel" title="Cancel">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-          </svg>
-          Cancel
+        <button (click)="closeSubmittedProfilesModal()" class="btn-close-modal" title="Close">
+          Close
         </button>
       </div>
     </div>
   </div>
 </div>
 
-
-<!-- Submitted Profiles Modal -->
-<div *ngIf="showSubmittedProfilesModal()" class="modal-overlay status-modal-overlay" (click)="closeSubmittedProfilesModal()">
-<div class="modal-card status-modal-card submitted-profiles-modal" (click)="$event.stopPropagation()">
-    <div class="modal-header status-modal-header">
-    <div class="modal-title">Submitted Profiles - Demand ID: {{ selectedSubmittedDemand?.demand_id }}</div>
-    <button class="modal-close" (click)="closeSubmittedProfilesModal()">✕</button>
-    </div>
-  <div class="modal-body status-modal-body" style="max-height: 60vh; overflow-y: auto;">
-    <div *ngIf="submittedProfiles().length === 0" class="text-gray-600">No submitted profiles found</div>
-    <div *ngIf="submittedProfiles().length > 0" class="table-wrapper">
-      <table class="glassy-table">
-          <thead>
-            <tr>
-              <th>Recruiter Name</th>
-              <th>Candidate Name</th>
-              <th>CV Profile</th>
-              <th>Accept</th>
-              <th>Reject</th>
-              <th>Remark</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let profile of submittedProfiles(); let i = index">
-              <td>{{ profile.recruiter_name || '-' }}</td>
-              <td>{{ profile.candidate_name || '-' }}</td>
-              <td>
-                <button *ngIf="profile.cv_url" 
-                        class="jd-view-btn" 
-                        (click)="viewSubmittedCv(profile.cv_url)"
-                        title="View CV">
-                  <svg class="info-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="12" cy="12" r="10" fill="#FFFFFF" stroke="none"/>
-                    <path d="M12 16V12M12 8H12.01" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                <span *ngIf="!profile.cv_url" class="text-gray-400">-</span>
-              </td>
-              <td style="text-align: center;">
-                <input type="checkbox" 
-                       [checked]="isProfileSelected(profile.profile_index, true)"
-                       (change)="toggleProfileSelection(profile.profile_index, true)"
-                       class="profile-checkbox accept-checkbox"
-                       title="Accept candidate">
-              </td>
-              <td style="text-align: center;">
-                <input type="checkbox" 
-                       [checked]="isProfileSelected(profile.profile_index, false)"
-                       (change)="toggleProfileSelection(profile.profile_index, false)"
-                       class="profile-checkbox reject-checkbox"
-                       title="Reject candidate">
-              </td>
-              <td>
-                <input type="text" 
-                       [value]="getProfileRemark(profile.profile_index)"
-                       (input)="updateProfileRemark(profile.profile_index, $any($event.target).value)"
-                       class="profile-remark-input"
-                       placeholder="Enter remark..."
-                       title="Add remark for this profile">
-              </td>
-            </tr>
-          </tbody>
-      </table>
-      </div>
-    </div>
-    <div class="modal-footer status-modal-footer">
-      <div class="action-buttons status-action-buttons">
-      <button (click)="saveProfileSelections()" class="btn-save" title="Save Selections">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-          </svg>
-          Save
-        </button>
-      <button (click)="closeSubmittedProfilesModal()" class="btn-cancel" title="Cancel">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-          </svg>
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
+<!-- End of root div -->

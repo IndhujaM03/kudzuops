@@ -1,0 +1,519 @@
+<div class="min-h-screen bg-gray-50 py-2 interview-page">
+  <div class="max-w-6xl mx-auto px-4">
+    <!-- Header -->
+    <div class="interview-header" style="background:rgba(255, 255, 255, 0.8);backdrop-filter:blur(10px);border:1px solid rgba(24, 45, 23, 0.1);border-radius:12px;box-shadow:0 4px 10px rgba(24, 45, 23, 0.1);padding:20px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="margin:0;font-size:24px;font-weight:700;color:var(--kudzu-primary);">
+        Interview Management
+      </h2>
+      <button (click)="refreshData()" 
+              class="btn-refresh" 
+              title="Refresh"
+              style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border:1px solid var(--kudzu-primary, #182D17);background:var(--kudzu-primary, #182D17);color:white;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;transition:all 0.2s;font-family:'Manrope', 'Manrope Placeholder', sans-serif;">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:16px;height:16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+        </svg>
+        Refresh
+      </button>
+    </div>
+    
+    <!-- Tabs Section -->
+    <div class="flex items-center justify-between mb-6">
+      <div class="chrome-tabs">
+        <button class="chrome-tab" [class.active]="activeTab==='waiting'" (click)="setTab('waiting')">
+          Waiting
+        </button>
+        <button class="chrome-tab" [class.active]="activeTab==='spoc_communication'" (click)="setTab('spoc_communication')">
+          SPOC Communication
+        </button>
+        <button class="chrome-tab" [class.active]="activeTab==='confirmed'" (click)="setTab('confirmed')">
+          Confirmed
+        </button>
+      </div>
+    </div>
+
+    <div *ngIf="errorMsg()" class="mb-4 p-3 rounded border border-red-200 bg-red-50 text-red-700">
+      {{ errorMsg() }}
+    </div>
+
+    <div *ngIf="loading()" class="text-center py-8">
+      <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      <p class="mt-2 text-gray-600">Loading interview schedules...</p>
+    </div>
+
+    <!-- Waiting Tab Content -->
+    <div *ngIf="!loading() && activeTab === 'waiting'">
+      <div *ngIf="waitingInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
+        <p class="text-gray-500">No candidates waiting for interview slots.</p>
+      </div>
+
+      <div *ngIf="waitingInterviews().length > 0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>Candidate Name</th>
+                <th>Recruiter Name</th>
+                <th>Round</th>
+                <th>All Slot Details</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let interview of waitingInterviews()">
+                <td>{{ interview.candidateName }}</td>
+                <td>{{ interview.recruiterName }}</td>
+                <td>{{ interview.round }}</td>
+                <td>
+                  <div class="slots-list">
+                    <div class="slot-item" *ngFor="let slot of interview.slots">
+                      <span class="slot-date">{{ slot.date }}</span>
+                      <span class="slot-time">{{ slot.time }}</span>
+                    </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="status-badge status-waiting">Waiting</span>
+                  </td>
+                </tr>
+            </tbody>
+          </table>
+      </div>
+    </div>
+
+    <!-- SPOC Communication Tab Content -->
+    <div *ngIf="!loading() && activeTab === 'spoc_communication'">
+      <div *ngIf="spocCommunicationInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
+        <p class="text-gray-500">No candidates have selected interview slots yet.</p>
+      </div>
+
+      <div *ngIf="spocCommunicationInterviews().length > 0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>Candidate Name</th>
+                <th>Recruiter Name</th>
+                <th>Round</th>
+                <th>Selected Slot Details</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let interview of spocCommunicationInterviews()">
+                <td>{{ interview.candidateName }}</td>
+                <td>{{ interview.recruiterName }}</td>
+                <td>{{ interview.round }}</td>
+                <td>
+                  <div class="slots-list">
+                    <div class="slot-item" *ngFor="let slot of interview.slots">
+                      <span class="slot-date">{{ slot.date }}</span>
+                      <span class="slot-time">{{ slot.time }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="status-badge status-waiting">Waiting for SPOC confirmation</span>
+                </td>
+                <td style="text-align: center;">
+                  <button class="action-icon-btn" 
+                          (click)="openSpocConfirmationModal(interview)" 
+                          title="SPOC Confirmation"
+                          type="button"
+                          style="display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; cursor: pointer; border: none; background: transparent; color: var(--kudzu-primary); transition: all 0.2s;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+      </div>
+    </div>
+
+    <!-- Confirmed Tab Content -->
+    <div *ngIf="!loading() && activeTab === 'confirmed'">
+      <div *ngIf="confirmedInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
+        <p class="text-gray-500">No confirmed interviews yet.</p>
+      </div>
+
+      <div *ngIf="confirmedInterviews().length > 0" class="table-wrapper">
+          <table class="glassy-table">
+            <thead>
+              <tr>
+                <th>Candidate Name</th>
+                <th>Recruiter Name</th>
+                <th>Round</th>
+                <th>Slot Details</th>
+                <th>Status</th>
+                <th>Interview Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let interview of confirmedInterviews()">
+                <td>{{ interview.candidateName }}</td>
+                <td>{{ interview.recruiterName }}</td>
+                <td>{{ interview.round }}</td>
+                <td>
+                  <div class="slots-list">
+                    <div class="slot-item" *ngFor="let slot of interview.slots">
+                      <span class="slot-date">{{ slot.date }}</span>
+                      <span class="slot-time">{{ slot.time }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="status-badge status-confirmed">Confirmed</span>
+                </td>
+                <td>
+                  <div style="display: flex; gap: 6px; align-items: center;">
+                    <button (click)="openInterviewStatusModal(interview, 'completed')" 
+                            class="status-action-btn completed-btn"
+                            title="Mark as Completed"
+                            style="padding: 4px 10px; border: 1px solid rgb(24, 45, 23); border-radius: 6px; background: white; color: rgb(24, 45, 23); font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif; white-space: nowrap; min-width: fit-content;">
+                      Completed
+                    </button>
+                    <button (click)="openInterviewStatusModal(interview, 'not_completed')" 
+                            class="status-action-btn not-completed-btn"
+                            title="Mark as Not Completed"
+                            style="padding: 4px 10px; border: 1px solid rgb(24, 45, 23); border-radius: 6px; background: white; color: #6b7280; font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif; white-space: nowrap; min-width: fit-content;">
+                      Not Completed
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPOC Confirmation Modal -->
+  <div *ngIf="showSpocConfirmationModal()" 
+       class="modal-overlay" 
+       (click)="closeSpocConfirmationModal()"
+       style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="modal-card" (click)="$event.stopPropagation()" style="background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--kudzu-primary);">SPOC Confirmation</h3>
+        <button (click)="closeSpocConfirmationModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280;">×</button>
+      </div>
+
+      <div class="modal-body" *ngIf="selectedInterviewForAction">
+        <!-- Question Section -->
+        <div *ngIf="!showRescheduleSlots()" style="margin-bottom: 24px;">
+          <p style="font-size: 16px; font-weight: 500; color: #374151; margin-bottom: 16px;">
+            Is the panel available for the selected slot?
+          </p>
+          <div style="display: flex; gap: 12px;">
+            <button (click)="handleSpocConfirmation('yes')" 
+                    class="btn-primary"
+                    style="flex: 1; padding: 12px 24px; border: 1px solid var(--kudzu-primary, #182D17); border-radius: 8px; background: var(--kudzu-primary, #182D17); color: white; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+              Yes
+            </button>
+            <button (click)="handleSpocConfirmation('no')" 
+                    class="btn-secondary"
+                    style="flex: 1; padding: 12px 24px; border: 1px solid var(--kudzu-primary, #182D17); border-radius: 8px; background: transparent; color: var(--kudzu-primary, #182D17); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+              No
+            </button>
+          </div>
+        </div>
+
+        <!-- Reschedule Slots Section -->
+        <div *ngIf="showRescheduleSlots()">
+          <p style="font-size: 16px; font-weight: 500; color: #374151; margin-bottom: 16px;">
+            Please provide new interview slots:
+          </p>
+          
+          <!-- Round & Slot Selection (matching Submitted tab design) -->
+          <div class="interview-schedule-form">
+            <div class="rounds-container">
+              <div class="round-section" style="margin-bottom: 12px;">
+                <div class="round-header">
+                  <!-- First Row: Round -->
+                  <div class="round-row">
+                    <div class="form-group round-select-group" style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+                      <label style="font-size: 14px; font-weight: 600; color: #374151;">Interview Round</label>
+                      <select class="form-control" [ngModel]="selectedInterviewForAction?.round || ''" disabled style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: #f3f4f6; width: 100%; cursor: not-allowed;">
+                        <option [value]="selectedInterviewForAction?.round || ''">{{ selectedInterviewForAction?.round || 'Select Round' }}</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <!-- Next Row: Slot -->
+                  <div class="slot-row-container">
+                    <div class="form-group slot-select-group" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                      <div class="slot-label-row" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                        <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Slot</label>
+                        <button (click)="addRescheduleSlot()" class="btn-add-slot-inline" title="Add Slot" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: none; background: white; color: var(--kudzu-primary, #182D17); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                          </svg>
+                          Add Slot
+                        </button>
+                      </div>
+                      <div class="slots-container" style="display: flex; flex-direction: column; gap: 10px;">
+                        <div *ngFor="let slot of rescheduleSlots(); let slotIndex = index" class="slot-row" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; padding: 10px; background: white; border-radius: 8px; border: 1px solid var(--kudzu-border, #e5e7eb);">
+                          <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                            <label style="font-size: 13px; font-weight: 500; color: #374151;">Date</label>
+                            <input type="date" [(ngModel)]="slot.date" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                          </div>
+                          <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                            <label style="font-size: 13px; font-weight: 500; color: #374151;">Time</label>
+                            <input type="time" [(ngModel)]="slot.time" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                          </div>
+                          <div class="slot-actions" style="display: flex; align-items: flex-end; justify-content: center; height: 38px; margin-bottom: 0;">
+                            <button *ngIf="rescheduleSlots().length > 1" 
+                                    (click)="removeRescheduleSlot(slotIndex)" 
+                                    class="btn-remove-slot" 
+                                    title="Remove Slot" 
+                                    style="padding: 2px; border: none; background: #dc2626; color: white; border-radius: 3px; cursor: pointer; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 0; font-size: 12px; line-height: 1;">
+                              <span style="font-size: 14px; font-weight: bold;">×</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+            <button (click)="closeSpocConfirmationModal()" 
+                    class="btn-cancel"
+                    style="padding: 10px 20px; border: 1px solid var(--kudzu-border, #d1d5db); background: transparent; color: var(--kudzu-text-secondary, #6b7280); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+              Cancel
+            </button>
+            <button (click)="saveRescheduleFromSpoc()" 
+                    class="btn-save"
+                    style="padding: 10px 20px; border: 1px solid var(--kudzu-primary, #182D17); background: var(--kudzu-primary, #182D17); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interview Status Modal (for Confirmed tab) -->
+  <div *ngIf="showInterviewStatusModal()" 
+       class="modal-overlay" 
+       (click)="closeInterviewStatusModal()"
+       style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 10000;">
+    <div class="modal-card" (click)="$event.stopPropagation()" style="background: white; border-radius: 12px; padding: 16px; max-width: 500px; width: 85%; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: var(--kudzu-primary);">Interview Status</h3>
+        <button (click)="closeInterviewStatusModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280;">×</button>
+      </div>
+
+      <div class="modal-body" *ngIf="selectedConfirmedInterview">
+        <!-- Completed Workflow -->
+        <div *ngIf="interviewStatusAction === 'completed'">
+          <!-- Final/Next Round Question -->
+          <div *ngIf="!showNextRoundSlots()" style="margin-bottom: 16px;">
+            <p style="font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 12px;">
+              Are you going to schedule the next round or is this final?
+            </p>
+            <div style="display: flex; gap: 8px;">
+              <button (click)="handleCompletedAction('final')" 
+                      class="btn-primary"
+                      style="flex: 1; padding: 8px 16px; border: 1px solid var(--kudzu-primary, #182D17); border-radius: 6px; background: var(--kudzu-primary, #182D17); color: white; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Final
+              </button>
+              <button (click)="handleCompletedAction('next_round')" 
+                      class="btn-secondary"
+                      style="flex: 1; padding: 8px 16px; border: 1px solid var(--kudzu-primary, #182D17); border-radius: 6px; background: var(--kudzu-primary-light, rgba(24, 45, 23, 0.1)); color: var(--kudzu-primary, #182D17); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Next Round
+              </button>
+            </div>
+          </div>
+
+          <!-- Next Round Slot Selection -->
+          <div *ngIf="showNextRoundSlots()">
+            <p style="font-size: 16px; font-weight: 500; color: #374151; margin-bottom: 16px;">
+              Schedule Next Round:
+            </p>
+            
+            <!-- Round & Slot Selection (matching Submitted tab design) -->
+            <div class="interview-schedule-form">
+              <div class="rounds-container">
+                <div class="round-section" style="margin-bottom: 12px;">
+                  <div class="round-header">
+                    <!-- First Row: Round -->
+                    <div class="round-row">
+                      <div class="form-group round-select-group" style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+                        <label style="font-size: 14px; font-weight: 600; color: #374151;">Interview Round</label>
+                        <select [(ngModel)]="selectedNextRound" 
+                                style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: white; width: 100%;">
+                          <option value="">Select Round</option>
+                          <option value="R2">R2</option>
+                          <option value="R3">R3</option>
+                          <option value="R4">R4</option>
+                          <option value="R5">R5</option>
+                          <option value="Selected">Selected</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <!-- Next Row: Slot -->
+                    <div class="slot-row-container">
+                      <div class="form-group slot-select-group" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                        <div class="slot-label-row" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                          <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Slot</label>
+                          <button (click)="addNextRoundSlot()" class="btn-add-slot-inline" title="Add Slot" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: none; background: white; color: var(--kudzu-primary, #182D17); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            Add Slot
+                          </button>
+                        </div>
+                        <div class="slots-container" style="display: flex; flex-direction: column; gap: 10px;">
+                          <div *ngFor="let slot of nextRoundSlots(); let slotIndex = index" 
+                               class="slot-row" 
+                               style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; padding: 10px; background: white; border-radius: 8px; border: 1px solid var(--kudzu-border, #e5e7eb);">
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                              <label style="font-size: 13px; font-weight: 500; color: #374151;">Date</label>
+                              <input type="date" [(ngModel)]="slot.date" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                            </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                              <label style="font-size: 13px; font-weight: 500; color: #374151;">Time</label>
+                              <input type="time" [(ngModel)]="slot.time" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                            </div>
+                            <div class="slot-actions" style="display: flex; align-items: flex-end; justify-content: center; height: 38px; margin-bottom: 0;">
+                              <button *ngIf="nextRoundSlots().length > 1" 
+                                      (click)="removeNextRoundSlot(slotIndex)" 
+                                      class="btn-remove-slot" 
+                                      title="Remove Slot" 
+                                      style="padding: 2px; border: none; background: #dc2626; color: white; border-radius: 3px; cursor: pointer; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 0; font-size: 12px; line-height: 1;">
+                                <span style="font-size: 14px; font-weight: bold;">×</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+              <button (click)="closeInterviewStatusModal()" 
+                      class="btn-cancel"
+                      style="padding: 10px 20px; border: 1px solid var(--kudzu-border, #d1d5db); background: transparent; color: var(--kudzu-text-secondary, #6b7280); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Cancel
+              </button>
+              <button (click)="saveNextRound()" 
+                      class="btn-save"
+                      style="padding: 10px 20px; border: 1px solid var(--kudzu-primary, #182D17); background: var(--kudzu-primary, #182D17); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Not Completed Workflow -->
+        <div *ngIf="interviewStatusAction === 'not_completed'">
+          <!-- Reschedule Question -->
+          <div *ngIf="!showRescheduleSlots()" style="margin-bottom: 16px;">
+            <p style="font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 12px;">
+              Do you want to reschedule the interview?
+            </p>
+            <div style="display: flex; gap: 8px;">
+              <button (click)="handleNotCompletedAction('yes')" 
+                      class="btn-primary"
+                      style="flex: 1; padding: 8px 16px; border: 1px solid var(--kudzu-primary, #182D17); border-radius: 6px; background: var(--kudzu-primary, #182D17); color: white; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Yes
+              </button>
+              <button (click)="handleNotCompletedAction('no')" 
+                      class="btn-secondary"
+                      style="flex: 1; padding: 8px 16px; border: 1px solid var(--kudzu-primary, #182D17); border-radius: 6px; background: transparent; color: var(--kudzu-primary, #182D17); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                No
+              </button>
+            </div>
+          </div>
+
+          <!-- Reschedule Slots Section -->
+          <div *ngIf="showRescheduleSlots()">
+            <p style="font-size: 16px; font-weight: 500; color: #374151; margin-bottom: 16px;">
+              Please provide new interview slots:
+            </p>
+            
+            <!-- Round & Slot Selection (matching Submitted tab design) -->
+            <div class="interview-schedule-form">
+              <div class="rounds-container">
+                <div class="round-section" style="margin-bottom: 12px;">
+                  <div class="round-header">
+                    <!-- First Row: Round -->
+                    <div class="round-row">
+                      <div class="form-group round-select-group" style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+                        <label style="font-size: 14px; font-weight: 600; color: #374151;">Interview Round</label>
+                        <select class="form-control" [ngModel]="selectedConfirmedInterview?.round || ''" disabled style="padding: 10px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; background: #f3f4f6; width: 100%; cursor: not-allowed;">
+                          <option [value]="selectedConfirmedInterview?.round || ''">{{ selectedConfirmedInterview?.round || 'Select Round' }}</option>
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <!-- Next Row: Slot -->
+                    <div class="slot-row-container">
+                      <div class="form-group slot-select-group" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                        <div class="slot-label-row" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+                          <label style="font-size: 14px; font-weight: 600; color: #374151; margin: 0;">Slot</label>
+                          <button (click)="addRescheduleSlot()" class="btn-add-slot-inline" title="Add Slot" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: none; background: white; color: var(--kudzu-primary, #182D17); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                            </svg>
+                            Add Slot
+                          </button>
+                        </div>
+                        <div class="slots-container" style="display: flex; flex-direction: column; gap: 10px;">
+                          <div *ngFor="let slot of rescheduleSlots(); let slotIndex = index" 
+                               class="slot-row" 
+                               style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; padding: 10px; background: white; border-radius: 8px; border: 1px solid var(--kudzu-border, #e5e7eb);">
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                              <label style="font-size: 13px; font-weight: 500; color: #374151;">Date</label>
+                              <input type="date" [(ngModel)]="slot.date" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                            </div>
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                              <label style="font-size: 13px; font-weight: 500; color: #374151;">Time</label>
+                              <input type="time" [(ngModel)]="slot.time" required style="padding: 8px 12px; border: 1px solid var(--kudzu-border, #d1d5db); border-radius: 6px; font-size: 14px; height: 38px;" />
+                            </div>
+                            <div class="slot-actions" style="display: flex; align-items: flex-end; justify-content: center; height: 38px; margin-bottom: 0;">
+                              <button *ngIf="rescheduleSlots().length > 1" 
+                                      (click)="removeRescheduleSlot(slotIndex)" 
+                                      class="btn-remove-slot" 
+                                      title="Remove Slot" 
+                                      style="padding: 2px; border: none; background: #dc2626; color: white; border-radius: 3px; cursor: pointer; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; margin-bottom: 0; font-size: 12px; line-height: 1;">
+                                <span style="font-size: 14px; font-weight: bold;">×</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+              <button (click)="closeInterviewStatusModal()" 
+                      class="btn-cancel"
+                      style="padding: 10px 20px; border: 1px solid var(--kudzu-border, #d1d5db); background: transparent; color: var(--kudzu-text-secondary, #6b7280); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Cancel
+              </button>
+              <button (click)="saveRescheduleFromConfirmed()" 
+                      class="btn-save"
+                      style="padding: 10px 20px; border: 1px solid var(--kudzu-primary, #182D17); background: var(--kudzu-primary, #182D17); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; font-family: 'Manrope', 'Manrope Placeholder', sans-serif;">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+

@@ -311,8 +311,16 @@
 
 .form-control:focus {
   outline: none;
-  border-color: var(--kudzu-primary, #182D17);
-  box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1);
+  border-color: var(--kudzu-primary, #182D17) !important;
+  box-shadow: 0 0 0 3px var(--kudzu-primary-light, rgba(24, 45, 23, 0.1)) !important;
+}
+
+.form-control {
+  border-color: var(--kudzu-border, #d1d5db) !important;
+}
+
+.form-control:hover {
+  border-color: var(--kudzu-primary, #182D17) !important;
 }
 
 .form-control select {
@@ -339,23 +347,42 @@
 }
 
 .btn-save {
-  background: var(--kudzu-primary, #182D17);
-  color: #FFFFFF;
+  background: var(--kudzu-primary, #182D17) !important;
+  color: #FFFFFF !important;
+  border: 1px solid var(--kudzu-primary, #182D17) !important;
+  padding: 10px 20px !important;
+  border-radius: 6px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
 }
 
-.btn-save:hover {
-  background: var(--kudzu-primary-dark, #0f1a0f);
+.btn-save:hover:not(:disabled) {
+  background: var(--kudzu-primary-dark, #0f1a0f) !important;
+  border-color: var(--kudzu-primary-dark, #0f1a0f) !important;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(24, 45, 23, 0.2);
+  box-shadow: 0 4px 12px var(--kudzu-shadow, rgba(24, 45, 23, 0.2)) !important;
 }
 
 .btn-cancel {
-  background: #e5e7eb;
-  color: #374151;
+  background: transparent !important;
+  color: var(--kudzu-text-secondary, #6b7280) !important;
+  border: 1px solid var(--kudzu-border, #d1d5db) !important;
+  padding: 10px 20px !important;
+  border-radius: 6px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
 }
 
 .btn-cancel:hover {
-  background: #d1d5db;
+  background: var(--kudzu-bg-light, #f8fafc) !important;
+  color: var(--kudzu-primary, #182D17) !important;
+  border-color: var(--kudzu-primary, #182D17) !important;
   transform: translateY(-1px);
 }
 
@@ -366,4 +393,287 @@
   background: rgba(255, 255, 255, 0.6);
   display: flex;
   justify-content: flex-end;
+}
+
+/* Schedule Interview Modal Styles */
+.schedule-interview-modal {
+  max-width: 700px;
+  width: 90%;
+  z-index: 10002 !important;
+  position: relative;
+}
+
+.candidate-info-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-item label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-item span {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 500;
+}
+
+.interview-schedule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.slot-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid var(--kudzu-border, #e5e7eb);
+}
+
+.slot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-remove-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: #dc2626;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-remove-slot:hover {
+  background: #b91c1c;
+  transform: scale(1.05);
+}
+
+.btn-add-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 2px dashed var(--kudzu-primary, #182D17);
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+.btn-add-slot:hover {
+  border-color: var(--kudzu-primary, #182D17);
+  background: var(--kudzu-primary, #182D17);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .slot-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .round-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .round-select-group,
+  .slot-select-group {
+    width: 100%;
+    min-width: 100%;
+  }
+}
+
+/* Round-based Interview Schedule Styles */
+.rounds-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.round-section {
+  padding: 20px;
+  background: var(--kudzu-bg-light, #f9fafb);
+  border-radius: 12px;
+  border: 2px solid var(--kudzu-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.round-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--kudzu-border, #e5e7eb);
+}
+
+.round-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.round-select-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.slot-row-container {
+  width: 100%;
+}
+
+.slot-select-group {
+  width: 100%;
+}
+
+.slot-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.slot-label-row label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.btn-add-slot-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+.btn-add-slot-inline:hover {
+  background: var(--kudzu-primary-light, rgba(24, 45, 23, 0.1));
+  color: var(--kudzu-primary, #182D17);
+  transform: translateY(-1px);
+}
+
+.slot-select-group .slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.round-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-remove-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: #dc2626;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-remove-round:hover {
+  background: #b91c1c;
+  transform: scale(1.05);
+}
+
+.btn-add-round {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 2px dashed var(--kudzu-primary, #182D17);
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+  align-self: flex-start;
+}
+
+.btn-add-round:hover {
+  background: var(--kudzu-primary, #182D17);
+  color: white;
+  border-color: var(--kudzu-primary, #182D17);
+}
+
+/* Ensure Schedule Interview button is clickable */
+.btn-schedule-interview {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 10;
+}
+
+.btn-schedule-interview:disabled {
+  pointer-events: none;
+  opacity: 0.5;
 }

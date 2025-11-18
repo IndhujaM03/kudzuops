@@ -1,0 +1,365 @@
+.interview-page {
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+/* Chrome-style tabs with Kudzu theme */
+.chrome-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(24, 45, 23, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 6px rgba(24, 45, 23, 0.1);
+  margin-top: 20px;
+}
+
+.chrome-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  padding: 12px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  position: relative;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+.chrome-tab:hover {
+  background: rgba(24, 45, 23, 0.05);
+  color: var(--kudzu-primary);
+}
+
+.chrome-tab.active {
+  background: var(--kudzu-primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(24, 45, 23, 0.2);
+}
+
+.chrome-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: white;
+  border-radius: 2px;
+}
+
+/* Interview card styles */
+.interview-page .bg-white {
+  transition: all 0.2s ease;
+}
+
+.interview-page .bg-white:hover {
+  box-shadow: 0 4px 12px rgba(24, 45, 23, 0.1);
+}
+
+/* Interview Table Styles - Using glassy-table theme from demand_sheet */
+.interview-page .table-wrapper { 
+  width: 100%; 
+  overflow: auto; 
+}
+
+.interview-page .glass-table,
+.interview-page .glassy-table { 
+  width: 100% !important; 
+  border-collapse: separate; 
+  border-spacing: 0; 
+  background: white !important; 
+  border: 1px solid #e2e8f0; 
+  border-radius: 14px; 
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08); 
+}
+
+.interview-page .glass-table thead th,
+.interview-page .glassy-table thead th { 
+  text-align: left; 
+  font-weight: 600; 
+  color: #0f172a; 
+  padding: 12px 14px; 
+  /* background: #f9fafb !important;  */
+  position: sticky; 
+  top: 0; 
+  z-index: 1; 
+  border-bottom: 1px solid #eef2f7;
+}
+
+/* .interview-page .glass-table tbody tr,
+.interview-page .glassy-table tbody tr {
+  background: #ffffff !important;
+} */
+
+.interview-page .glass-table tbody td,
+.interview-page .glassy-table tbody td { 
+  padding: 12px 14px; 
+  border-top: 1px solid #eef2f7; 
+  color: #111827; 
+  vertical-align: middle;
+  background: white !important;
+}
+
+/* .interview-page .glass-table tbody tr:hover td,
+.interview-page .glassy-table tbody tr:hover td { 
+  background: #f9fafb !important; 
+} */
+
+.interview-page .glass-table tbody tr:last-child td,
+.interview-page .glassy-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Slot Info Styles */
+.slot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slot-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border-left: 3px solid var(--kudzu-primary);
+}
+
+.slot-item:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+.slot-date {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.slot-time {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Selected Slot Info Styles for SPOC Communication */
+.selected-slot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.selected-slot-info .slot-date {
+  font-weight: 600;
+  color: #1e40af;
+  font-size: 14px;
+}
+
+.selected-slot-info .slot-time {
+  font-size: 13px;
+  color: #3b82f6;
+}
+
+/* Status Badge Styles */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-waiting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-selected {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-confirmed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+/* Action Icon Button */
+.action-icon-btn {
+  transition: all 0.2s;
+}
+
+.action-icon-btn:hover {
+  background: rgba(24, 45, 23, 0.1) !important;
+  transform: scale(1.1);
+}
+
+.interview-table td {
+    padding: 12px 16px;
+    color: #1f2937;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    background-color: white;
+  }
+
+/* Responsive grid */
+@media (max-width: 768px) {
+  .interview-page .grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .interview-table {
+    font-size: 12px;
+    background-color: white;
+
+  }
+  
+  .interview-table th,
+  .interview-table td {
+    padding: 8px 12px;
+    background-color: white;
+  }
+}
+
+/* Interview Status buttons */
+.status-action-btn {
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.status-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.completed-btn:hover {
+  background: rgba(24, 45, 23, 0.1) !important;
+  border-color: rgb(24, 45, 23) !important;
+  color: rgb(24, 45, 23) !important;
+}
+
+.not-completed-btn:hover {
+  background: rgba(24, 45, 23, 0.1) !important;
+  border-color: rgb(24, 45, 23) !important;
+  color: rgb(24, 45, 23) !important;
+}
+
+/* Refresh Button Styles */
+.btn-refresh:hover {
+  background: var(--kudzu-primary-dark, #0f1a0f) !important;
+  border-color: var(--kudzu-primary-dark, #0f1a0f) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--kudzu-shadow, rgba(24, 45, 23, 0.2)) !important;
+}
+
+/* Import styles for round-section, slot-label-row, etc. from view-demand component */
+.interview-schedule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rounds-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.round-section {
+  padding: 20px;
+  background: var(--kudzu-bg-light, #f9fafb);
+  border-radius: 12px;
+  border: 2px solid var(--kudzu-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.round-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--kudzu-border, #e5e7eb);
+}
+
+.round-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.round-select-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.slot-row-container {
+  width: 100%;
+}
+
+.slot-select-group {
+  width: 100%;
+}
+
+.slot-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.slot-label-row label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.btn-add-slot-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+.btn-add-slot-inline:hover {
+  background: var(--kudzu-primary-light, rgba(24, 45, 23, 0.1));
+  color: var(--kudzu-primary, #182D17);
+  transform: translateY(-1px);
+}
+
+.slot-select-group .slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
