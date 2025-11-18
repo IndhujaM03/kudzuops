@@ -1987,6 +1987,125 @@ def activity_update_cv_list(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to update cv_list: {e}")
 
 
+@router.post("/activity/update-interview-status")
+def update_interview_status(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Update interview_status in cv_list for a specific candidate.
+    Expected payload: { activity_id (or recruiter_id + demand_id), candidate_email (or candidate_name), interview_status }
+    """
+    activity_id = int(payload.get("activity_id") or 0)
+    recruiter_id = int(payload.get("recruiter_id") or 0)
+    demand_id = int(payload.get("demand_id") or 0)
+    candidate_email = payload.get("candidate_email") or None
+    candidate_name = payload.get("candidate_name") or None
+    interview_status = payload.get("interview_status") or "scheduled"
+    
+    if not candidate_email and not candidate_name:
+        raise HTTPException(status_code=400, detail="candidate_email or candidate_name is required")
+    
+    _ensure_tables()
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # If activity_id is not provided, try to find it from recruiter_id and demand_id
+                if not activity_id and recruiter_id and demand_id:
+                    cur.execute(
+                        "SELECT id FROM tbl_recruiter_activity WHERE recruiter_id = %s AND demand_id = %s ORDER BY id DESC LIMIT 1",
+                        (recruiter_id, demand_id)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        activity_id = row[0]
+                    else:
+                        raise HTTPException(status_code=404, detail="Activity not found for given recruiter_id and demand_id")
+                
+                if not activity_id:
+                    raise HTTPException(status_code=400, detail="activity_id is required (or provide recruiter_id and demand_id)")
+                
+                # Get current cv_list
+                cur.execute(
+                    "SELECT cv_list FROM tbl_recruiter_activity WHERE id = %s",
+                    (activity_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                cv_list_raw = row[0]
+                try:
+                    cv_list = cv_list_raw if isinstance(cv_list_raw, list) else json.loads(cv_list_raw or "[]")
+                except Exception:
+                    cv_list = []
+                
+                print(f"DEBUG: Looking for candidate - email: {candidate_email}, name: {candidate_name}")
+                print(f"DEBUG: cv_list has {len(cv_list)} entries")
+                
+                # Find and update the matching CV entry
+                updated = False
+                for idx, cv_entry in enumerate(cv_list):
+                    if isinstance(cv_entry, dict):
+                        # Try multiple field name variations
+                        cv_email = (cv_entry.get("candidate_email") or 
+                                   cv_entry.get("email") or 
+                                   cv_entry.get("candidate_email"))
+                        cv_name = (cv_entry.get("candidate_name") or 
+                                  cv_entry.get("name") or 
+                                  cv_entry.get("candidate_name"))
+                        
+                        # Normalize for comparison
+                        candidate_email_lower = (candidate_email or "").lower().strip()
+                        candidate_name_lower = (candidate_name or "").lower().strip()
+                        cv_email_lower = (cv_email or "").lower().strip()
+                        cv_name_lower = (cv_name or "").lower().strip()
+                        
+                        # Match by email (exact match, case-insensitive)
+                        email_match = False
+                        if candidate_email_lower and cv_email_lower:
+                            email_match = candidate_email_lower == cv_email_lower
+                        
+                        # Match by name (exact or partial match, case-insensitive)
+                        name_match = False
+                        if candidate_name_lower and cv_name_lower:
+                            # Try exact match first
+                            name_match = (candidate_name_lower == cv_name_lower) or \
+                                        (candidate_name_lower in cv_name_lower) or \
+                                        (cv_name_lower in candidate_name_lower)
+                        
+                        print(f"DEBUG: Entry {idx} - cv_email: {cv_email}, cv_name: {cv_name}")
+                        print(f"DEBUG: Entry {idx} - email_match: {email_match}, name_match: {name_match}")
+                        
+                        if email_match or name_match:
+                            cv_entry["interview_status"] = interview_status
+                            updated = True
+                            print(f"SUCCESS: Updated interview_status for candidate: email={cv_email}, name={cv_name}")
+                            break
+                
+                if not updated:
+                    print(f"ERROR: Candidate not found in cv_list. Searched for email={candidate_email}, name={candidate_name}")
+                    print(f"DEBUG: Available entries in cv_list:")
+                    for idx, cv_entry in enumerate(cv_list):
+                        if isinstance(cv_entry, dict):
+                            print(f"  Entry {idx}: email={cv_entry.get('email') or cv_entry.get('candidate_email')}, name={cv_entry.get('name') or cv_entry.get('candidate_name')}")
+                    raise HTTPException(status_code=404, detail=f"Candidate not found in cv_list. Searched for email={candidate_email}, name={candidate_name}")
+                
+                # Update the cv_list
+                cur.execute(
+                    "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at = NOW() WHERE id = %s",
+                    (json.dumps(cv_list), activity_id)
+                )
+                conn.commit()
+                
+                return {
+                    "message": "Interview status updated successfully",
+                    "activity_id": activity_id,
+                    "interview_status": interview_status
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update interview status: {e}")
+
+
 # New: Unified resumes endpoint (GET list from local folder, POST to upsert details)
 @router.get("/{recruiter_id}/{demand_id}/resumes")
 def list_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:

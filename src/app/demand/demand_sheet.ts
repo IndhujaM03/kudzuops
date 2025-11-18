@@ -90,11 +90,12 @@ export class DemandSheetComponent implements OnInit {
   selectedAssignedToIds: Set<number> = new Set<number>();
 
   // Tabs state
-  activeTab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' = 'unassigned';
+  activeTab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' | 'reschedule' = 'unassigned';
   unassigned = signal<any[]>([]);
   assigned = signal<any[]>([]);
   cvReceived = signal<any[]>([]);
   submitted = signal<any[]>([]);
+  reschedule = signal<any[]>([]);
   assignInput: Record<number, number> = {};
 
   // Assigned tab search
@@ -117,6 +118,9 @@ export class DemandSheetComponent implements OnInit {
 
   // CV Received count
   cvReceivedCount = computed(() => this.cvReceived().length);
+  
+  // Reschedule visibility - computed based on whether there are any reschedule records
+  hasRescheduleRecords = computed(() => this.reschedule().length > 0);
 
   // Status edit modal state
   showStatusModal = signal(false);
@@ -136,12 +140,24 @@ export class DemandSheetComponent implements OnInit {
   profileSelections = signal<Map<number, boolean>>(new Map()); // Map of profile index to selected (true = accept, false = reject)
   profileRemarks = signal<Map<number, string>>(new Map()); // Map of profile index to remark text
 
+  // Schedule Interview Modal state
+  showScheduleInterviewModal = signal(false);
+  selectedCandidateForSchedule: any = null;
+  // Structure: { round: string, slots: Array<{date: string, time: string, slot_status: number}> }
+  interviewRounds = signal<Array<{round: string, slots: Array<{date: string, time: string, slot_status: number}>}>>([]);
+  // Reschedule specific state
+  isRescheduleMode = signal(false);
+  rescheduleScheduleId: number | null = null;
+  rescheduleRoundKey: string | null = null;
+
   ngOnInit(): void {
     console.log('🔧 API Base URL:', this.apiBase);
     this.fetchClients();
     this.loadUnassigned();
     this.fetchTeamLeads();
     this.fetchAssignedToRecruiters();
+    // Load reschedule data to check if tab should be visible
+    this.loadReschedule();
     
     // Subscribe to modal service for opening create demand modal
     this.modalService.openCreateDemand$.subscribe(shouldOpen => {
@@ -278,12 +294,18 @@ export class DemandSheetComponent implements OnInit {
       });
   }
 
-  setTab(tab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted') {
+  setTab(tab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' | 'reschedule') {
     this.activeTab = tab;
     if (tab === 'unassigned') this.loadUnassigned();
     if (tab === 'assigned') this.loadAssigned();
     if (tab === 'cv_received') this.loadCvReceived();
     if (tab === 'submitted') this.loadSubmitted();
+    if (tab === 'reschedule') {
+      // Only load if tab is visible (has records)
+      if (this.hasRescheduleRecords()) {
+        this.loadReschedule();
+      }
+    }
   }
 
   loadUnassigned(): void {
@@ -411,36 +433,40 @@ export class DemandSheetComponent implements OnInit {
           const demandId = activity.demand_id;
           if (!demandId) return;
           
-          // Count submitted profiles (status = 1)
+          // Count submitted profiles (status = 1) and filter out those with interview_status = "scheduled"
           let submittedCount = 0;
           if (Array.isArray(activity.cv_list)) {
-            submittedCount = activity.cv_list.filter((cv: any) => 
-              cv.status === 1 || cv.status === "1"
-            ).length;
-          }
-          
-          if (submittedCount > 0) {
-            if (!demandMap.has(demandId)) {
-              demandMap.set(demandId, {
-                demand_id: demandId,
-                client_name: activity.client_name,
-                spoc_name: activity.spoc_name,
-                skill: activity.skill,
-                cv_count: 0,
-                // Store all activities for this demand for modal display
-                activities: []
+            const submittedCvs = activity.cv_list.filter((cv: any) => {
+              const status = cv.status;
+              const isSubmitted = status === 1 || status === "1";
+              const interviewStatus = cv.interview_status;
+              const isNotScheduled = !interviewStatus || interviewStatus !== "scheduled";
+              return isSubmitted && isNotScheduled;
+            });
+            submittedCount = submittedCvs.length;
+            
+            // Only add to demand map if there are submitted CVs without interview_status = "scheduled"
+            if (submittedCount > 0) {
+              if (!demandMap.has(demandId)) {
+                demandMap.set(demandId, {
+                  demand_id: demandId,
+                  client_name: activity.client_name,
+                  spoc_name: activity.spoc_name,
+                  skill: activity.skill,
+                  cv_count: 0,
+                  // Store all activities for this demand for modal display
+                  activities: []
+                });
+              }
+              
+              const demandData = demandMap.get(demandId);
+              demandData.cv_count += submittedCount;
+              // Store activity for modal (with approved CVs only, excluding scheduled ones)
+              demandData.activities.push({
+                ...activity,
+                submitted_cvs: submittedCvs
               });
             }
-            
-            const demandData = demandMap.get(demandId);
-            demandData.cv_count += submittedCount;
-            // Store activity for modal (with approved CVs only)
-            demandData.activities.push({
-              ...activity,
-              submitted_cvs: activity.cv_list?.filter((cv: any) => 
-                cv.status === 1 || cv.status === "1"
-              ) || []
-            });
           }
         });
         
@@ -449,6 +475,67 @@ export class DemandSheetComponent implements OnInit {
         this.submitted.set(groupedData);
       },
       error: () => this.submitted.set([]),
+    });
+  }
+
+  loadReschedule(): void {
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    this.http.get<{ items: any[], total: number }>(`${this.apiBase}/interview-schedule/all`, { headers }).subscribe({
+      next: (response) => {
+        const schedules = response.items || [];
+        
+        // Filter schedules where status = "reschedule"
+        const rescheduleSchedules = schedules.filter(schedule => schedule.status === 'reschedule');
+        
+        // Process each schedule to extract rounds with round_status = 1
+        const rescheduleData: any[] = [];
+        
+        rescheduleSchedules.forEach(schedule => {
+          const interviewSchedules = schedule.interview_schedules || {};
+          
+          // Parse if string
+          let parsedSchedules = interviewSchedules;
+          if (typeof interviewSchedules === 'string') {
+            try {
+              parsedSchedules = JSON.parse(interviewSchedules);
+            } catch (e) {
+              console.error('Failed to parse interview_schedules:', e);
+              return;
+            }
+          }
+          
+          // Check each round for round_status = 1
+          Object.keys(parsedSchedules).forEach(roundKey => {
+            const roundData = parsedSchedules[roundKey];
+            if (roundData && roundData.round_status === 1) {
+              // Add to reschedule list
+              rescheduleData.push({
+                schedule_id: schedule.id,
+                demand_id: schedule.demand_id,
+                recruiter_id: schedule.recruiter_id,
+                recruiter_name: schedule.recruiter_name || `Recruiter ${schedule.recruiter_id}`,
+                candidate_name: schedule.candidate_name,
+                candidate_email: schedule.candidate_email,
+                candidate_phone: schedule.candidate_phone,
+                round: roundKey,
+                round_data: roundData,
+                interview_schedules: parsedSchedules
+              });
+            }
+          });
+        });
+        
+        this.reschedule.set(rescheduleData);
+      },
+      error: (error) => {
+        console.error('Failed to load reschedule data:', error);
+        this.reschedule.set([]);
+      }
     });
   }
 
@@ -1574,6 +1661,574 @@ export class DemandSheetComponent implements OnInit {
     if (cvUrl) {
       window.open(cvUrl, '_blank');
     }
+  }
+
+  // Schedule Interview Modal functions
+  handleScheduleInterviewClick(event: Event, profile: any): void {
+    event.stopPropagation();
+    event.preventDefault();
+    console.log('Button clicked! Profile:', profile);
+    this.openScheduleInterviewForSubmittedProfile(profile);
+  }
+
+  openScheduleInterviewForSubmittedProfile(profile: any): void {
+    console.log('Opening schedule interview modal for profile:', profile);
+    
+    // Set candidate data first - handle various field name variations
+    // Ensure activity_id is preserved from profile
+    this.selectedCandidateForSchedule = {
+      ...profile,
+      demand_id: profile.demand_id || this.selectedSubmittedDemand?.demand_id,
+      recruiter_id: profile.recruiter_id || this.selectedSubmittedDemand?.recruiter_id,
+      candidate_name: profile.candidate_name || profile.name || profile.profile_name || profile.candidate_name || profile.email?.split('@')[0] || 'Unknown',
+      candidate_email: profile.email || profile.candidate_email || profile.candidate_email || null,
+      candidate_phone: profile.phone || profile.candidate_phone || profile.candidate_phone || null,
+      recruiter_name: profile.recruiter_name || profile.recruiter_email || null,
+      recruiter_email: profile.recruiter_email || null,
+      cv_url: profile.cv_url || null,
+      activity_id: profile.activity_id || profile.id || null // Preserve activity_id
+    };
+    
+    console.log('Profile data received:', profile);
+    console.log('Mapped candidate data:', this.selectedCandidateForSchedule);
+    
+    // Initialize with one empty round (only one round allowed)
+    this.interviewRounds.set([{round: '', slots: [{date: '', time: '', slot_status: 0}]}]);
+    
+    // Force close the submitted profiles modal immediately
+    this.showSubmittedProfilesModal.set(false);
+    this.showSubmittedProfilesModalProperty = false;
+    this.selectedSubmittedDemand = null;
+    
+    // Open schedule interview modal immediately
+    this.showScheduleInterviewModal.set(true);
+    // Force change detection to ensure modal and data are rendered
+    this.cdr.detectChanges();
+    // Additional change detection after a microtask to ensure all bindings are updated
+    setTimeout(() => {
+      this.cdr.detectChanges();
+    }, 0);
+    
+    console.log('Schedule interview modal state set to:', this.showScheduleInterviewModal());
+    console.log('Selected candidate:', this.selectedCandidateForSchedule);
+    console.log('Interview rounds:', this.interviewRounds());
+    
+    // Verify modal element exists after a short delay
+    setTimeout(() => {
+      const modalElement = document.getElementById('schedule-interview-modal-overlay');
+      const modalByClass = document.querySelector('.schedule-interview-modal-overlay');
+      console.log('Modal element by ID:', modalElement);
+      console.log('Modal element by class:', modalByClass);
+      console.log('Signal value:', this.showScheduleInterviewModal());
+      
+      if (modalElement) {
+        const styles = window.getComputedStyle(modalElement);
+        console.log('Modal element found! Display:', styles.display);
+        console.log('Modal element visibility:', styles.visibility);
+        console.log('Modal element z-index:', styles.zIndex);
+        // Force show the modal if it exists but is hidden
+        if (styles.display === 'none' || styles.visibility === 'hidden') {
+          (modalElement as HTMLElement).style.display = 'flex';
+          (modalElement as HTMLElement).style.visibility = 'visible';
+          console.log('Forced modal to be visible');
+        }
+      } else {
+        console.error('Modal element NOT found in DOM!');
+        // Try to find the component's root element
+        const componentRoot = document.querySelector('app-demand-sheet');
+        console.log('Component root element:', componentRoot);
+        if (componentRoot) {
+          console.log('All children of component root:', Array.from(componentRoot.children));
+          // Search for the modal in all descendants
+          const allModals = componentRoot.querySelectorAll('.schedule-interview-modal-overlay');
+          console.log('Found schedule interview modals:', allModals);
+        }
+      }
+    }, 50);
+  }
+
+  closeScheduleInterviewModal(): void {
+    console.log('Closing schedule interview modal');
+    this.showScheduleInterviewModal.set(false);
+    this.selectedCandidateForSchedule = null;
+    this.interviewRounds.set([]);
+    // Reset reschedule mode
+    this.isRescheduleMode.set(false);
+    this.rescheduleScheduleId = null;
+    this.rescheduleRoundKey = null;
+    
+    // Force change detection to ensure modal closes
+    this.cdr.detectChanges();
+    
+    // Also force hide via DOM manipulation as backup
+    setTimeout(() => {
+      const modalElement = document.getElementById('schedule-interview-modal-overlay');
+      if (modalElement) {
+        (modalElement as HTMLElement).style.display = 'none';
+        (modalElement as HTMLElement).style.visibility = 'hidden';
+        (modalElement as HTMLElement).style.opacity = '0';
+        (modalElement as HTMLElement).style.pointerEvents = 'none';
+        (modalElement as HTMLElement).setAttribute('hidden', '');
+      }
+      this.cdr.detectChanges();
+    }, 0);
+    
+    console.log('Modal state after close:', this.showScheduleInterviewModal());
+  }
+
+  addInterviewRound(): void {
+    const currentRounds = this.interviewRounds();
+    this.interviewRounds.set([...currentRounds, {round: '', slots: [{date: '', time: '', slot_status: 0}]}]);
+  }
+
+  removeInterviewRound(roundIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    if (currentRounds.length > 1) {
+      const newRounds = currentRounds.filter((_, i) => i !== roundIndex);
+      this.interviewRounds.set(newRounds);
+    }
+  }
+
+  addSlotToRound(roundIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    const updatedRounds = [...currentRounds];
+    updatedRounds[roundIndex].slots.push({date: '', time: '', slot_status: 0});
+    this.interviewRounds.set(updatedRounds);
+  }
+
+  removeSlotFromRound(roundIndex: number, slotIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    const updatedRounds = [...currentRounds];
+    if (updatedRounds[roundIndex].slots.length > 1) {
+      updatedRounds[roundIndex].slots = updatedRounds[roundIndex].slots.filter((_, i) => i !== slotIndex);
+      this.interviewRounds.set(updatedRounds);
+    }
+  }
+
+  saveInterviewSchedule(): void {
+    if (!this.selectedCandidateForSchedule) {
+      this.toastService.error('No candidate selected');
+      return;
+    }
+
+    const rounds = this.interviewRounds();
+    
+    // Filter out rounds without a round name and validate slots
+    const validRounds = rounds.filter(roundData => {
+      if (!roundData.round || roundData.round.trim() === '') return false;
+      // Filter out empty slots (slots without date or time)
+      roundData.slots = roundData.slots.filter(slot => slot.date && slot.time);
+      return roundData.slots.length > 0;
+    });
+    
+    if (validRounds.length === 0) {
+      this.toastService.error('Please fill in at least one interview round with date and time slots');
+      return;
+    }
+
+    // Format time to 12-hour format with AM/PM
+    const formatTime = (time24: string): string => {
+      if (!time24) return '';
+      const [hours, minutes] = time24.split(':');
+      const hour = parseInt(hours, 10);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minutes || '00'} ${ampm}`;
+    };
+
+    // Build JSON structure organized by round keys
+    const scheduleJson: any = {};
+    
+    validRounds.forEach(roundData => {
+      const roundKey = roundData.round;
+      scheduleJson[roundKey] = {
+        round_status: 0, // Default to 0
+        slots: roundData.slots.map(slot => ({
+          date: slot.date,
+          time: formatTime(slot.time),
+          slot_status: slot.slot_status || 0
+        }))
+      };
+    });
+
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const payload = {
+      submission_id: null,
+      recruiter_id: this.selectedCandidateForSchedule.recruiter_id,
+      candidate_name: this.selectedCandidateForSchedule.candidate_name,
+      demand_id: this.selectedCandidateForSchedule.demand_id || this.selectedSubmittedDemand?.demand_id,
+      candidate_email: this.selectedCandidateForSchedule.candidate_email || null,
+      candidate_phone: this.selectedCandidateForSchedule.candidate_phone || null,
+      interview_schedules: JSON.stringify(scheduleJson) // Store JSON in interview_schedules column
+    };
+
+    this.http.post(`${this.apiBase}/interview-schedule/multiple-slots`, payload, { headers }).subscribe({
+      next: (response: any) => {
+        this.toastService.success('Interview schedule saved successfully for ' + this.selectedCandidateForSchedule.candidate_name);
+        
+        // Store candidate info before closing modal
+        // Handle multiple field name variations
+        const candidateEmail = this.selectedCandidateForSchedule.candidate_email || 
+                               this.selectedCandidateForSchedule.email || 
+                               this.selectedCandidateForSchedule.candidate_email;
+        const candidateName = this.selectedCandidateForSchedule.candidate_name || 
+                              this.selectedCandidateForSchedule.name ||
+                              this.selectedCandidateForSchedule.profile_name;
+        const demandId = this.selectedCandidateForSchedule.demand_id || this.selectedSubmittedDemand?.demand_id;
+        const recruiterId = this.selectedCandidateForSchedule.recruiter_id;
+        const activityId = this.selectedCandidateForSchedule.activity_id;
+        
+        console.log('Updating interview status:', {
+          candidateEmail,
+          candidateName,
+          demandId,
+          recruiterId,
+          activityId,
+          selectedCandidate: this.selectedCandidateForSchedule
+        });
+        
+        // Update interview_status in cv_list
+        // Try to update using activity_id first, or find activity by recruiter_id and demand_id
+        if ((candidateEmail || candidateName) && (activityId || (recruiterId && demandId))) {
+          const updatePayload: any = {
+            interview_status: 'scheduled'
+          };
+          
+          // Add candidate identifiers
+          if (candidateEmail) {
+            updatePayload.candidate_email = candidateEmail;
+          }
+          if (candidateName) {
+            updatePayload.candidate_name = candidateName;
+          }
+          
+          // Add activity identifier
+          if (activityId) {
+            updatePayload.activity_id = activityId;
+          } else if (recruiterId && demandId) {
+            updatePayload.recruiter_id = recruiterId;
+            updatePayload.demand_id = demandId;
+          }
+          
+          console.log('Sending update payload:', updatePayload);
+          
+          this.http.post(`${this.apiBase}/recruiter/activity/update-interview-status`, updatePayload, { headers }).subscribe({
+            next: (response) => {
+              console.log('Interview status updated successfully:', response);
+              // Reload submitted data to reflect the change
+              setTimeout(() => {
+                this.loadSubmitted();
+              }, 100);
+            },
+            error: (error) => {
+              console.error('Failed to update interview status in cv_list:', error);
+              console.error('Error details:', error.error);
+              // Still reload submitted to ensure UI is updated
+              setTimeout(() => {
+                this.loadSubmitted();
+              }, 100);
+            }
+          });
+        } else {
+          console.warn('Cannot update interview status: missing required fields', {
+            candidateEmail,
+            candidateName,
+            activityId,
+            recruiterId,
+            demandId
+          });
+          // If we can't update, still reload to ensure UI is fresh
+          setTimeout(() => {
+            this.loadSubmitted();
+          }, 100);
+        }
+        
+        // Close modal first
+        this.closeScheduleInterviewModal();
+        
+        // Remove candidate from submitted profiles list
+        if (candidateEmail || candidateName) {
+          // Filter out the candidate from submittedProfiles (modal list)
+          const currentProfiles = this.submittedProfiles();
+          const filteredProfiles = currentProfiles.filter(profile => {
+            const profileEmail = profile.email || profile.candidate_email;
+            const profileName = profile.name || profile.candidate_name || profile.candidate_name;
+            // Remove if email matches or name matches
+            const emailMatch = candidateEmail && profileEmail && profileEmail.toLowerCase() === candidateEmail.toLowerCase();
+            const nameMatch = candidateName && profileName && profileName.toLowerCase() === candidateName.toLowerCase();
+            return !(emailMatch || nameMatch);
+          });
+          this.submittedProfiles.set(filteredProfiles);
+          
+          // Update the submitted demand's activities and count
+          if (demandId) {
+            const currentSubmitted = this.submitted();
+            const demandIndex = currentSubmitted.findIndex(d => d.demand_id === demandId);
+            
+            if (demandIndex !== -1) {
+              const demand = currentSubmitted[demandIndex];
+              
+              // Filter out the candidate from all activities
+              if (demand.activities) {
+                demand.activities = demand.activities.map((activity: any) => {
+                  if (activity.submitted_cvs) {
+                    activity.submitted_cvs = activity.submitted_cvs.filter((cv: any) => {
+                      const cvEmail = cv.email || cv.candidate_email;
+                      const cvName = cv.name || cv.candidate_name;
+                      const emailMatch = candidateEmail && cvEmail && cvEmail.toLowerCase() === candidateEmail.toLowerCase();
+                      const nameMatch = candidateName && cvName && cvName.toLowerCase() === candidateName.toLowerCase();
+                      return !(emailMatch || nameMatch);
+                    });
+                  }
+                  return activity;
+                });
+                
+                // Recalculate cv_count
+                let newCount = 0;
+                demand.activities.forEach((activity: any) => {
+                  if (activity.submitted_cvs) {
+                    newCount += activity.submitted_cvs.length;
+                  }
+                });
+                demand.cv_count = newCount;
+                
+                // Update the demand in the list
+                const updatedSubmitted = [...currentSubmitted];
+                if (newCount === 0) {
+                  // Remove demand if no more CVs
+                  updatedSubmitted.splice(demandIndex, 1);
+                } else {
+                  // Update the demand
+                  updatedSubmitted[demandIndex] = demand;
+                }
+                this.submitted.set(updatedSubmitted);
+              }
+            }
+          }
+          
+          // Also update selectedSubmittedDemand if modal was open
+          if (this.selectedSubmittedDemand && this.selectedSubmittedDemand.demand_id === demandId) {
+            if (this.selectedSubmittedDemand.activities) {
+              this.selectedSubmittedDemand.activities = this.selectedSubmittedDemand.activities.map((activity: any) => {
+                if (activity.submitted_cvs) {
+                  activity.submitted_cvs = activity.submitted_cvs.filter((cv: any) => {
+                    const cvEmail = cv.email || cv.candidate_email;
+                    const cvName = cv.name || cv.candidate_name;
+                    const emailMatch = candidateEmail && cvEmail && cvEmail.toLowerCase() === candidateEmail.toLowerCase();
+                    const nameMatch = candidateName && cvName && cvName.toLowerCase() === candidateName.toLowerCase();
+                    return !(emailMatch || nameMatch);
+                  });
+                }
+                return activity;
+              });
+              
+              // Update cv_count
+              let newCount = 0;
+              this.selectedSubmittedDemand.activities.forEach((activity: any) => {
+                if (activity.submitted_cvs) {
+                  newCount += activity.submitted_cvs.length;
+                }
+              });
+              this.selectedSubmittedDemand.cv_count = newCount;
+            }
+          }
+        }
+      },
+      error: (error) => {
+        console.error('Failed to save interview schedule:', error);
+        this.toastService.error(`Failed to save interview schedule: ${error.error?.detail || error.message}`);
+      }
+    });
+  }
+
+  openRescheduleModal(event: Event, item: any): void {
+    event.stopPropagation();
+    
+    console.log('Opening reschedule modal for item:', item);
+    
+    // Set reschedule mode
+    this.isRescheduleMode.set(true);
+    this.rescheduleScheduleId = item.schedule_id;
+    this.rescheduleRoundKey = item.round;
+    
+    // Set candidate data
+    this.selectedCandidateForSchedule = {
+      schedule_id: item.schedule_id,
+      demand_id: item.demand_id,
+      recruiter_id: item.recruiter_id,
+      recruiter_name: item.recruiter_name,
+      candidate_name: item.candidate_name,
+      candidate_email: item.candidate_email,
+      candidate_phone: item.candidate_phone
+    };
+    
+    // Initialize with existing round data - load existing slots
+    const existingSlots = item.round_data?.slots || [];
+    const slots = existingSlots.length > 0 
+      ? existingSlots.map((slot: any) => ({
+          date: slot.date || '',
+          time: this.convertTimeTo24Hour(slot.time || ''),
+          slot_status: 0
+        }))
+      : [{date: '', time: '', slot_status: 0}];
+    
+    this.interviewRounds.set([{
+      round: item.round,
+      slots: slots
+    }]);
+    
+    // Open modal
+    this.showScheduleInterviewModal.set(true);
+    this.cdr.detectChanges();
+    
+    setTimeout(() => {
+      this.cdr.detectChanges();
+    }, 0);
+  }
+
+  convertTimeTo24Hour(time12: string): string {
+    if (!time12) return '';
+    // If already in 24-hour format, return as is
+    if (time12.includes(':')) {
+      const parts = time12.split(' ');
+      if (parts.length === 2) {
+        // 12-hour format with AM/PM
+        const [time, ampm] = parts;
+        const [hours, minutes] = time.split(':');
+        let hour24 = parseInt(hours, 10);
+        if (ampm.toUpperCase() === 'PM' && hour24 !== 12) {
+          hour24 += 12;
+        } else if (ampm.toUpperCase() === 'AM' && hour24 === 12) {
+          hour24 = 0;
+        }
+        return `${hour24.toString().padStart(2, '0')}:${minutes || '00'}`;
+      }
+    }
+    return time12;
+  }
+
+  saveRescheduleSchedule(): void {
+    if (!this.selectedCandidateForSchedule || !this.rescheduleScheduleId || !this.rescheduleRoundKey) {
+      this.toastService.error('Invalid reschedule data');
+      return;
+    }
+
+    const rounds = this.interviewRounds();
+    
+    if (rounds.length === 0 || !rounds[0]) {
+      this.toastService.error('No round data found');
+      return;
+    }
+
+    const roundData = rounds[0];
+    
+    // Validate slots
+    const validSlots = roundData.slots.filter(slot => slot.date && slot.time);
+    
+    if (validSlots.length === 0) {
+      this.toastService.error('Please fill in at least one date and time slot');
+      return;
+    }
+
+    // Format time to 12-hour format with AM/PM
+    const formatTime = (time24: string): string => {
+      if (!time24) return '';
+      const [hours, minutes] = time24.split(':');
+      const hour = parseInt(hours, 10);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minutes || '00'} ${ampm}`;
+    };
+
+    // Get existing interview_schedules from the reschedule item
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // First, fetch the current schedule to get all rounds
+    this.http.get<{ items: any[] }>(`${this.apiBase}/interview-schedule/all`, { headers }).subscribe({
+      next: (response) => {
+        const schedules = response.items || [];
+        const currentSchedule = schedules.find(s => s.id === this.rescheduleScheduleId);
+        
+        if (!currentSchedule) {
+          this.toastService.error('Schedule not found');
+          return;
+        }
+
+        // Parse existing interview_schedules
+        let existingSchedules: any = {};
+        if (currentSchedule.interview_schedules) {
+          if (typeof currentSchedule.interview_schedules === 'string') {
+            try {
+              existingSchedules = JSON.parse(currentSchedule.interview_schedules);
+            } catch (e) {
+              console.error('Failed to parse existing schedules:', e);
+              existingSchedules = {};
+            }
+          } else {
+            existingSchedules = currentSchedule.interview_schedules;
+          }
+        }
+
+        // Update the specific round with new slots
+        existingSchedules[this.rescheduleRoundKey!] = {
+          round_status: 0, // Set back to waiting
+          slots: validSlots.map(slot => ({
+            date: slot.date,
+            time: formatTime(slot.time),
+            slot_status: 0 // Set all slots to default 0
+          }))
+        };
+
+        // Update the schedule with new data and set status to "scheduled"
+        const payload = {
+          submission_id: currentSchedule.submission_id,
+          recruiter_id: currentSchedule.recruiter_id,
+          candidate_name: currentSchedule.candidate_name,
+          demand_id: currentSchedule.demand_id,
+          candidate_email: currentSchedule.candidate_email,
+          candidate_phone: currentSchedule.candidate_phone,
+          interview_schedules: JSON.stringify(existingSchedules),
+          status: 'scheduled' // Update status to scheduled
+        };
+
+        // Update the schedule
+        this.http.post(`${this.apiBase}/interview-schedule/multiple-slots`, payload, { headers }).subscribe({
+          next: (response: any) => {
+            this.toastService.success('Interview rescheduled successfully for ' + this.selectedCandidateForSchedule.candidate_name);
+            
+            // Close modal
+            this.closeScheduleInterviewModal();
+            
+            // Remove from reschedule list
+            const currentReschedule = this.reschedule();
+            const filtered = currentReschedule.filter(item => 
+              !(item.schedule_id === this.rescheduleScheduleId && item.round === this.rescheduleRoundKey)
+            );
+            this.reschedule.set(filtered);
+            
+            // Reload reschedule data to ensure consistency
+            this.loadReschedule();
+          },
+          error: (error) => {
+            console.error('Failed to save reschedule:', error);
+            this.toastService.error(`Failed to save reschedule: ${error.error?.detail || error.message}`);
+          }
+        });
+      },
+      error: (error) => {
+        console.error('Failed to fetch current schedule:', error);
+        this.toastService.error('Failed to fetch current schedule');
+      }
+    });
   }
 }
 

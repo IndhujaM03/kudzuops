@@ -52,6 +52,12 @@ export class ViewDemandComponent implements OnInit {
   statusRemark: string = '';
   selectedStatus: string = 'open';
 
+  // Schedule Interview Modal state
+  showScheduleInterviewModal = signal(false);
+  selectedCandidateForSchedule: any = null;
+  // Structure: { round: string, slots: Array<{date: string, time: string, slot_status: number}> }
+  interviewRounds = signal<Array<{round: string, slots: Array<{date: string, time: string, slot_status: number}>}>>([]);
+
   // CV Received count
   cvReceivedCount = computed(() => this.cvReceived().length);
 
@@ -586,5 +592,145 @@ export class ViewDemandComponent implements OnInit {
       return 'status-closed';
     }
     return 'status-open';
+  }
+
+  // Schedule Interview Modal functions
+  handleScheduleInterviewClick(event: Event, profile: any): void {
+    event.stopPropagation();
+    event.preventDefault();
+    console.log('Button clicked! Profile:', profile);
+    this.openScheduleInterviewModalForProfile(profile);
+  }
+
+  openScheduleInterviewModalForProfile(profile: any): void {
+    console.log('Opening schedule interview modal for profile:', profile);
+    // Close the profile modal first to avoid z-index conflicts
+    this.showProfileModal = false;
+    
+    // Merge profile data with selectedDemand to ensure we have all necessary fields
+    this.selectedCandidateForSchedule = {
+      ...profile,
+      demand_id: profile.demand_id || this.selectedDemand?.demand_id || this.selectedDemand?.id,
+      recruiter_id: profile.recruiter_id || this.selectedDemand?.recruiter_id,
+      recruiter_name: profile.recruiter_name || this.selectedDemand?.recruiter_name || profile.recruiter_email || this.selectedDemand?.recruiter_email,
+      recruiter_email: profile.recruiter_email || this.selectedDemand?.recruiter_email
+    };
+    // Initialize with one empty round
+    this.interviewRounds.set([{round: '', slots: [{date: '', time: '', slot_status: 0}]}]);
+    
+    // Use setTimeout to ensure the profile modal closes first, then open schedule modal
+    setTimeout(() => {
+      this.showScheduleInterviewModal.set(true);
+      console.log('Modal state set to:', this.showScheduleInterviewModal());
+    }, 100);
+  }
+
+  closeScheduleInterviewModal(): void {
+    this.showScheduleInterviewModal.set(false);
+    this.selectedCandidateForSchedule = null;
+    this.interviewRounds.set([]);
+  }
+
+  addInterviewRound(): void {
+    const currentRounds = this.interviewRounds();
+    this.interviewRounds.set([...currentRounds, {round: '', slots: [{date: '', time: '', slot_status: 0}]}]);
+  }
+
+  removeInterviewRound(roundIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    if (currentRounds.length > 1) {
+      const newRounds = currentRounds.filter((_, i) => i !== roundIndex);
+      this.interviewRounds.set(newRounds);
+    }
+  }
+
+  addSlotToRound(roundIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    const updatedRounds = [...currentRounds];
+    updatedRounds[roundIndex].slots.push({date: '', time: '', slot_status: 0});
+    this.interviewRounds.set(updatedRounds);
+  }
+
+  removeSlotFromRound(roundIndex: number, slotIndex: number): void {
+    const currentRounds = this.interviewRounds();
+    const updatedRounds = [...currentRounds];
+    if (updatedRounds[roundIndex].slots.length > 1) {
+      updatedRounds[roundIndex].slots = updatedRounds[roundIndex].slots.filter((_, i) => i !== slotIndex);
+      this.interviewRounds.set(updatedRounds);
+    }
+  }
+
+  saveInterviewSchedule(): void {
+    if (!this.selectedCandidateForSchedule) {
+      this.errorMsg.set('No candidate selected');
+      return;
+    }
+
+    const rounds = this.interviewRounds();
+    
+    // Filter out rounds without a round name and validate slots
+    const validRounds = rounds.filter(roundData => {
+      if (!roundData.round || roundData.round.trim() === '') return false;
+      // Filter out empty slots (slots without date or time)
+      roundData.slots = roundData.slots.filter(slot => slot.date && slot.time);
+      return roundData.slots.length > 0;
+    });
+    
+    if (validRounds.length === 0) {
+      this.errorMsg.set('Please fill in at least one interview round with date and time slots');
+      return;
+    }
+
+    // Format time to 12-hour format with AM/PM
+    const formatTime = (time24: string): string => {
+      if (!time24) return '';
+      const [hours, minutes] = time24.split(':');
+      const hour = parseInt(hours, 10);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minutes || '00'} ${ampm}`;
+    };
+
+    // Build JSON structure organized by round keys
+    const scheduleJson: any = {};
+    
+    validRounds.forEach(roundData => {
+      const roundKey = roundData.round;
+      scheduleJson[roundKey] = {
+        round_status: 0, // Default to 0
+        slots: roundData.slots.map(slot => ({
+          date: slot.date,
+          time: formatTime(slot.time),
+          slot_status: slot.slot_status || 0
+        }))
+      };
+    });
+
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const payload = {
+      submission_id: null,
+      recruiter_id: this.selectedCandidateForSchedule.recruiter_id,
+      candidate_name: this.selectedCandidateForSchedule.candidate_name || this.selectedCandidateForSchedule.profile_name,
+      demand_id: this.selectedCandidateForSchedule.demand_id,
+      candidate_email: this.selectedCandidateForSchedule.candidate_email || null,
+      candidate_phone: this.selectedCandidateForSchedule.candidate_phone || null,
+      interview_schedules: JSON.stringify(scheduleJson) // Store JSON in interview_schedules column
+    };
+
+    this.http.post(`${this.apiBase}/interview-schedule/multiple-slots`, payload, { headers }).subscribe({
+      next: (response: any) => {
+        this.successMsg.set('Interview schedule saved successfully for ' + (this.selectedCandidateForSchedule.candidate_name || this.selectedCandidateForSchedule.profile_name));
+        this.closeScheduleInterviewModal();
+      },
+      error: (error) => {
+        console.error('Failed to save interview schedule:', error);
+        this.errorMsg.set(`Failed to save interview schedule: ${error.error?.detail || error.message}`);
+      }
+    });
   }
 }

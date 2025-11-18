@@ -35,6 +35,8 @@ import { RecruiterActivityComponent } from './components/recruiter/recruiter-act
 import { SubmittedComponent } from './components/recruiter/submitted/submitted.component';
 import { SettingsComponent } from './components/recruiter/settings/settings.component';
 import { InterviewScheduleComponent } from './components/recruiter/interview-schedule/interview-schedule.component';
+import { InterviewComponent } from './components/teamleader/interview.component';
+import { OnboardingComponent } from './components/teamleader/onboarding.component';
 
 // Simple protected Dashboard (same UI style)
 @Component({
@@ -397,6 +399,8 @@ const routes: Routes = [
       { path: 'dashboard', component: TeamLeaderDashboardComponent },
       { path: 'demand-sheet', component: DemandSheetComponent },
       { path: 'view-demand', component: ViewDemandComponent },
+      { path: 'interview', component: InterviewComponent },
+      { path: 'onboarding', component: OnboardingComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
