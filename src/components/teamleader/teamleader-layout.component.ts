@@ -1,6 +1,8 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { Router, RouterOutlet, RouterLink, RouterLinkActive, NavigationEnd } from '@angular/router';
+import { filter } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-teamleader-layout',
@@ -312,9 +314,10 @@ import { Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/rou
     }
   `]
 })
-export class TeamLeaderLayoutComponent implements OnInit {
+export class TeamLeaderLayoutComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   currentUser = { name: 'Indhuja' };
+  private navigationSubscription?: Subscription;
 
   ngOnInit(): void {
     // Get user info from localStorage or service
@@ -325,6 +328,29 @@ export class TeamLeaderLayoutComponent implements OnInit {
       } catch (e) {
         console.error('Error parsing user info:', e);
       }
+    }
+
+    // Ensure dashboard is shown by default when navigating to teamleader routes
+    this.navigationSubscription = this.router.events
+      .pipe(filter(event => event instanceof NavigationEnd))
+      .subscribe((event: any) => {
+        const url = event.urlAfterRedirects || event.url;
+        // If user navigates to /teamleader without a child route, redirect to dashboard
+        if (url === '/teamleader' || url === '/teamleader/') {
+          this.router.navigate(['/teamleader/dashboard'], { replaceUrl: true }).catch(() => {});
+        }
+      });
+
+    // Check current route on component initialization
+    const currentUrl = this.router.url;
+    if (currentUrl === '/teamleader' || currentUrl === '/teamleader/') {
+      this.router.navigate(['/teamleader/dashboard'], { replaceUrl: true }).catch(() => {});
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.navigationSubscription) {
+      this.navigationSubscription.unsubscribe();
     }
   }
 

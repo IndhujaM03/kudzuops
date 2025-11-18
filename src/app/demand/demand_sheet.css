@@ -1933,9 +1933,15 @@
 }
 
 .jd-view-btn:hover {
-  background:var(--kudzu-primary-darki) !important;
+  background: var(--kudzu-primary) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3) !important;
+  box-shadow: 0 4px 8px rgba(24, 45, 23, 0.3) !important;
+}
+
+.jd-view-btn:hover .info-icon,
+.jd-view-btn:hover svg {
+  color: white !important;
+  stroke: white !important;
 }
 
 .jd-view-btn:active {
@@ -2123,16 +2129,38 @@
   border-radius: 4px;
   background: #eff6ff;
   transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
   border: 1px solid #dbeafe;
   font-weight: 500;
 }
 
 .cv-link-btn:hover {
-  background: #dbeafe;
-  color: var(--kudzu-primary-dark);
-  border-color: #93c5fd;
+  background: var(--kudzu-primary-light);
+  color: var(--kudzu-primary);
+  border-color: var(--kudzu-primary);
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
+  box-shadow: 0 2px 4px rgba(24, 45, 23, 0.2);
+}
+
+.cv-link-btn:hover svg {
+  color: var(--kudzu-primary);
+  stroke: var(--kudzu-primary);
+}
+
+.cv-link-btn:active,
+.cv-link-btn:focus {
+  background: #eff6ff !important;
+  color: var(--kudzu-primary) !important;
+  transform: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.cv-link-btn:active svg,
+.cv-link-btn:focus svg {
+  color: var(--kudzu-primary) !important;
+  stroke: var(--kudzu-primary) !important;
 }
 
 .cv-link-btn svg {
@@ -2217,9 +2245,29 @@
 }
 
 .cv-link-btn:hover {
-  background: #2563eb;
+  background: var(--kudzu-primary);
   color: white;
   text-decoration: none;
+}
+
+.cv-link-btn:hover svg {
+  color: white;
+  stroke: white;
+}
+
+.cv-link-btn:active,
+.cv-link-btn:focus {
+  background: var(--kudzu-primary) !important;
+  color: white !important;
+  transform: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.cv-link-btn:active svg,
+.cv-link-btn:focus svg {
+  color: white !important;
+  stroke: white !important;
 }
 
 .cv-link-btn svg {
@@ -2311,11 +2359,22 @@
 }
 
 /* CV Modal Styles */
+.cv-modal-overlay {
+  z-index: 100010 !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
 .cv-modal {
   max-width: 90vw;
   max-height: 90vh;
   width: 1000px;
   height: 700px;
+  z-index: 100011 !important;
+  position: relative !important;
 }
 
 .cv-modal .modal-header {
@@ -2419,13 +2478,30 @@
 .status-modal-overlay {
   position: fixed !important;
   inset: 0 !important;
-  display: flex !important;
+  /* display is controlled by inline style binding - do not set here */
   align-items: center !important;
   justify-content: center !important;
+}
+
+.schedule-interview-modal-overlay {
+  z-index: 1000010 !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  /* display, opacity, visibility, and pointer-events are controlled by component - do not set here */
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+.status-modal-overlay {
   background: rgba(15, 23, 42, 0.35) !important;
   backdrop-filter: blur(4px) !important;
-  padding: 225px !important;
-  z-index: 9999 !important;
+  padding: 16px !important;
+  z-index: 100000 !important;
+  pointer-events: auto !important;
 }
 
 .status-modal-card {
@@ -2746,5 +2822,232 @@
 
 .cv-direct-link:hover {
   text-decoration: underline;
+}
+
+/* Interview Schedule Form Styles */
+.interview-schedule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.rounds-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.round-section {
+  padding: 20px;
+  background: var(--kudzu-bg-light, #f9fafb);
+  border-radius: 12px;
+  border: 2px solid var(--kudzu-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.round-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--kudzu-border, #e5e7eb);
+}
+
+.round-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: 100%;
+}
+
+.round-select-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.slot-row-container {
+  width: 100%;
+}
+
+.slot-select-group {
+  width: 100%;
+}
+
+.slot-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.slot-label-row label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.btn-add-slot-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+}
+
+.btn-add-slot-inline:hover {
+  background: var(--kudzu-primary-light, rgba(24, 45, 23, 0.1));
+  color: var(--kudzu-primary, #182D17);
+  transform: translateY(-1px);
+}
+
+.slot-select-group .slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.round-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-remove-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: #dc2626;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-remove-round:hover {
+  background: #b91c1c;
+  transform: scale(1.05);
+}
+
+.slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slot-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.slot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-remove-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: #dc2626;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-remove-slot:hover {
+  background: #b91c1c;
+  transform: scale(1.05);
+}
+
+.btn-add-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 2px dashed var(--kudzu-primary, #182D17);
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+  align-self: flex-start;
+}
+
+.btn-add-slot:hover {
+  border-color: var(--kudzu-primary, #182D17);
+  background: var(--kudzu-primary, #182D17);
+  color: white;
+}
+
+.btn-add-round {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 2px dashed var(--kudzu-primary, #182D17);
+  background: white;
+  color: var(--kudzu-primary, #182D17);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: "Manrope", "Manrope Placeholder", sans-serif;
+  align-self: flex-start;
+}
+
+.btn-add-round:hover {
+  background: var(--kudzu-primary, #182D17);
+  color: white;
+  border-color: var(--kudzu-primary, #182D17);
+}
+
+@media (max-width: 768px) {
+  .slot-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .round-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .round-select-group,
+  .slot-select-group {
+    width: 100%;
+    min-width: 100%;
+  }
 }
 

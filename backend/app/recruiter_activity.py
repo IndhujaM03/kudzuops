@@ -11,6 +11,13 @@ from fastapi import Body  # type: ignore[reportMissingImports]
 from fastapi.responses import FileResponse, JSONResponse  # type: ignore[reportMissingImports]
 from pydantic import BaseModel  # type: ignore[reportMissingImports]
 from fastapi import Depends  # type: ignore[reportMissingImports]
+import psycopg  # type: ignore[reportMissingImports]
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form  # type: ignore[reportMissingImports]
+from fastapi import Request  # type: ignore[reportMissingImports]
+from fastapi import Body  # type: ignore[reportMissingImports]
+from fastapi.responses import FileResponse, JSONResponse  # type: ignore[reportMissingImports]
+from pydantic import BaseModel  # type: ignore[reportMissingImports]
+from fastapi import Depends  # type: ignore[reportMissingImports]
 import shutil
 import traceback
 
@@ -1924,6 +1931,28 @@ def activity_update_cv_list(payload: Dict[str, Any]) -> Dict[str, Any]:
                 updated_cv_list = []
                 for cv_entry in cv_list:
                     if isinstance(cv_entry, dict):
+                        # If recruiter_date doesn't exist, add it (set when recruiter uploads profile)
+                        if 'recruiter_date' not in cv_entry or not cv_entry.get('recruiter_date'):
+                            # Try to extract from timestamp if available
+                            timestamp = cv_entry.get('time') or cv_entry.get('timestamp')
+                            if timestamp:
+                                try:
+                                    from datetime import datetime
+                                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                                    cv_entry['recruiter_date'] = dt.date().isoformat()
+                                except:
+                                    cv_entry['recruiter_date'] = date.today().isoformat()
+                            else:
+                                cv_entry['recruiter_date'] = date.today().isoformat()
+                        updated_cv_list.append(cv_entry)
+                    else:
+                        updated_cv_list.append(cv_entry)
+                
+                # Ensure all CV entries have recruiter_date field
+                from datetime import date
+                updated_cv_list = []
+                for cv_entry in cv_list:
+                    if isinstance(cv_entry, dict):
                         # If recruiter_date doesn't exist, add it
                         if 'recruiter_date' not in cv_entry or not cv_entry.get('recruiter_date'):
                             # Try to extract from timestamp if available
@@ -2016,6 +2045,21 @@ def list_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
     for item in local:
         filename = item.get("file_name") or item.get("file") or ""
         
+        # Filter out submitted/rejected/discard CVs based on DB status
+        # Only show resumes with NULL, empty, or 'hold' status
+        if filename in db_status_map:
+            db_status_raw = db_status_map[filename].get("status")
+            if db_status_raw:
+                db_status = str(db_status_raw).strip().lower()
+                # Exclude submitted, rejected, discard, and numeric status '1' (submitted)
+                if db_status in ["submitted", "rejected", "discard", "1"]:
+                    continue  # Skip this CV
+                # Only include if status is 'hold' or 'on_hold'
+                if db_status not in ["hold", "on_hold", ""]:
+                    continue  # Skip any other non-null, non-hold status
+        
+        filename = item.get("file_name") or item.get("file") or ""
+        
         # Filter out submitted/rejected CVs based on DB status
         if filename in db_status_map:
             db_status = db_status_map[filename].get("status", "").lower() if db_status_map[filename].get("status") else ""
@@ -2076,6 +2120,17 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                         break
                 if idx == -1:
                     entry = {"file": filename, "time": time_str}
+                    # Add recruiter_date when creating new entry (set when recruiter uploads profile)
+                    from datetime import date
+                    if time_str:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(time_str).replace('Z', '+00:00'))
+                            entry['recruiter_date'] = dt.date().isoformat()
+                        except:
+                            entry['recruiter_date'] = date.today().isoformat()
+                    else:
+                        entry['recruiter_date'] = date.today().isoformat()
                     # Add recruiter_date when creating new entry
                     from datetime import date
                     if time_str:
@@ -2105,6 +2160,20 @@ def upsert_resume_details(recruiter_id: int, demand_id: int, payload: Dict[str, 
                     elif normalized in ("rejected",): normalized = "rejected"
                     elif normalized in ("on_hold", "hold"): normalized = "on_hold"
                     current[idx]["status"] = normalized
+                
+                # Ensure recruiter_date exists (set when recruiter uploads profile)
+                if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
+                    from datetime import date
+                    timestamp = current[idx].get('time') or current[idx].get('timestamp')
+                    if timestamp:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                            current[idx]['recruiter_date'] = dt.date().isoformat()
+                        except:
+                            current[idx]['recruiter_date'] = date.today().isoformat()
+                    else:
+                        current[idx]['recruiter_date'] = date.today().isoformat()
                 
                 # Ensure recruiter_date exists
                 if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
@@ -2195,6 +2264,18 @@ def submit_selected_cvs(payload: Dict[str, Any]) -> Dict[str, Any]:
                             item["verified_status"] = "under_verification"
                             item["demand_id"] = demand_id
                             item["recruiter_id"] = rid
+                            # Ensure recruiter_date exists (set when recruiter uploads profile)
+                            if 'recruiter_date' not in item or not item.get('recruiter_date'):
+                                from datetime import date
+                                if time_str:
+                                    try:
+                                        from datetime import datetime
+                                        dt = datetime.fromisoformat(str(time_str).replace('Z', '+00:00'))
+                                        item['recruiter_date'] = dt.date().isoformat()
+                                    except:
+                                        item['recruiter_date'] = date.today().isoformat()
+                                else:
+                                    item['recruiter_date'] = date.today().isoformat()
                             # Ensure recruiter_date exists
                             if 'recruiter_date' not in item or not item.get('recruiter_date'):
                                 from datetime import date
@@ -2333,7 +2414,9 @@ def upload_cv(
                     except Exception:
                         current = []
                     from datetime import date
+                    from datetime import date
                     entry = {"file": file.filename, "time": datetime.now().isoformat()}
+                    entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
                     entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date for date filtering
                     current.append(entry)
                     cur.execute(
@@ -2463,7 +2546,8 @@ def upload_resume_path(
 
 @router.get("/resumes/{recruiter_id}/{demand_id}")
 def fetch_all_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
-    """Return all resumes from tbl_cv_downloads for recruiter and demand, latest first."""
+    """Return all resumes from tbl_cv_downloads for recruiter and demand, latest first.
+    Only returns resumes with NULL status or 'hold' status. Excludes 'submitted' and 'rejected'."""
     _ensure_tables()
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
@@ -2473,6 +2557,13 @@ def fetch_all_resumes(recruiter_id: int, demand_id: int) -> Dict[str, Any]:
                     SELECT id, recruiter_id, demand_id, filename, file_path, created_at, status, candidate_details
                     FROM tbl_cv_downloads
                     WHERE recruiter_id=%s AND demand_id=%s
+                    AND (
+                        status IS NULL 
+                        OR status = '' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'hold' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'on_hold'
+                    )
+                    AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('submitted', 'rejected', 'discard', '1')
                     AND (status IS NULL OR LOWER(status) = 'hold')
                     AND (status IS NULL OR LOWER(status) NOT IN ('submitted', 'rejected'))
                     ORDER BY created_at DESC NULLS LAST, id DESC
@@ -2579,6 +2670,7 @@ def update_resume_status(cv_id: int, payload: Dict[str, Any] = Body(...)) -> Dic
                             "filename": filename,
                             "file_path": file_path,
                             "status": 0,
+                            "recruiter_date": date.today().isoformat(),  # Add recruiter_date when recruiter uploads profile
                             "recruiter_date": date.today().isoformat(),  # Add recruiter_date for date filtering
                         }
 
@@ -2675,10 +2767,13 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
                     from datetime import date
                     if idx == -1:
                         new_entry = {"file": filename, "candidate": candidate_json}
-                        new_entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date for date filtering
+                        new_entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
                         current.append(new_entry)
                     else:
                         current[idx]["candidate"] = candidate_json
+                        # Ensure recruiter_date exists when updating (set to current date if missing)
+                        if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
+                            current[idx]["recruiter_date"] = date.today().isoformat()
                         # Ensure recruiter_date exists when updating
                         if 'recruiter_date' not in current[idx] or not current[idx].get('recruiter_date'):
                             current[idx]["recruiter_date"] = date.today().isoformat()
@@ -2704,7 +2799,8 @@ def update_candidate(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @router.get("/{recruiter_id}/{demand_id}/resumes-db")
 def list_resumes_db(recruiter_id: int, demand_id: int) -> List[Dict[str, Any]]:
-    """List resumes from tbl_cv_downloads for given recruiter and demand."""
+    """List resumes from tbl_cv_downloads for given recruiter and demand.
+    Only returns resumes with NULL status or 'hold' status. Excludes 'submitted' and 'rejected'."""
     _ensure_tables()
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
@@ -2714,6 +2810,13 @@ def list_resumes_db(recruiter_id: int, demand_id: int) -> List[Dict[str, Any]]:
                     SELECT id, filename, file_path, created_at, status, candidate_details
                     FROM tbl_cv_downloads
                     WHERE recruiter_id=%s AND demand_id=%s
+                    AND (
+                        status IS NULL 
+                        OR status = '' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'hold' 
+                        OR LOWER(TRIM(COALESCE(status, ''))) = 'on_hold'
+                    )
+                    AND COALESCE(LOWER(TRIM(status)), '') NOT IN ('submitted', 'rejected', 'discard', '1')
                     AND (status IS NULL OR LOWER(status) = 'hold')
                     AND (status IS NULL OR LOWER(status) NOT IN ('submitted', 'rejected'))
                     ORDER BY created_at DESC
@@ -3942,37 +4045,41 @@ def update_cv_count_and_check(payload: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception as e:
                     print(f"⚠️ Column setup warning: {e}")
                 
-                # Update uploaded_cv_count for all recruiters with same demand_id
+                # Recalculate uploaded_cv_count from cv_list for all recruiters with same demand_id
+                # This ensures accuracy by counting actual CVs instead of using increment/decrement
                 try:
-                    # First, get current count to handle None values
+                    # Calculate the actual count from cv_list (excluding rejected CVs with status = 2)
                     cur.execute(
                         """
-                        SELECT uploaded_cv_count FROM tbl_recruiter_activity 
-                        WHERE demand_id = %s LIMIT 1
+                        SELECT COALESCE(SUM(
+                            (SELECT COUNT(*) 
+                             FROM jsonb_array_elements(ra.cv_list) AS cv 
+                             WHERE (cv->>'status')::int != 2)
+                        ), 0) as total_cv_count
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.demand_id = %s
+                        AND ra.cv_list IS NOT NULL
+                        AND jsonb_array_length(ra.cv_list) > 0
                         """,
                         (demand_id,)
                     )
-                    current_result = cur.fetchone()
-                    current_count = current_result[0] if current_result else 0
                     
-                    # Handle None values
-                    if current_count is None:
-                        current_count = 0
+                    calculated_count_result = cur.fetchone()
+                    calculated_count = calculated_count_result[0] if calculated_count_result else 0
                     
-                    new_count = current_count + increment
-                    print(f"🔍 Current count: {current_count}, Increment: {increment}, New count: {new_count}")
+                    print(f"🔍 Recalculated count from cv_list: {calculated_count}")
                     
-                    # Update with the calculated new count
+                    # Update all recruiter activities with the recalculated count
                     cur.execute(
                         """
                         UPDATE tbl_recruiter_activity 
                         SET uploaded_cv_count = %s, updated_at = NOW()
                         WHERE demand_id = %s
                         """,
-                        (new_count, demand_id)
+                        (calculated_count, demand_id)
                     )
                     
-                    print(f"📊 Updated {cur.rowcount} recruiter activities with new count: {new_count}")
+                    print(f"📊 Updated {cur.rowcount} recruiter activities with recalculated count: {calculated_count}")
                 except Exception as e:
                     print(f"❌ Error updating recruiter activities: {e}")
                     raise HTTPException(status_code=500, detail=f"Database error: {e}")

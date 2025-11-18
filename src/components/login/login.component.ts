@@ -423,7 +423,7 @@ export class LoginComponent {
           console.error('Navigation to superadmin failed:', err);
         });
       } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr' || userRole === 'tl') {
-        this.router.navigate(['/teamleader/demand-sheet']).catch((err) => {
+        this.router.navigate(['/teamleader/dashboard']).catch((err) => {
           console.error('Navigation to teamleader failed:', err);
         });
       } else if (userRole === 'recruiter') {

@@ -7,5 +7,6 @@ node_modules/
 dist/
 build/
 .angular/.env.local
+.angular/cache/
 .env.development
 .env.production

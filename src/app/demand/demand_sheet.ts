@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed, HostListener, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, HostListener, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -6,6 +6,8 @@ import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { environment } from '../../environments/environment';
 import { ModalService } from '../../services/modal.service';
+import { ToastService } from '../../services/toast.service';
+import { forkJoin } from 'rxjs';
 
 interface Client {
   id: number;
@@ -32,8 +34,10 @@ interface Spoc {
 export class DemandSheetComponent implements OnInit {
   private http = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
+  private cdr = inject(ChangeDetectorRef);
   private route = inject(ActivatedRoute);
   private modalService = inject(ModalService);
+  private toastService = inject(ToastService);
 
   clients = signal<Client[]>([]);
   spocs = signal<Spoc[]>([]);
@@ -116,6 +120,8 @@ export class DemandSheetComponent implements OnInit {
 
   // Status edit modal state
   showStatusModal = signal(false);
+  // Also use a regular property as backup for template binding
+  showStatusModalProperty = false;
   selectedDemandId: number | null = null;
   selectedDemandStatus: string = '';
   statusRemark: string = '';
@@ -123,6 +129,8 @@ export class DemandSheetComponent implements OnInit {
 
   // Submitted profiles modal state
   showSubmittedProfilesModal = signal(false);
+  // Also use a regular property as backup for template binding
+  showSubmittedProfilesModalProperty = false;
   selectedSubmittedDemand: any = null;
   submittedProfiles = signal<any[]>([]);
   profileSelections = signal<Map<number, boolean>>(new Map()); // Map of profile index to selected (true = accept, false = reject)
@@ -246,7 +254,7 @@ export class DemandSheetComponent implements OnInit {
           console.log('✅ Demand creation response:', res);
           const newId = res?.id;
           this.successMsg.set(res?.message || 'Demand Sheet Created Successfully');
-          this.showToastMessage('✅ Demand created successfully!', 'success');
+          this.toastService.success('Demand Sheet Created Successfully');
           this.submitting.set(false);
           this.showForm = false; // auto-close form
           
@@ -1359,13 +1367,44 @@ export class DemandSheetComponent implements OnInit {
       demand.activities.forEach((activity: any) => {
         if (activity.submitted_cvs && Array.isArray(activity.submitted_cvs)) {
           activity.submitted_cvs.forEach((cv: any) => {
+            // Construct CV URL from file_path if cv_url is null
+            let cvUrl = cv.cv_url;
+            let cvAvailable = cv.cv_available !== false;
+            
+            if (!cvUrl && cv.file_path) {
+              // Parse file_path to extract recruiter_id, demand_id, and filename
+              // Format: C:/Users/.../src/assets/cv_uploads/<recruiter_id>/<demand_id>/<filename>
+              // or: src/assets/cv_uploads/<recruiter_id>/<demand_id>/<filename>
+              const filePath = cv.file_path.replace(/\\/g, '/');
+              const parts = filePath.split('/');
+              const idx = parts.findIndex((p: string) => p === 'cv_uploads');
+              
+              if (idx >= 0 && parts.length >= idx + 4) {
+                const rid = parts[idx + 1];
+                const did = parts[idx + 2];
+                const fname = parts.slice(idx + 3).join('/');
+                
+                if (rid && did && fname) {
+                  cvUrl = `${this.apiBase}/cv-file/${encodeURIComponent(rid)}/${encodeURIComponent(did)}/${encodeURIComponent(fname)}`;
+                  cvAvailable = true;
+                }
+              } else if (cv.filename && activity.recruiter_id && demand.demand_id) {
+                // Fallback: use filename with recruiter_id and demand_id from activity
+                const encodedFilename = encodeURIComponent(cv.filename);
+                cvUrl = `${this.apiBase}/cv-file/${activity.recruiter_id}/${demand.demand_id}/${encodedFilename}`;
+                cvAvailable = true;
+              }
+            }
+            
             allProfiles.push({
               ...cv,
               recruiter_name: activity.recruiter_name || activity.recruiter_email,
               recruiter_id: activity.recruiter_id,
               activity_id: activity.id,
               demand_id: demand.demand_id,
-              profile_index: profileIndex++
+              profile_index: profileIndex++,
+              cv_url: cvUrl || null,
+              cv_available: cvAvailable
             });
           });
         }
@@ -1436,12 +1475,19 @@ export class DemandSheetComponent implements OnInit {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // Process each selection
-    const actions: Promise<any>[] = [];
+    // Store the indices to remove before making API calls
+    const removedIndices = new Set(Array.from(selections.keys()));
+    
+    // Process each selection and create HTTP observables
+    const httpRequests: any[] = [];
     
     selections.forEach((isAccept, profileIndex) => {
-      const profile = profiles[profileIndex];
-      if (!profile) return;
+      // Find profile by profile_index (not array index)
+      const profile = profiles.find((p: any) => p.profile_index === profileIndex);
+      if (!profile) {
+        console.warn('Profile not found for index:', profileIndex);
+        return;
+      }
 
       const remark = this.profileRemarks().get(profileIndex) || '';
 
@@ -1455,32 +1501,73 @@ export class DemandSheetComponent implements OnInit {
         feedback: remark || null
       };
 
-      actions.push(
+      httpRequests.push(
         this.http.post<any>(
           `${this.apiBase}/demand/${demandId}/profile-action`,
           action,
           { headers }
-        ).toPromise()
+        )
       );
     });
 
-    // Execute all actions
-    Promise.all(actions).then(() => {
-      this.successMsg.set('Profile selections saved successfully');
-      // Remove the submitted profiles from the current modal list without reload
-      const removedIndices = new Set(Array.from(selections.keys()));
-      const remaining = this.submittedProfiles().filter((p: any) => !removedIndices.has(p.profile_index));
-      this.submittedProfiles.set(remaining);
-      // Clear selections and remarks after successful save
-      this.profileSelections.set(new Map());
-      this.profileRemarks.set(new Map());
-      // Keep modal open and avoid page reload for a smooth UX
-      setTimeout(() => this.successMsg.set(null), 3000);
-    }).catch((err) => {
-      console.error('Error saving profile selections:', err);
-      this.errorMsg.set('Failed to save selections: ' + (err.error?.detail || err.message));
-      setTimeout(() => this.errorMsg.set(null), 5000);
-    });
+    // Execute all HTTP requests using forkJoin
+    if (httpRequests.length > 0) {
+      forkJoin(httpRequests).subscribe({
+        next: () => {
+          // Show success snackbar notification
+          this.toastService.success('Profile selections saved successfully');
+          
+          // Get current profiles and filter out the ones that were saved
+          const currentProfiles = [...this.submittedProfiles()]; // Create a copy
+          console.log('Before removal - Total profiles:', currentProfiles.length);
+          console.log('Removing indices:', Array.from(removedIndices));
+          console.log('Current profile indices:', currentProfiles.map(p => p.profile_index));
+          
+          // Filter out removed profiles - create new array to ensure change detection
+          // Convert all indices to numbers for comparison to handle string/number mismatches
+          const removedIndicesNum = new Set(Array.from(removedIndices).map(idx => Number(idx)));
+          const remaining: any[] = currentProfiles.filter((p: any) => {
+            const profileIdx = Number(p.profile_index);
+            const shouldRemove = removedIndicesNum.has(profileIdx);
+            if (shouldRemove) {
+              console.log('Removing profile:', profileIdx, p.candidate_name);
+            }
+            return !shouldRemove;
+          });
+          
+          console.log('After removal - Remaining profiles:', remaining.length);
+          
+          // Create a completely new array reference to ensure change detection
+          const newProfilesArray = remaining.length > 0 ? remaining.map(p => ({ ...p })) : [];
+          console.log('Setting new profiles array, length:', newProfilesArray.length);
+          
+          // Update the profiles list immediately
+          this.submittedProfiles.set(newProfilesArray);
+          console.log('Signal updated, current value length:', this.submittedProfiles().length);
+          
+          // Force change detection to ensure UI updates immediately
+          this.cdr.detectChanges();
+          
+          // Clear selections and remarks after successful save
+          this.profileSelections.set(new Map());
+          this.profileRemarks.set(new Map());
+          
+          // Always reload the submitted tab to update the main table with correct counts
+          this.loadSubmitted();
+          
+          // If no profiles remain in modal, close it
+          if (remaining.length === 0) {
+            setTimeout(() => {
+              this.closeSubmittedProfilesModal();
+            }, 300);
+          }
+        },
+        error: (err) => {
+          console.error('Error saving profile selections:', err);
+          this.toastService.error('Failed to save selections: ' + (err.error?.detail || err.message));
+        }
+      });
+    }
   }
 
   viewSubmittedCv(cvUrl: string): void {

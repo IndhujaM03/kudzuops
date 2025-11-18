@@ -1,10 +1,10 @@
 import os
 import json
-from datetime import datetime, date
+from datetime import datetime, date, date
 from typing import Any, Dict, List, Optional
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Depends
 from fastapi.responses import FileResponse
 
 try:
@@ -16,12 +16,10 @@ except ImportError:
 try:
     from ..config import settings
     DATABASE_DSN = settings.database_url
+    API_BASE_URL = settings.api_base_url or os.getenv("API_BASE_URL", "")
 except Exception:
-    # Default DSN targets kudzuops database; can be overridden by env var DATABASE_URL
-    DATABASE_DSN = os.getenv(
-        "DATABASE_URL",
-        "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops",
-    )
+    DATABASE_DSN = os.getenv("DATABASE_URL", "")
+    API_BASE_URL = os.getenv("API_BASE_URL", "")
 
 
 router = APIRouter(prefix="/api", tags=["demand"])
@@ -555,13 +553,64 @@ def submit_tl_action(demand_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Insert into tbl_submissions
-                cur.execute(
-                    "INSERT INTO tbl_submissions (demand_id, action, submitted_at) VALUES (%s, %s, NOW())",
-                    (demand_id, action)
-                )
+                # Get demand details to extract spoc_id and skill
+                cur.execute("""
+                    SELECT spoc_id, skill 
+                    FROM tbl_demand_sheet 
+                    WHERE id = %s
+                """, (demand_id,))
+                demand_row = cur.fetchone()
+                
+                if not demand_row:
+                    raise HTTPException(status_code=404, detail="Demand not found")
+                
+                spoc_id = demand_row[0]
+                skill = demand_row[1]
+                
+                # Calculate submission week (week of year)
+                today = date.today()
+                submission_week = today.isocalendar()[1]
+                
+                # Set shortlisted based on action (1 for accepted, 0 for rejected)
+                shortlisted = 1 if action == "accepted" else 0
+                
+                # Insert into tbl_submissions with correct schema
+                cur.execute("""
+                    INSERT INTO tbl_submissions 
+                    (demand_id, spoc_id, skill, shortlisted, feedback, submission_date, submission_week, 
+                     no_of_submissions, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, 1, NOW(), NOW())
+                """, (
+                    demand_id,
+                    spoc_id,
+                    skill,
+                    shortlisted,
+                    f"Demand {action} by Team Leader",
+                    today,
+                    submission_week
+                ))
+                
+                # Count only accepted submissions (shortlisted = 1) for this demand_id and update all records
+                cur.execute("""
+                    SELECT COUNT(*) 
+                    FROM tbl_submissions 
+                    WHERE demand_id = %s AND shortlisted = 1
+                """, (demand_id,))
+                total_submissions = cur.fetchone()[0]
+                
+                # Update all records for this demand_id with the same no_of_submissions value
+                # This ensures all records (accepted and rejected) show the count of accepted submissions
+                cur.execute("""
+                    UPDATE tbl_submissions 
+                    SET no_of_submissions = %s,
+                        updated_at = NOW()
+                    WHERE demand_id = %s
+                """, (total_submissions, demand_id))
+                
                 conn.commit()
                 return {"message": f"Demand {action} successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to submit TL action: {e}")
 
@@ -845,7 +894,7 @@ async def get_cv_received(current_user: Dict[str, Any] = Depends(get_current_use
                                     # URL encode the filename to handle spaces and special characters
                                     import urllib.parse
                                     encoded_filename = urllib.parse.quote(filename)
-                                    cv['cv_url'] = f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}"
+                                    cv['cv_url'] = f"{API_BASE_URL}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                                     # Add file availability check
                                     cv['cv_available'] = True
                                 elif not cv.get('cv_url'):
@@ -925,6 +974,9 @@ async def approve_cv(activity_id: int, request: Request, cv_index: Optional[int]
                     cv_dict = dict(cv)
                     if i == target_index:
                         cv_dict['status'] = 1
+                        # Set Team Leader action date (tl_date) when status changes to 1 (submitted)
+                        from datetime import date
+                        cv_dict['tl_date'] = date.today().isoformat()
                         # Set Team Leader action date (tl_date) when status changes to 1 (submitted)
                         from datetime import date
                         cv_dict['tl_date'] = date.today().isoformat()
@@ -1183,8 +1235,7 @@ async def get_activity_profiles(activity_id: int):
                             filename = os.path.basename(filename)
                             encoded_filename = urllib.parse.quote(filename, safe='')
                             # Router prefix is /api, so endpoint is /api/cv-file/...
-                            api_base = os.getenv('API_BASE_URL', 'http://localhost:8000')
-                            cv_url = f"{api_base}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}"
+                            cv_url = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                     
                     # Get candidate info from multiple possible locations
                     candidate_name = (cv.get('candidate_name') or 
@@ -1232,8 +1283,144 @@ async def get_activity_profiles(activity_id: int):
                         filename = os.path.basename(filename)
                         encoded_filename = urllib.parse.quote(filename, safe='')
                         # Router prefix is /api, so endpoint is /api/cv-file/...
-                        api_base = os.getenv('API_BASE_URL', 'http://localhost:8000')
-                        profile['cv_url'] = f"{api_base}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}"
+                        profile['cv_url'] = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
+                    
+                    profiles.append(profile)
+                
+                # Return profiles array with recruiter info included
+                return profiles
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch activity profiles: {e}")
+
+
+@router.get("/recruiter-activity/{activity_id}/profiles")
+async def get_activity_profiles(activity_id: int):
+    """Get CV profiles for a specific recruiter activity"""
+    try:
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        ra.id,
+                        ra.recruiter_id,
+                        ra.demand_id,
+                        ra.cv_list,
+                        ra.uploaded_cv_count,
+                        ra.required_cv_count,
+                        COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.first_name, u.last_name, u.email) as recruiter_name,
+                        u.email as recruiter_email,
+                        ds.skill,
+                        c.client_name,
+                        cs.spoc_name
+                    FROM tbl_recruiter_activity ra
+                    LEFT JOIN tbl_users u ON ra.recruiter_id = u.id
+                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
+                    LEFT JOIN tbl_clients c ON ds.client_id = c.id
+                    LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
+                    WHERE ra.id = %s
+                """, (activity_id,))
+                
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Activity not found")
+                
+                columns = [desc[0] for desc in cur.description]
+                result = dict(zip(columns, row))
+                
+                # Parse cv_list if it's a string
+                cv_list = result.get('cv_list', [])
+                if isinstance(cv_list, str):
+                    try:
+                        cv_list = json.loads(cv_list)
+                    except:
+                        cv_list = []
+                elif cv_list is None:
+                    cv_list = []
+                
+                # Transform cv_list to match frontend expectations
+                profiles = []
+                for cv in cv_list:
+                    # Check if there's a nested 'candidate' object
+                    candidate_obj = cv.get('candidate', {})
+                    if not isinstance(candidate_obj, dict):
+                        candidate_obj = {}
+                    
+                    # Handle both 'remark' and 'remarks' (some entries use plural)
+                    remark = (cv.get('remark') or 
+                             cv.get('remarks') or 
+                             candidate_obj.get('remark') or 
+                             candidate_obj.get('remarks') or 
+                             '')
+                    
+                    # Handle different field names for CV URL
+                    # Check multiple possible field names for file/URL
+                    cv_url = (cv.get('cv_url') or 
+                             cv.get('file_path') or 
+                             cv.get('path') or 
+                             cv.get('file') or 
+                             cv.get('file_name') or '')
+                    
+                    # Build file path if we have file info but no URL
+                    if not cv_url.startswith('http') and not cv_url.startswith('/'):
+                        filename = cv.get('file') or cv.get('file_name') or ''
+                        if filename:
+                            import urllib.parse
+                            # Ensure filename doesn't have path separators
+                            filename = os.path.basename(filename)
+                            encoded_filename = urllib.parse.quote(filename, safe='')
+                            # Router prefix is /api, so endpoint is /api/cv-file/...
+                            cv_url = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
+                    
+                    # Get candidate info from multiple possible locations
+                    candidate_name = (cv.get('candidate_name') or 
+                                    candidate_obj.get('candidate_name') or 
+                                    candidate_obj.get('name') or
+                                    cv.get('file') or 
+                                    cv.get('file_name') or 
+                                    'Unknown')
+                    
+                    candidate_email = (cv.get('candidate_email') or 
+                                      cv.get('email') or
+                                      candidate_obj.get('candidate_email') or 
+                                      candidate_obj.get('email') or 
+                                      '')
+                    
+                    candidate_phone = (cv.get('candidate_phone') or 
+                                      cv.get('phone') or
+                                      candidate_obj.get('candidate_phone') or 
+                                      candidate_obj.get('phone') or 
+                                      '')
+                    
+                    profile = {
+                        'recruiter_name': result.get('recruiter_name', ''),
+                        'recruiter_email': result.get('recruiter_email', ''),
+                        'profile_name': candidate_name,
+                        'candidate_name': candidate_name,
+                        'candidate_email': candidate_email,
+                        'candidate_phone': candidate_phone,
+                        'remark': remark,
+                        'cv_url': cv_url,
+                        'status': cv.get('status') or candidate_obj.get('status') or 0,
+                        'upload_date': cv.get('upload_date') or cv.get('uploaded_at') or cv.get('time') or cv.get('timestamp', '')
+                    }
+                    
+                    # Update CV URLs to use proper file paths (if not already set above)
+                    if profile['cv_url'] and not profile['cv_url'].startswith('http') and not profile['cv_url'].startswith('/'):
+                        original_url = profile['cv_url']
+                        if original_url.startswith("src/assets/cv_uploads/"):
+                            filename = os.path.basename(original_url)
+                        else:
+                            filename = original_url
+                        
+                        import urllib.parse
+                        # Ensure filename doesn't have path separators
+                        filename = os.path.basename(filename)
+                        encoded_filename = urllib.parse.quote(filename, safe='')
+                        # Router prefix is /api, so endpoint is /api/cv-file/...
+                        profile['cv_url'] = f"{API_BASE_URL}/api/cv-file/{result['recruiter_id']}/{result['demand_id']}/{encoded_filename}" if API_BASE_URL else None
                     
                     profiles.append(profile)
                 
@@ -1247,12 +1434,27 @@ async def get_activity_profiles(activity_id: int):
 
 
 @router.get("/cv-submitted")
-async def get_cv_submitted():
-    """Get approved CVs (status = 1) for the Submitted tab with aggregated CV counts"""
+async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get approved CVs (status = 1) for the Submitted tab with aggregated CV counts, filtered by Team Leader"""
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Query to get approved CVs (status = 1) with aggregated CV counts
+                # Get all recruiters reporting to this team leader
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'recruiter' AND reporting_to = %s
+                """, (team_leader_id,))
+                recruiter_rows = cur.fetchall()
+                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                
+                if not recruiter_ids:
+                    return []
+                
+                # Query to get approved CVs (status = 1) with aggregated CV counts, filtered by team leader's recruiters
                 cur.execute("""
                     SELECT 
                         ra.id,
@@ -1285,19 +1487,34 @@ async def get_cv_submitted():
                     LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
                     LEFT JOIN tbl_clients c ON ds.client_id = c.id
                     LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
-                    WHERE ra.cv_list IS NOT NULL 
+                    WHERE ra.recruiter_id = ANY(%s)
+                    AND ra.cv_list IS NOT NULL 
                     AND jsonb_array_length(ra.cv_list) > 0
                     AND EXISTS (
                         SELECT 1 FROM jsonb_array_elements(ra.cv_list) AS cv
                         WHERE cv->>'status' = '1'
                     )
                     ORDER BY ra.updated_at DESC
-                """)
+                """, (recruiter_ids,))
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 result = _rows_to_dicts(columns, rows)
                 
-                # Update CV URLs in the cv_list to use proper file paths
+                # Get all processed profiles from tbl_submissions to filter them out
+                cur.execute("""
+                    SELECT demand_id, recruiter_id, candidate_name
+                    FROM tbl_submissions
+                """)
+                processed_profiles = cur.fetchall()
+                processed_set = set()
+                for proc in processed_profiles:
+                    # Create a unique key: (demand_id, recruiter_id, candidate_name)
+                    # Match by these three fields regardless of submission date
+                    key = (proc[0], proc[1], proc[2] if proc[2] else '')
+                    processed_set.add(key)
+                
+                # Update CV URLs in the cv_list and filter out already-processed profiles
+                filtered_result = []
                 for row in result:
                     if row.get('cv_list'):
                         cv_list = row['cv_list']
@@ -1308,34 +1525,55 @@ async def get_cv_submitted():
                                 cv_list = []
                         
                         if isinstance(cv_list, list):
+                            filtered_cv_list = []
                             for cv in cv_list:
-                                if cv.get('cv_url') and not cv['cv_url'].startswith('http'):
-                                    # Extract just the filename from the cv_url path
-                                    original_url = cv['cv_url']
-                                    if original_url.startswith("src/assets/cv_uploads/"):
-                                        # Extract just the filename from the full path
-                                        filename = os.path.basename(original_url)
-                                    else:
-                                        # It's already just a filename
-                                        filename = original_url
+                                # Only include CVs with status = 1 that haven't been processed
+                                if cv.get('status') == 1 or cv.get('status') == '1':
+                                    candidate_name = cv.get('candidate_name', '') or ''
+                                    demand_id = row.get('demand_id')
+                                    recruiter_id = row.get('recruiter_id')
                                     
-                                    # URL encode the filename to handle spaces and special characters
-                                    import urllib.parse
-                                    encoded_filename = urllib.parse.quote(filename)
-                                    cv['cv_url'] = f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}"
-                                    # Add file availability check
-                                    cv['cv_available'] = True
-                                elif not cv.get('cv_url'):
-                                    # If no cv_url, mark as not available
-                                    cv['cv_url'] = None
-                                    cv['cv_available'] = False
-                                else:
-                                    # Already has full URL, assume available
-                                    cv['cv_available'] = True
-                        
-                        row['cv_list'] = cv_list
+                                    # Check if this profile has been processed (exists in tbl_submissions)
+                                    # Match by demand_id, recruiter_id, and candidate_name
+                                    key = (demand_id, recruiter_id, candidate_name)
+                                    
+                                    if key not in processed_set:
+                                        # Update CV URL if needed
+                                        if cv.get('cv_url') and not cv['cv_url'].startswith('http'):
+                                            # Extract just the filename from the cv_url path
+                                            original_url = cv['cv_url']
+                                            if original_url.startswith("src/assets/cv_uploads/"):
+                                                # Extract just the filename from the full path
+                                                filename = os.path.basename(original_url)
+                                            else:
+                                                # It's already just a filename
+                                                filename = original_url
+                                            
+                                            # URL encode the filename to handle spaces and special characters
+                                            import urllib.parse
+                                            encoded_filename = urllib.parse.quote(filename)
+                                            cv['cv_url'] = f"{API_BASE_URL}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}" if API_BASE_URL else None
+                                            # Add file availability check
+                                            cv['cv_available'] = True
+                                        elif not cv.get('cv_url'):
+                                            # If no cv_url, mark as not available
+                                            cv['cv_url'] = None
+                                            cv['cv_available'] = False
+                                        else:
+                                            # Already has full URL, assume available
+                                            cv['cv_available'] = True
+                                        
+                                        filtered_cv_list.append(cv)
+                            
+                            # Only include the row if there are unprocessed CVs
+                            if filtered_cv_list:
+                                row['cv_list'] = filtered_cv_list
+                                filtered_result.append(row)
+                    else:
+                        # No cv_list, skip this row
+                        pass
                 
-                return result
+                return filtered_result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch submitted CVs: {e}")
 
@@ -1409,12 +1647,89 @@ async def get_cv_file(recruiter_id: int, demand_id: int, filename: str):
             filename=filename,
             headers={"Content-Disposition": f"inline; filename={filename}"}
         )
-        
     except HTTPException:
         raise
     except Exception as e:
         print(f"[ERROR] Error serving CV file: {e}")
         raise HTTPException(status_code=500, detail=f"Error serving CV file: {e}")
+
+
+@router.post("/demand/{demand_id}/status")
+async def update_demand_status(
+    demand_id: int,
+    payload: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Update demand status and spoc_remark - accessible by Team Leaders"""
+    try:
+        status = payload.get("status")
+        spoc_remark = payload.get("spoc_remark")
+        
+        if not status:
+            raise HTTPException(status_code=400, detail="Status is required")
+        
+        # Map UI status to database status
+        status_map = {
+            'open': 'open',
+            'hold': 'on_hold',
+            'close': 'closed',
+            'cancel': 'rejected'
+        }
+        db_status = status_map.get(status.lower(), status.lower())
+        
+        if db_status not in ['open', 'in_progress', 'closed', 'on_hold', 'rejected']:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Check if demand exists
+                cur.execute("SELECT id FROM tbl_demand_sheet WHERE id = %s", (demand_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Demand not found")
+                
+                # Build update query
+                update_fields = ["status = %s", "updated_at = NOW()"]
+                params = [db_status]
+                
+                if spoc_remark is not None:
+                    update_fields.append("spoc_remark = %s")
+                    params.append(spoc_remark)
+                
+                params.append(demand_id)
+                
+                update_query = f"""
+                    UPDATE tbl_demand_sheet SET 
+                        {', '.join(update_fields)}
+                    WHERE id = %s
+                """
+                
+                cur.execute(update_query, params)
+                
+                # Update activity_status in tbl_recruiter_activity based on status
+                if db_status.lower() == 'open':
+                    cur.execute("""
+                        UPDATE tbl_recruiter_activity 
+                        SET activity_status = 'open', updated_at = NOW()
+                        WHERE demand_id = %s
+                    """, (demand_id,))
+                else:
+                    cur.execute("""
+                        UPDATE tbl_recruiter_activity 
+                        SET activity_status = 'closed', updated_at = NOW()
+                        WHERE demand_id = %s
+                    """, (demand_id,))
+                
+                conn.commit()
+                
+                return {"message": "Demand status updated successfully"}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to update demand status: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in update_demand_status: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to update demand status: {str(e)}")
 
 
 @router.get("/cv-files-list")
@@ -1514,37 +1829,49 @@ async def get_key_highlights(
 ):
     """
     Get key highlights: Total Submissions and Current Demand count with optional date filtering
-    Date filter applies to CV entries based on recruiter_date field in cv_list, or falls back to activity updated_at
+    Date filter applies to CV entries based on recruiter_date field (fallback to legacy cv_date) in cv_list, or falls back to activity updated_at
     """
     try:
         team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
         if not team_leader_id:
             raise HTTPException(status_code=401, detail="User ID not found in token")
         
-        # Build date filter conditions
+        # Build date filter conditions - use recruiter_date (or legacy cv_date) if available, otherwise fallback to updated_at
         date_filter = ""
         date_params = []
         if start_date and end_date:
             date_filter = """
                 AND (
-                    (cv->>'recruiter_date')::date BETWEEN %s AND %s
-                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date BETWEEN %s AND %s)
+                    OR 
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
+                     AND DATE(ra.updated_at) BETWEEN %s AND %s)
                 )
             """
             date_params = [start_date, end_date, start_date, end_date]
         elif start_date:
             date_filter = """
                 AND (
-                    (cv->>'recruiter_date')::date >= %s
-                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date >= %s)
+                    OR 
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
+                     AND DATE(ra.updated_at) >= %s)
                 )
             """
             date_params = [start_date, start_date]
         elif end_date:
             date_filter = """
                 AND (
-                    (cv->>'recruiter_date')::date <= %s
-                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date <= %s)
+                    OR 
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
+                     AND DATE(ra.updated_at) <= %s)
                 )
             """
             date_params = [end_date, end_date]
@@ -1650,7 +1977,7 @@ async def get_daily_submissions_trend(
     """
     Get daily submissions trend grouped by date with recruiter details.
     Only considers records where status = 1 (Team Leader has submitted the profile).
-    Uses recruiter_date field from cv_list column to group data by date.
+    Uses cv_date field from cv_list column to group data by date.
     """
     try:
         team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
@@ -1676,18 +2003,18 @@ async def get_daily_submissions_trend(
                     print("DEBUG: No recruiters found for this team leader")
                     return {"daily_trend": []}
                 
-                # Build date filter for WHERE clause - use recruiter_date if available, otherwise fallback to updated_at
+                # Build date filter for WHERE clause - use recruiter_date (or legacy cv_date) if available, otherwise fallback to updated_at
                 # Handle NULL and invalid date formats properly using NULLIF to prevent casting errors
                 where_date_filter = ""
                 where_date_params = []
                 if start_date and end_date:
                     where_date_filter = """
                         AND (
-                            (NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                             AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                             AND (cv->>'recruiter_date')::date BETWEEN %s AND %s)
+                            (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                             AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                             AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date BETWEEN %s AND %s)
                             OR 
-                            (NULLIF(cv->>'recruiter_date', '') IS NULL 
+                            (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
                              AND DATE(ra.updated_at) BETWEEN %s AND %s)
                         )
                     """
@@ -1695,11 +2022,11 @@ async def get_daily_submissions_trend(
                 elif start_date:
                     where_date_filter = """
                         AND (
-                            (NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                             AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                             AND (cv->>'recruiter_date')::date >= %s)
+                            (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                             AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                             AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date >= %s)
                             OR 
-                            (NULLIF(cv->>'recruiter_date', '') IS NULL 
+                            (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
                              AND DATE(ra.updated_at) >= %s)
                         )
                     """
@@ -1707,35 +2034,35 @@ async def get_daily_submissions_trend(
                 elif end_date:
                     where_date_filter = """
                         AND (
-                            (NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                             AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                             AND (cv->>'recruiter_date')::date <= %s)
+                            (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                             AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                             AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date <= %s)
                             OR 
-                            (NULLIF(cv->>'recruiter_date', '') IS NULL 
+                            (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
                              AND DATE(ra.updated_at) <= %s)
                         )
                     """
                     where_date_params = [end_date, end_date]
                 
-                # Use recruiter_date from CV entry to group by date (status 0 or 1)
+                # Use recruiter_date (or legacy cv_date) from CV entry to group by date (status 0 or 1)
                 # Fallback to activity updated_at if date is NULL or invalid
                 group_by = """
                     CASE 
-                        WHEN cv->>'recruiter_date' IS NOT NULL AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                        THEN (cv->>'recruiter_date')::date
+                        WHEN COALESCE(cv->>'recruiter_date', cv->>'cv_date') IS NOT NULL AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                        THEN (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date
                         ELSE DATE(ra.updated_at)
                     END
                 """
                 
                 # Get submissions where status IN (0,1)
-                # Group by recruiter_date to show date-wise submissions
+                # Group by recruiter_date (fallback cv_date) to show date-wise submissions
                 # Use CASE statement for proper date handling with NULLIF to prevent errors
                 query = f"""
                     SELECT 
                         CASE 
-                            WHEN NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                                 AND (cv->>'recruiter_date') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' 
-                            THEN (cv->>'recruiter_date')::date
+                            WHEN NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                                 AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' 
+                            THEN (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date
                             ELSE DATE(ra.updated_at)
                         END as submission_date,
                         ra.recruiter_id,
@@ -1755,9 +2082,9 @@ async def get_daily_submissions_trend(
                     {where_date_filter}
                     GROUP BY 
                         CASE 
-                            WHEN NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                                 AND (cv->>'recruiter_date') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' 
-                            THEN (cv->>'recruiter_date')::date
+                            WHEN NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                                 AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' 
+                            THEN (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date
                             ELSE DATE(ra.updated_at)
                         END,
                         ra.recruiter_id
@@ -2254,25 +2581,25 @@ async def get_submissions_by_recruiters(
     Get total submissions count grouped by recruiter (bar chart).
     Only includes records where status = 0 (recruiter submitted).
     Groups/counts submissions based on recruiter_id.
-    Date filter uses recruiter_date field from cv_list column.
+    Date filter uses recruiter_date field (fallback to legacy cv_date) from cv_list column.
     """
     try:
         team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
         if not team_leader_id:
             raise HTTPException(status_code=401, detail="User ID not found in token")
         
-        # Build date filter conditions - use recruiter_date if available, otherwise fallback to updated_at
+        # Build date filter conditions - use recruiter_date (or legacy cv_date) if available, otherwise fallback to updated_at
         # Handle NULL and invalid date formats properly using NULLIF to prevent casting errors
         date_filter = ""
         date_params = []
         if start_date and end_date:
             date_filter = """
                 AND (
-                    (NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                     AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                     AND (cv->>'recruiter_date')::date BETWEEN %s AND %s)
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date BETWEEN %s AND %s)
                     OR 
-                    (NULLIF(cv->>'recruiter_date', '') IS NULL 
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
                      AND DATE(ra.updated_at) BETWEEN %s AND %s)
                 )
             """
@@ -2280,11 +2607,11 @@ async def get_submissions_by_recruiters(
         elif start_date:
             date_filter = """
                 AND (
-                    (NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                     AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                     AND (cv->>'recruiter_date')::date >= %s)
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date >= %s)
                     OR 
-                    (NULLIF(cv->>'recruiter_date', '') IS NULL 
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
                      AND DATE(ra.updated_at) >= %s)
                 )
             """
@@ -2292,11 +2619,11 @@ async def get_submissions_by_recruiters(
         elif end_date:
             date_filter = """
                 AND (
-                    (NULLIF(cv->>'recruiter_date', '') IS NOT NULL 
-                     AND (cv->>'recruiter_date') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
-                     AND (cv->>'recruiter_date')::date <= %s)
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NOT NULL 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date')) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' 
+                     AND (COALESCE(cv->>'recruiter_date', cv->>'cv_date'))::date <= %s)
                     OR 
-                    (NULLIF(cv->>'recruiter_date', '') IS NULL 
+                    (NULLIF(COALESCE(cv->>'recruiter_date', cv->>'cv_date'), '') IS NULL 
                      AND DATE(ra.updated_at) <= %s)
                 )
             """
@@ -3169,6 +3496,241 @@ async def get_manager_demand_by_spocs(
 # ============================================
 # Business Head Dashboard Endpoints
 # ============================================
+
+@router.get("/businesshead/dashboard/key-highlights")
+async def get_businesshead_key_highlights(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get key highlights for Business Head: Total Submissions, Current Demand, and Number of Managers
+    Aggregates data from Managers reporting to this Business Head
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        # Build date filter conditions
+        date_filter = ""
+        date_params = []
+        if start_date and end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                )
+            """
+            date_params = [start_date, end_date, start_date, end_date]
+        elif start_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date >= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                )
+            """
+            date_params = [start_date, start_date]
+        elif end_date:
+            date_filter = """
+                AND (
+                    (cv->>'recruiter_date')::date <= %s
+                    OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                )
+            """
+            date_params = [end_date, end_date]
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get all Managers reporting to this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get all Team Leaders reporting to these Managers
+                tl_ids = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get all recruiters reporting to these Team Leaders
+                recruiter_ids = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                
+                # Total Submissions: Count total number of CVs with status = 1
+                total_submissions = 0
+                if recruiter_ids:
+                    if date_params:
+                        query = f"""
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 {date_filter})
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids] + date_params
+                    else:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [recruiter_ids]
+                    cur.execute(query, params)
+                    result = cur.fetchone()
+                    total_submissions = result[0] if result else 0
+                
+                # Current Demand: Count distinct demands
+                current_demand = 0
+                if recruiter_ids:
+                    query = """
+                        SELECT COUNT(DISTINCT ra.demand_id)
+                        FROM tbl_recruiter_activity ra
+                        WHERE ra.recruiter_id = ANY(%s)
+                    """
+                    cur.execute(query, (recruiter_ids,))
+                    result = cur.fetchone()
+                    current_demand = result[0] if result else 0
+                
+                # Number of Managers
+                number_of_managers = len(manager_ids)
+                
+                return {
+                    "total_submissions": total_submissions,
+                    "current_demand": current_demand,
+                    "number_of_managers": number_of_managers
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"Failed to fetch business head key highlights: {str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in get_businesshead_key_highlights: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch business head key highlights: {str(e)}")
+
+
+@router.get("/businesshead/dashboard/daily-submissions-trend")
+async def get_businesshead_daily_submissions_trend(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Get daily submissions trend for Business Head (aggregates from all recruiters under their Managers).
+    Data source: tbl_submissions; date filter uses submission_date.
+    """
+    try:
+        business_head_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not business_head_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
+        with psycopg.connect(DATABASE_DSN) as conn:
+            with conn.cursor() as cur:
+                # Get Managers under this Business Head
+                cur.execute("""
+                    SELECT id FROM tbl_users 
+                    WHERE role = 'manager' AND reporting_to = %s
+                """, (business_head_id,))
+                manager_rows = cur.fetchall()
+                manager_ids = [row[0] for row in manager_rows] if manager_rows else []
+                
+                # Get Team Leaders under those Managers
+                tl_ids: List[int] = []
+                if manager_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'team_leader' AND reporting_to = ANY(%s)
+                    """, (manager_ids,))
+                    tl_rows = cur.fetchall()
+                    tl_ids = [row[0] for row in tl_rows] if tl_rows else []
+                
+                # Get recruiters under those TLs
+                recruiter_ids: List[int] = []
+                if tl_ids:
+                    cur.execute("""
+                        SELECT id FROM tbl_users 
+                        WHERE role = 'recruiter' AND reporting_to = ANY(%s)
+                    """, (tl_ids,))
+                    rec_rows = cur.fetchall()
+                    recruiter_ids = [row[0] for row in rec_rows] if rec_rows else []
+                
+                if not recruiter_ids:
+                    return {"daily_trend": []}
+                
+                # Build date filter
+                date_filter = ""
+                date_params: List[Any] = []
+                if start_date and end_date:
+                    date_filter = "AND s.submission_date BETWEEN %s AND %s"
+                    date_params = [start_date, end_date]
+                elif start_date:
+                    date_filter = "AND s.submission_date >= %s"
+                    date_params = [start_date]
+                elif end_date:
+                    date_filter = "AND s.submission_date <= %s"
+                    date_params = [end_date]
+                
+                # Get daily submissions grouped by date
+                query = f"""
+                    SELECT 
+                        DATE(s.submission_date) as date,
+                        COUNT(*) as count
+                    FROM tbl_submissions s
+                    WHERE s.recruiter_id = ANY(%s)
+                    {date_filter}
+                    GROUP BY DATE(s.submission_date)
+                    ORDER BY DATE(s.submission_date)
+                """
+                params: List[Any] = [recruiter_ids] + date_params
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                
+                daily_trend = [
+                    {
+                        "date": row[0].isoformat() if isinstance(row[0], date) else str(row[0]),
+                        "count": row[1]
+                    }
+                    for row in rows
+                ]
+                
+                return {"daily_trend": daily_trend}
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch daily submissions trend: {e}")
+
 
 @router.get("/businesshead/dashboard/demand-by-managers")
 async def get_businesshead_demand_by_managers(
@@ -4661,21 +5223,64 @@ async def get_superadmin_key_highlights(
                 # Total Submissions: Count total number of CVs with status = 1 from ALL recruiters
                 total_submissions = 0
                 if date_params:
-                    query = f"""
-                        SELECT COALESCE(SUM(
-                            (SELECT COUNT(*) 
-                             FROM jsonb_array_elements(ra.cv_list) AS cv
-                             WHERE (
-                                 cv->>'status' = '1' 
-                                 OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
-                             )
-                             {date_filter})
-                        ), 0) as total_count
-                        FROM tbl_recruiter_activity ra
-                        WHERE ra.cv_list IS NOT NULL
-                        AND jsonb_array_length(ra.cv_list) > 0
-                    """
-                    params = date_params
+                    # Build the query with date filter - note: ra.updated_at is accessible in subquery via outer query reference
+                    if start_date and end_date:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 AND (
+                                     (cv->>'recruiter_date')::date BETWEEN %s AND %s
+                                     OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) BETWEEN %s AND %s)
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [start_date, end_date, start_date, end_date]
+                    elif start_date:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 AND (
+                                     (cv->>'recruiter_date')::date >= %s
+                                     OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) >= %s)
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [start_date, start_date]
+                    elif end_date:
+                        query = """
+                            SELECT COALESCE(SUM(
+                                (SELECT COUNT(*) 
+                                 FROM jsonb_array_elements(ra.cv_list) AS cv
+                                 WHERE (
+                                     cv->>'status' = '1' 
+                                     OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
+                                 )
+                                 AND (
+                                     (cv->>'recruiter_date')::date <= %s
+                                     OR ((cv->>'recruiter_date') IS NULL AND DATE(ra.updated_at) <= %s)
+                                 ))
+                            ), 0) as total_count
+                            FROM tbl_recruiter_activity ra
+                            WHERE ra.cv_list IS NOT NULL
+                            AND jsonb_array_length(ra.cv_list) > 0
+                        """
+                        params = [end_date, end_date]
                 else:
                     query = """
                         SELECT COALESCE(SUM(

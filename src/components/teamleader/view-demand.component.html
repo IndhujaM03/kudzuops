@@ -273,45 +273,35 @@
         <table class="glassy-table">
           <thead>
             <tr>
-              <th>Recruiter</th>
-              <th>Profile Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Remarks</th>
-              <th>CV File</th>
-              <th>Actions</th>
+              <th>Recruiter Name</th>
+              <th>Candidate Name</th>
+              <th>CV Profile</th>
+              <th>Schedule Interview</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let profile of profiles()">
               <td>{{ profile.recruiter_name || profile.recruiter_email || '-' }}</td>
-              <td>{{ profile.profile_name || '-' }}</td>
-              <td>{{ profile.candidate_email || '-' }}</td>
-              <td>{{ profile.candidate_phone || '-' }}</td>
-              <td>{{ profile.remark || '-' }}</td>
+              <td>{{ profile.profile_name || profile.candidate_name || '-' }}</td>
               <td>
-                <button *ngIf="profile.cv_url" class="cv-link-btn" (click)="downloadCV(profile.cv_url)">
+                <button *ngIf="profile.cv_url" class="cv-link-btn" (click)="downloadCV(profile.cv_url); $event.stopPropagation()">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
                   </svg>
                 </button>
                 <span *ngIf="!profile.cv_url" class="no-link">CV not present</span>
               </td>
-              <td>
-                <div class="action-buttons">
-                  <button (click)="approveCv(selectedActivityId!, profile._cv_index, profile)" class="btn-accept" title="Accept CV">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                    Accept
-                  </button>
-                  <button (click)="rejectCv(selectedActivityId!, profile._cv_index, profile)" class="btn-reject" title="Reject CV">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                    Reject
-                  </button>
-                </div>
+              <td style="min-width: 180px;">
+                <button class="btn-schedule-interview" 
+                        (click)="handleScheduleInterviewClick($event, profile)" 
+                        title="Schedule Interview"
+                        type="button"
+                        style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); color: white; white-space: nowrap; pointer-events: auto !important; position: relative; z-index: 100;">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                  Schedule Interview
+                </button>
               </td>
             </tr>
           </tbody>
@@ -390,6 +380,124 @@
           Save
         </button>
         <button (click)="closeStatusModal()" class="btn-cancel" title="Cancel">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule Interview Modal -->
+<div *ngIf="showScheduleInterviewModal()" class="modal-overlay" (click)="closeScheduleInterviewModal()" style="z-index: 10001 !important;">
+  <div class="modal-card schedule-interview-modal" (click)="$event.stopPropagation()" style="max-width: 700px;">
+    <div class="modal-header">
+      <div class="modal-title">Schedule Interview - {{ selectedCandidateForSchedule?.candidate_name || selectedCandidateForSchedule?.profile_name || 'Unknown Candidate' }}</div>
+      <button class="modal-close" (click)="closeScheduleInterviewModal()">✕</button>
+    </div>
+    <div class="modal-body" *ngIf="selectedCandidateForSchedule">
+      <div class="candidate-info-section" style="margin-bottom: 20px; padding: 16px; background: #f9fafb; border-radius: 8px;">
+        <div class="detail-grid">
+          <div class="detail-item">
+            <label>Recruiter Name:</label>
+            <span>{{ selectedCandidateForSchedule.recruiter_name || selectedCandidateForSchedule.recruiter_email || 'N/A' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Candidate Name:</label>
+            <span>{{ selectedCandidateForSchedule.candidate_name || selectedCandidateForSchedule.profile_name || 'N/A' }}</span>
+          </div>
+          <div class="detail-item" *ngIf="selectedCandidateForSchedule.cv_url">
+            <label>Profile:</label>
+            <a [href]="selectedCandidateForSchedule.cv_url" target="_blank" class="cv-link" style="display: inline-flex; align-items: center; gap: 8px; color: #3b82f6; text-decoration: none;">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+              View CV
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="interview-schedule-form">
+        <div class="rounds-container">
+          <div *ngFor="let roundData of interviewRounds(); let roundIndex = index" class="round-section">
+            <div class="round-header">
+              <div class="round-row">
+                <div class="form-group round-select-group">
+                  <label>Interview Round</label>
+                  <select class="form-control" [(ngModel)]="roundData.round">
+                    <option value="">Select Round</option>
+                    <option value="R1">R1</option>
+                    <option value="R2">R2</option>
+                    <option value="R3">R3</option>
+                    <option value="R4">R4</option>
+                    <option value="R5">R5</option>
+                    <option value="Selected">Selected</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+                <div class="round-actions">
+                  <button *ngIf="interviewRounds().length > 1" (click)="removeInterviewRound(roundIndex)" class="btn-remove-round" title="Remove Round">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="slot-row-container">
+                <div class="form-group slot-select-group">
+                  <div class="slot-label-row">
+                    <label>Slot</label>
+                    <button (click)="addSlotToRound(roundIndex)" class="btn-add-slot-inline" title="Add Slot">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                      </svg>
+                      Add Slot
+                    </button>
+                  </div>
+                  <div class="slots-container">
+                    <div *ngFor="let slot of roundData.slots; let slotIndex = index" class="slot-row">
+                      <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" class="form-control" [(ngModel)]="slot.date" required />
+                      </div>
+                      <div class="form-group">
+                        <label>Time</label>
+                        <input type="time" class="form-control" [(ngModel)]="slot.time" required />
+                      </div>
+                      <div class="slot-actions">
+                        <button *ngIf="roundData.slots.length > 1" (click)="removeSlotFromRound(roundIndex, slotIndex)" class="btn-remove-slot" title="Remove Slot">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <button (click)="addInterviewRound()" class="btn-add-round" title="Add Another Round">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          Add Another Round
+        </button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="action-buttons">
+        <button (click)="saveInterviewSchedule()" class="btn-save" title="Save Interview Schedule">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Save
+        </button>
+        <button (click)="closeScheduleInterviewModal()" class="btn-cancel" title="Cancel">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>

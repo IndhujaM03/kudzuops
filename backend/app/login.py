@@ -49,9 +49,17 @@ try:
     from .config import settings
     DATABASE_DSN = settings.database_url
     REDIS_URL = settings.redis_url
+    if not DATABASE_DSN:
+        raise ValueError("DATABASE_URL not set in environment")
+    if not REDIS_URL:
+        raise ValueError("REDIS_URL not set in environment")
 except Exception:
-    DATABASE_DSN = _get_env("DATABASE_URL", default="postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops")
-    REDIS_URL = _get_env("REDIS_URL", default="redis://localhost:6379/0")
+    DATABASE_DSN = _get_env("DATABASE_URL", default="")
+    REDIS_URL = _get_env("REDIS_URL", default="")
+    if not DATABASE_DSN:
+        raise ValueError("DATABASE_URL environment variable is required")
+    if not REDIS_URL:
+        raise ValueError("REDIS_URL environment variable is required")
 
 # Redis client
 try:
@@ -74,7 +82,10 @@ def require_super_admin(credentials: Optional[HTTPAuthorizationCredentials] = De
 
 def decode_token(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     try:
-        payload = jwt.decode(token, _get_env("SECRET_KEY", default="change-me-in-prod"), algorithms=["HS256"])
+        secret_key = _get_env("SECRET_KEY", default="")
+        if not secret_key:
+            raise ValueError("SECRET_KEY environment variable is required")
+        payload = jwt.decode(token, secret_key, algorithms=["HS256"])
         return payload, None
     except Exception as e:
         return None, str(e)
@@ -371,47 +382,57 @@ super_router = APIRouter(prefix="/api/superadmin", tags=["superadmin"])
 def register(request: RegisterRequest):
     """Register a new user"""
     try:
-        with psycopg.connect(DATABASE_DSN) as conn:
-            with conn.cursor() as cur:
-                # Check if user already exists by email
-                cur.execute("SELECT id FROM tbl_users WHERE email=%s", (request.email,))
-                if cur.fetchone():
+        # Check if user already exists BEFORE starting the transaction
+        with psycopg.connect(DATABASE_DSN, autocommit=True) as check_conn:
+            with check_conn.cursor() as check_cur:
+                check_cur.execute("SELECT id FROM tbl_users WHERE email=%s", (request.email,))
+                if check_cur.fetchone():
                     raise HTTPException(status_code=400, detail="User already exists")
-                
-                # Ensure sequence is in sync with actual data (prevents duplicate key errors)
-                try:
-                    cur.execute("""
-                        SELECT setval('tbl_users_id_seq', 
-                            GREATEST(
-                                (SELECT MAX(id) FROM tbl_users), 
-                                1
-                            ), 
-                            true
-                        )
-                    """)
-                except Exception:
-                    # If sequence doesn't exist or has issues, continue - PostgreSQL will handle it
-                    pass
-                
-                # Hash password and create user
+        
+        # Now proceed with the transaction for user creation
+        with psycopg.connect(DATABASE_DSN) as conn:
+            try:
+                # Hash password before starting transaction
                 password_hash = _hash_password(request.password)
-                cur.execute(
-                    "INSERT INTO tbl_users (first_name, last_name, email, password_hash, is_verified, user_type, approval_status, role) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                    (request.first_name, request.last_name, request.email, password_hash, False, "candidate", False, "candidate")
-                )
-                user_id = cur.fetchone()[0]
-                conn.commit()
                 
-                # Send verification email
-                otp = _generate_otp()
-                _store_otp(request.email, otp, "verify")
-                _send_email(
-                    request.email,
-                    "Verify your account",
-                    f"Your verification code is: {otp}"
-                )
-                
-                return MessageResponse(message="Registration successful. Please check your email for verification code.")
+                with conn.cursor() as cur:
+                    # Hash password and create user
+                    try:
+                        cur.execute(
+                            "INSERT INTO tbl_users (first_name, last_name, email, password_hash, is_verified, user_type, approval_status, role) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                            (request.first_name, request.last_name, request.email, password_hash, False, "candidate", False, "candidate")
+                        )
+                        user_id = cur.fetchone()[0]
+                        conn.commit()
+                    except psycopg.IntegrityError as integrity_err:
+                        # Handle race condition: another request might have inserted the same email
+                        conn.rollback()
+                        if "unique" in str(integrity_err).lower() or "duplicate" in str(integrity_err).lower() or "violates unique constraint" in str(integrity_err).lower():
+                            raise HTTPException(status_code=400, detail="User already exists")
+                        raise
+                    except Exception as insert_err:
+                        # Rollback on any other insert error
+                        conn.rollback()
+                        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(insert_err)}")
+                    
+                    # Send verification email (outside transaction to avoid blocking)
+                    try:
+                        otp = _generate_otp()
+                        _store_otp(request.email, otp, "verify")
+                        _send_email(
+                            request.email,
+                            "Verify your account",
+                            f"Your verification code is: {otp}"
+                        )
+                    except Exception as email_error:
+                        # Log email error but don't fail registration
+                        print(f"Warning: Failed to send verification email: {email_error}")
+                    
+                    return MessageResponse(message="Registration successful. Please check your email for verification code.")
+            except Exception as db_error:
+                # Rollback transaction on any database error
+                conn.rollback()
+                raise db_error
     except HTTPException:
         raise
     except Exception as e:
@@ -460,7 +481,7 @@ def login(request: LoginRequest):
                 if role_norm == "super_admin":
                     redirect_url = "/superadmin/dashboard"
                 elif role_norm in ("team_leader", "teamleader", "team_leadr", "tl"):
-                    redirect_url = "/teamleader/demand-sheet"
+                    redirect_url = "/teamleader/dashboard"
                 elif role_norm == "recruiter":
                     redirect_url = "/recruiter/dashboard"
                 else:
@@ -629,7 +650,10 @@ def verify_reset_alias(request: ResetPasswordConfirmPayload):
 @router.get("/google/login")
 def google_login():
     client_id = _get_env("GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID")
-    redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/auth/google/callback")
+    api_base_url = _get_env("API_BASE_URL", default="")
+    if not api_base_url:
+        raise HTTPException(status_code=500, detail="API_BASE_URL environment variable is required")
+    redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", default=f"{api_base_url}/auth/google/callback")
     if not client_id:
         raise HTTPException(status_code=400, detail="Google OAuth not configured. Missing: GOOGLE_CLIENT_ID (or OAUTH_CLIENT_ID)")
     base = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -678,8 +702,13 @@ def google_callback(request: Request):
 
         client_id = _get_env("GOOGLE_CLIENT_ID", "OAUTH_CLIENT_ID")
         client_secret = _get_env("GOOGLE_CLIENT_SECRET", "OAUTH_CLIENT_SECRET")
-        redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", f"{os.getenv('API_BASE_URL', 'http://localhost:8000')}/auth/google/callback")
-        frontend_redirect = _get_env("FRONTEND_REDIRECT_AFTER_LOGIN", default="http://localhost:4200/dashboard")
+        api_base_url = _get_env("API_BASE_URL", default="")
+        if not api_base_url:
+            raise HTTPException(status_code=500, detail="API_BASE_URL environment variable is required")
+        redirect_uri = _get_env("GOOGLE_REDIRECT_URI", "OAUTH_REDIRECT_URI", default=f"{api_base_url}/auth/google/callback")
+        frontend_redirect = _get_env("FRONTEND_REDIRECT_AFTER_LOGIN", default="")
+        if not frontend_redirect:
+            raise HTTPException(status_code=500, detail="FRONTEND_REDIRECT_AFTER_LOGIN environment variable is required")
 
         def mask_sensitive(value: str) -> str:
             if not value or len(value) <= 6:

@@ -73,7 +73,7 @@ class _CVHandler(FileSystemEventHandler):
                         current = []
                     from datetime import date
                     entry = {"file": filename, "time": ts, "path": target_path.replace('\\', '/')}
-                    entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date for date filtering
+                    entry["recruiter_date"] = date.today().isoformat()  # Add recruiter_date when recruiter uploads profile
                     current.append(entry)
                     cur.execute(
                         "UPDATE tbl_recruiter_activity SET cv_list = %s::jsonb, updated_at=NOW() WHERE id=%s",

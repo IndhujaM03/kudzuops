@@ -129,7 +129,7 @@ export class VerifyComponent implements OnInit {
               if (userRole === 'super_admin') {
                 this.router.navigate(['/superadmin/dashboard']);
               } else if (userRole === 'team_leader' || userRole === 'teamleader' || userRole === 'team_leadr') {
-                this.router.navigate(['/teamleader/demand-sheet']);
+                this.router.navigate(['/teamleader/dashboard']);
               } else {
                 this.router.navigate(['/dashboard']);
               }

@@ -365,7 +365,7 @@ interface CandidateForm {
         </div>
         <div class="cv-view-body">
           <!-- PDF uses iframe; DOCX renders into the host below -->
-          <iframe *ngIf="cvViewUrl" [src]="cvViewUrl" class="cv-iframe" (error)="onIframeError($event)"></iframe>
+          <iframe *ngIf="cvViewUrl" [src]="cvViewUrl" class="cv-iframe" allow="fullscreen" allowfullscreen (error)="onIframeError($event)"></iframe>
           <div *ngIf="!cvViewUrl" #cvDocxHost class="cv-docx-host"></div>
         </div>
       </div>
@@ -2576,7 +2576,7 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
       // Use iframe to display PDF without native viewer controls
       const container = canvas.parentElement;
       if (container) {
-        container.innerHTML = `<iframe src="${fileUrl}#toolbar=0&navpanes=0&scrollbar=1" style="width: 100%; height: 100%; border: none;"></iframe>`;
+        container.innerHTML = `<iframe src="${fileUrl}#toolbar=0&navpanes=0&scrollbar=1" allow="fullscreen" allowfullscreen style="width: 100%; height: 100%; border: none;"></iframe>`;
       }
       
       console.log('✅ PDF rendered successfully');
@@ -2997,11 +2997,27 @@ export class RecruiterActivityComponent implements OnInit, OnDestroy {
   }
 
   // Show only records where status is null/empty or 'hold' (from tbl_cv_downloads)
+  // Exclude resumes with 'submitted', 'discard', or any other status
   filteredCvList(): CVEntry[] {
     const list = this.cvList || [];
     return list.filter((cv: any) => {
-      const s = (cv?.status || '').toString().trim().toLowerCase();
-      return s === '' || s === 'null' || s === 'hold' || s === 'on_hold';
+      // Handle null, undefined, or empty status - these should be shown
+      if (!cv?.status || cv.status === null || cv.status === undefined || cv.status === '') {
+        return true;
+      }
+      
+      // Convert to string and normalize for comparison
+      const s = String(cv.status).trim().toLowerCase();
+      
+      // Explicitly exclude 'submitted', 'discard', and numeric status '1' (submitted)
+      const excludedStatuses = ['submitted', 'discard', '1'];
+      if (excludedStatuses.includes(s)) {
+        return false;
+      }
+      
+      // Only show if status is 'hold' or 'on_hold'
+      const allowedStatuses = ['hold', 'on_hold'];
+      return allowedStatuses.includes(s);
     });
   }
 
