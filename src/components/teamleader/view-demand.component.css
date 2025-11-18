@@ -311,6 +311,7 @@
 
 .form-control:focus {
   outline: none;
+<<<<<<< HEAD
   border-color: var(--kudzu-primary, #182D17) !important;
   box-shadow: 0 0 0 3px var(--kudzu-primary-light, rgba(24, 45, 23, 0.1)) !important;
 }
@@ -321,6 +322,10 @@
 
 .form-control:hover {
   border-color: var(--kudzu-primary, #182D17) !important;
+=======
+  border-color: var(--kudzu-primary, #182D17);
+  box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1);
+>>>>>>> features
 }
 
 .form-control select {
@@ -347,6 +352,7 @@
 }
 
 .btn-save {
+<<<<<<< HEAD
   background: var(--kudzu-primary, #182D17) !important;
   color: #FFFFFF !important;
   border: 1px solid var(--kudzu-primary, #182D17) !important;
@@ -383,6 +389,25 @@
   background: var(--kudzu-bg-light, #f8fafc) !important;
   color: var(--kudzu-primary, #182D17) !important;
   border-color: var(--kudzu-primary, #182D17) !important;
+=======
+  background: var(--kudzu-primary, #182D17);
+  color: #FFFFFF;
+}
+
+.btn-save:hover {
+  background: var(--kudzu-primary-dark, #0f1a0f);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 45, 23, 0.2);
+}
+
+.btn-cancel {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.btn-cancel:hover {
+  background: #d1d5db;
+>>>>>>> features
   transform: translateY(-1px);
 }
 
@@ -394,6 +419,7 @@
   display: flex;
   justify-content: flex-end;
 }
+<<<<<<< HEAD
 
 /* Schedule Interview Modal Styles */
 .schedule-interview-modal {
@@ -677,3 +703,5 @@
   pointer-events: none;
   opacity: 0.5;
 }
+=======
+>>>>>>> features

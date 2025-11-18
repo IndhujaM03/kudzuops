@@ -10,3 +10,6 @@ build/
 .angular/cache/
 .env.development
 .env.production
+.env.local
+.env.development
+.env.production

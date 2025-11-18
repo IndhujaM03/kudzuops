@@ -273,24 +273,44 @@
         <table class="glassy-table">
           <thead>
             <tr>
+<<<<<<< HEAD
               <th>Recruiter Name</th>
               <th>Candidate Name</th>
               <th>CV Profile</th>
               <th>Schedule Interview</th>
+=======
+              <th>Recruiter</th>
+              <th>Profile Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Remarks</th>
+              <th>CV File</th>
+              <th>Actions</th>
+>>>>>>> features
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let profile of profiles()">
               <td>{{ profile.recruiter_name || profile.recruiter_email || '-' }}</td>
+<<<<<<< HEAD
               <td>{{ profile.profile_name || profile.candidate_name || '-' }}</td>
               <td>
                 <button *ngIf="profile.cv_url" class="cv-link-btn" (click)="downloadCV(profile.cv_url); $event.stopPropagation()">
+=======
+              <td>{{ profile.profile_name || '-' }}</td>
+              <td>{{ profile.candidate_email || '-' }}</td>
+              <td>{{ profile.candidate_phone || '-' }}</td>
+              <td>{{ profile.remark || '-' }}</td>
+              <td>
+                <button *ngIf="profile.cv_url" class="cv-link-btn" (click)="downloadCV(profile.cv_url)">
+>>>>>>> features
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
                   </svg>
                 </button>
                 <span *ngIf="!profile.cv_url" class="no-link">CV not present</span>
               </td>
+<<<<<<< HEAD
               <td style="min-width: 180px;">
                 <button class="btn-schedule-interview" 
                         (click)="handleScheduleInterviewClick($event, profile)" 
@@ -302,6 +322,23 @@
                   </svg>
                   Schedule Interview
                 </button>
+=======
+              <td>
+                <div class="action-buttons">
+                  <button (click)="approveCv(selectedActivityId!, profile._cv_index, profile)" class="btn-accept" title="Accept CV">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    Accept
+                  </button>
+                  <button (click)="rejectCv(selectedActivityId!, profile._cv_index, profile)" class="btn-reject" title="Reject CV">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Reject
+                  </button>
+                </div>
+>>>>>>> features
               </td>
             </tr>
           </tbody>
@@ -389,6 +426,7 @@
     </div>
   </div>
 </div>
+<<<<<<< HEAD
 
 <!-- Schedule Interview Modal -->
 <div *ngIf="showScheduleInterviewModal()" class="modal-overlay" (click)="closeScheduleInterviewModal()" style="z-index: 10001 !important;">
@@ -507,3 +545,5 @@
     </div>
   </div>
 </div>
+=======
+>>>>>>> features

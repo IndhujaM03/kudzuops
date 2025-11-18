@@ -52,12 +52,15 @@ export class ViewDemandComponent implements OnInit {
   statusRemark: string = '';
   selectedStatus: string = 'open';
 
+<<<<<<< HEAD
   // Schedule Interview Modal state
   showScheduleInterviewModal = signal(false);
   selectedCandidateForSchedule: any = null;
   // Structure: { round: string, slots: Array<{date: string, time: string, slot_status: number}> }
   interviewRounds = signal<Array<{round: string, slots: Array<{date: string, time: string, slot_status: number}>}>>([]);
 
+=======
+>>>>>>> features
   // CV Received count
   cvReceivedCount = computed(() => this.cvReceived().length);
 
@@ -593,6 +596,7 @@ export class ViewDemandComponent implements OnInit {
     }
     return 'status-open';
   }
+<<<<<<< HEAD
 
   // Schedule Interview Modal functions
   handleScheduleInterviewClick(event: Event, profile: any): void {
@@ -733,4 +737,6 @@ export class ViewDemandComponent implements OnInit {
       }
     });
   }
+=======
+>>>>>>> features
 }
