@@ -363,3 +363,127 @@
   gap: 10px;
 }
 
+/* Shared empty state (reuse Superadmin style) */
+.superadmin-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #718096;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 18px rgba(24, 45, 23, 0.05);
+}
+
+.superadmin-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.superadmin-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #4a5568;
+}
+
+.superadmin-empty-description {
+  font-size: 14px;
+  color: #718096;
+}
+
+/* Pagination */
+.tl-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tl-pagination-info {
+  font-size: 14px;
+  color: #4a5568;
+}
+
+.tl-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tl-pagination-btn {
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #4a5568;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tl-pagination-btn:hover:not(:disabled) {
+  background: #f7fafc;
+  border-color: var(--kudzu-primary, #182D17);
+  color: var(--kudzu-primary, #182D17);
+}
+
+.tl-pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tl-pagination-pages {
+  display: flex;
+  gap: 4px;
+}
+
+.tl-pagination-page {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #4a5568;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tl-pagination-page:hover:not(.ellipsis) {
+  background: #f7fafc;
+  border-color: var(--kudzu-primary, #182D17);
+}
+
+.tl-pagination-page.active {
+  background: var(--kudzu-primary, #182D17);
+  color: white;
+  border-color: var(--kudzu-primary, #182D17);
+}
+
+.tl-pagination-page.ellipsis {
+  border: none;
+  background: transparent;
+  cursor: default;
+  min-width: auto;
+  padding: 0 8px;
+}
+
+/* Snackbar */
+.tl-snackbar {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  text-align: center;
+}
+

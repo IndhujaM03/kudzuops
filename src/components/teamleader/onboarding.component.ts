@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -44,11 +44,8 @@ interface CandidateOnboarding {
         </div>
 
         <!-- Table -->
-        <div *ngIf="!loading() && onboardingRecords().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-          <p class="text-gray-500">No onboarding records found.</p>
-        </div>
-
-        <div *ngIf="!loading() && onboardingRecords().length > 0" class="table-wrapper">
+        <div *ngIf="!loading()">
+          <ng-container *ngIf="onboardingRecords().length > 0; else onboardingEmptyState">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -64,8 +61,8 @@ interface CandidateOnboarding {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let record of onboardingRecords(); let i = index">
-                <td>{{ i + 1 }}</td>
+              <tr *ngFor="let record of paginatedRecords(); let i = index">
+                <td>{{ getRangeStart(onboardingRecords().length, currentPage()) + i }}</td>
                 <td>{{ record.candidate_name || 'N/A' }}</td>
                 <td>{{ record.candidate_email || 'N/A' }}</td>
                 <td>{{ record.candidate_phone || 'N/A' }}</td>
@@ -73,13 +70,12 @@ interface CandidateOnboarding {
                 <td>{{ record.demand_id }}</td>
                 <td>{{ record.skill || '—' }}</td>
                 <td>
-                  <div class="rounds-info" *ngIf="getInterviewRounds(record.interview_schedules).length > 0">
-                    <span *ngFor="let round of getInterviewRounds(record.interview_schedules)" 
-                          class="round-badge">
-                      {{ round }}
-                    </span>
-                  </div>
-                  <span *ngIf="getInterviewRounds(record.interview_schedules).length === 0">N/A</span>
+                  <ng-container *ngIf="getInterviewRounds(record.interview_schedules) as rounds">
+                    <span *ngIf="rounds.length > 0; else noRounds">{{ rounds.join(', ') }}</span>
+                  </ng-container>
+                  <ng-template #noRounds>
+                    <span>N/A</span>
+                  </ng-template>
                 </td>
                 <td>
                   <button *ngIf="record.cv_path" 
@@ -96,7 +92,46 @@ interface CandidateOnboarding {
               </tr>
             </tbody>
           </table>
+          <div class="tl-pagination">
+            <div class="tl-pagination-info">
+              Showing {{ getRangeStart(onboardingRecords().length, currentPage()) }} - {{ getRangeEnd(onboardingRecords().length, currentPage()) }} of {{ onboardingRecords().length }} candidates
+            </div>
+            <div class="tl-pagination-controls">
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="currentPage() === 1"
+                (click)="goToPage(currentPage() - 1)">
+                Previous
+              </button>
+              <div class="tl-pagination-pages">
+                <button 
+                  *ngFor="let page of visiblePages()"
+                  class="tl-pagination-page"
+                  [class.active]="page === currentPage()"
+                  [class.ellipsis]="page === -1"
+                  (click)="goToPage(page)"
+                  [disabled]="page === -1">
+                  {{ page === -1 ? '...' : page }}
+                </button>
+              </div>
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="currentPage() === totalPages()"
+                (click)="goToPage(currentPage() + 1)">
+                Next
+              </button>
+            </div>
+          </div>
         </div>
+          </ng-container>
+        </div>
+        <ng-template #onboardingEmptyState>
+          <div class="superadmin-empty-state">
+            <div class="superadmin-empty-icon">👥</div>
+            <h3 class="superadmin-empty-title">No users found</h3>
+            <p class="superadmin-empty-description">No approved users in the system.</p>
+          </div>
+        </ng-template>
       </div>
     </div>
 
@@ -214,6 +249,35 @@ interface CandidateOnboarding {
       width: 20px;
       height: 20px;
       color: var(--kudzu-primary);
+    }
+
+    /* Shared empty state (reuse Superadmin style) */
+    .superadmin-empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #718096;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 10px 18px rgba(24, 45, 23, 0.05);
+    }
+
+    .superadmin-empty-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .superadmin-empty-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #4a5568;
+    }
+
+    .superadmin-empty-description {
+      font-size: 14px;
+      color: #718096;
     }
 
     /* CV Modal Styles - Kudzu Theme */
@@ -360,6 +424,87 @@ interface CandidateOnboarding {
       background: #d1d5db;
     }
 
+    .tl-pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 0;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .tl-pagination-info {
+      font-size: 14px;
+      color: #4a5568;
+    }
+
+    .tl-pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tl-pagination-btn {
+      padding: 8px 16px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #4a5568;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tl-pagination-btn:hover:not(:disabled) {
+      background: #f7fafc;
+      border-color: var(--kudzu-primary, #182D17);
+      color: var(--kudzu-primary, #182D17);
+    }
+
+    .tl-pagination-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .tl-pagination-pages {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tl-pagination-page {
+      min-width: 36px;
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #4a5568;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tl-pagination-page:hover:not(.ellipsis) {
+      background: #f7fafc;
+      border-color: var(--kudzu-primary, #182D17);
+    }
+
+    .tl-pagination-page.active {
+      background: var(--kudzu-primary, #182D17);
+      color: white;
+      border-color: var(--kudzu-primary, #182D17);
+    }
+
+    .tl-pagination-page.ellipsis {
+      border: none;
+      background: transparent;
+      cursor: default;
+      min-width: auto;
+      padding: 0 8px;
+    }
+
     @media (max-width: 768px) {
       .cv-modal-content {
         max-width: 95vw;
@@ -386,6 +531,12 @@ export class OnboardingComponent implements OnInit {
   loading = signal(false);
   errorMsg = signal<string | null>(null);
   onboardingRecords = signal<CandidateOnboarding[]>([]);
+
+  readonly itemsPerPage = 10;
+  currentPage = signal(1);
+  totalPages = computed(() => this.calculateTotalPages(this.onboardingRecords().length));
+  visiblePages = computed(() => this.buildVisiblePages(this.totalPages(), this.currentPage()));
+  paginatedRecords = computed(() => this.paginateList(this.onboardingRecords(), this.currentPage()));
   
   // CV Modal state
   showCvModal = signal(false);
@@ -408,6 +559,7 @@ export class OnboardingComponent implements OnInit {
     this.http.get<{ items: CandidateOnboarding[] }>(`${this.apiBase}/candidate-onboarding/all`, { headers }).subscribe({
       next: (response) => {
         this.onboardingRecords.set(response.items || []);
+        this.currentPage.set(1);
         this.loading.set(false);
       },
       error: (error) => {
@@ -432,10 +584,14 @@ export class OnboardingComponent implements OnInit {
       schedules = interviewSchedules;
     }
 
-    // Filter rounds where round_status = 2 (Completed)
-    const completedRounds = Object.keys(schedules).filter(
-      key => schedules[key] && schedules[key].round_status === 2
-    );
+    // Filter rounds where round_status = 2 (Completed) AND slot_status = 1 within slots
+    const completedRounds = Object.keys(schedules).filter(key => {
+      const round = schedules[key];
+      if (!round || round.round_status !== 2 || !Array.isArray(round.slots)) {
+        return false;
+      }
+      return round.slots.some((slot: any) => slot && slot.slot_status === 1);
+    });
     
     // Sort rounds: R1, R2, R3, etc.
     completedRounds.sort((a, b) => {
@@ -551,6 +707,69 @@ export class OnboardingComponent implements OnInit {
     if (url) {
       window.open(url, '_blank');
     }
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages()) {
+      this.currentPage.set(page);
+    }
+  }
+
+  getRangeStart(totalItems: number, currentPage: number): number {
+    if (!totalItems) {
+      return 0;
+    }
+    return (currentPage - 1) * this.itemsPerPage + 1;
+  }
+
+  getRangeEnd(totalItems: number, currentPage: number): number {
+    if (!totalItems) {
+      return 0;
+    }
+    return Math.min(currentPage * this.itemsPerPage, totalItems);
+  }
+
+  private paginateList(items: CandidateOnboarding[], page: number): CandidateOnboarding[] {
+    const totalPages = Math.max(1, Math.ceil(items.length / this.itemsPerPage));
+    const currentPage = Math.min(Math.max(page, 1), totalPages);
+    const start = (currentPage - 1) * this.itemsPerPage;
+    return items.slice(start, start + this.itemsPerPage);
+  }
+
+  private calculateTotalPages(totalItems: number): number {
+    if (totalItems === 0) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil(totalItems / this.itemsPerPage));
+  }
+
+  private buildVisiblePages(total: number, current: number): number[] {
+    const pages: number[] = [];
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+      return pages;
+    }
+
+    pages.push(1);
+    if (current > 3) {
+      pages.push(-1);
+    }
+
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    if (current < total - 2) {
+      pages.push(-1);
+    }
+
+    pages.push(total);
+    return pages;
   }
 }
 

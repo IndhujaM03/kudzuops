@@ -42,11 +42,7 @@
 
     <!-- Waiting Tab Content -->
     <div *ngIf="!loading() && activeTab === 'waiting'">
-      <div *ngIf="waitingInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p class="text-gray-500">No candidates waiting for interview slots.</p>
-      </div>
-
-      <div *ngIf="waitingInterviews().length > 0" class="table-wrapper">
+      <ng-container *ngIf="waitingInterviews().length > 0; else waitingEmptyState">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -58,7 +54,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let interview of waitingInterviews()">
+              <tr *ngFor="let interview of paginatedWaitingInterviews()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
                 <td>{{ interview.round }}</td>
@@ -76,16 +72,49 @@
                 </tr>
             </tbody>
           </table>
-      </div>
+          <div class="tl-pagination">
+            <div class="tl-pagination-info">
+              Showing {{ getRangeStart(waitingInterviews().length, waitingPage()) }} - {{ getRangeEnd(waitingInterviews().length, waitingPage()) }} of {{ waitingInterviews().length }} candidates
+            </div>
+            <div class="tl-pagination-controls">
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="waitingPage() === 1"
+                (click)="goToWaitingPage(waitingPage() - 1)">
+                Previous
+              </button>
+              <div class="tl-pagination-pages">
+                <button 
+                  *ngFor="let page of waitingVisiblePages()"
+                  class="tl-pagination-page"
+                  [class.active]="page === waitingPage()"
+                  [class.ellipsis]="page === -1"
+                  (click)="goToWaitingPage(page)"
+                  [disabled]="page === -1">
+                  {{ page === -1 ? '...' : page }}
+                </button>
+              </div>
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="waitingPage() === waitingTotalPages()"
+                (click)="goToWaitingPage(waitingPage() + 1)">
+                Next
+              </button>
+            </div>
+          </div>
+      </ng-container>
+      <ng-template #waitingEmptyState>
+        <div class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No users found</h3>
+          <p class="superadmin-empty-description">No approved users in the system.</p>
+        </div>
+      </ng-template>
     </div>
 
     <!-- SPOC Communication Tab Content -->
     <div *ngIf="!loading() && activeTab === 'spoc_communication'">
-      <div *ngIf="spocCommunicationInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p class="text-gray-500">No candidates have selected interview slots yet.</p>
-      </div>
-
-      <div *ngIf="spocCommunicationInterviews().length > 0" class="table-wrapper">
+      <ng-container *ngIf="spocCommunicationInterviews().length > 0; else spocEmptyState">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -98,7 +127,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let interview of spocCommunicationInterviews()">
+              <tr *ngFor="let interview of paginatedSpocInterviews()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
                 <td>{{ interview.round }}</td>
@@ -127,16 +156,49 @@
               </tr>
             </tbody>
           </table>
-      </div>
+          <div class="tl-pagination">
+            <div class="tl-pagination-info">
+              Showing {{ getRangeStart(spocCommunicationInterviews().length, spocPage()) }} - {{ getRangeEnd(spocCommunicationInterviews().length, spocPage()) }} of {{ spocCommunicationInterviews().length }} candidates
+            </div>
+            <div class="tl-pagination-controls">
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="spocPage() === 1"
+                (click)="goToSpocPage(spocPage() - 1)">
+                Previous
+              </button>
+              <div class="tl-pagination-pages">
+                <button 
+                  *ngFor="let page of spocVisiblePages()"
+                  class="tl-pagination-page"
+                  [class.active]="page === spocPage()"
+                  [class.ellipsis]="page === -1"
+                  (click)="goToSpocPage(page)"
+                  [disabled]="page === -1">
+                  {{ page === -1 ? '...' : page }}
+                </button>
+              </div>
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="spocPage() === spocTotalPages()"
+                (click)="goToSpocPage(spocPage() + 1)">
+                Next
+              </button>
+            </div>
+          </div>
+      </ng-container>
+      <ng-template #spocEmptyState>
+        <div class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No users found</h3>
+          <p class="superadmin-empty-description">No approved users in the system.</p>
+        </div>
+      </ng-template>
     </div>
 
     <!-- Confirmed Tab Content -->
     <div *ngIf="!loading() && activeTab === 'confirmed'">
-      <div *ngIf="confirmedInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p class="text-gray-500">No confirmed interviews yet.</p>
-      </div>
-
-      <div *ngIf="confirmedInterviews().length > 0" class="table-wrapper">
+      <ng-container *ngIf="confirmedInterviews().length > 0; else confirmedEmptyState">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -149,7 +211,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let interview of confirmedInterviews()">
+              <tr *ngFor="let interview of paginatedConfirmedInterviews()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
                 <td>{{ getCompletedRoundsDisplay(interview) }}</td>
@@ -183,7 +245,44 @@
               </tr>
             </tbody>
           </table>
-      </div>
+          <div class="tl-pagination">
+            <div class="tl-pagination-info">
+              Showing {{ getRangeStart(confirmedInterviews().length, confirmedPage()) }} - {{ getRangeEnd(confirmedInterviews().length, confirmedPage()) }} of {{ confirmedInterviews().length }} candidates
+            </div>
+            <div class="tl-pagination-controls">
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="confirmedPage() === 1"
+                (click)="goToConfirmedPage(confirmedPage() - 1)">
+                Previous
+              </button>
+              <div class="tl-pagination-pages">
+                <button 
+                  *ngFor="let page of confirmedVisiblePages()"
+                  class="tl-pagination-page"
+                  [class.active]="page === confirmedPage()"
+                  [class.ellipsis]="page === -1"
+                  (click)="goToConfirmedPage(page)"
+                  [disabled]="page === -1">
+                  {{ page === -1 ? '...' : page }}
+                </button>
+              </div>
+              <button 
+                class="tl-pagination-btn"
+                [disabled]="confirmedPage() === confirmedTotalPages()"
+                (click)="goToConfirmedPage(confirmedPage() + 1)">
+                Next
+              </button>
+            </div>
+          </div>
+      </ng-container>
+      <ng-template #confirmedEmptyState>
+        <div class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No users found</h3>
+          <p class="superadmin-empty-description">No approved users in the system.</p>
+        </div>
+      </ng-template>
     </div>
   </div>
 
@@ -196,6 +295,9 @@
       <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h3 style="margin: 0; font-size: 20px; font-weight: 600; color: var(--kudzu-primary);">SPOC Confirmation</h3>
         <button (click)="closeSpocConfirmationModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6b7280;">×</button>
+      </div>
+      <div *ngIf="snackbarMessage()" class="tl-snackbar">
+        {{ snackbarMessage() }}
       </div>
 
       <div class="modal-body" *ngIf="selectedInterviewForAction">
@@ -305,6 +407,9 @@
       <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: var(--kudzu-primary);">Interview Status</h3>
         <button (click)="closeInterviewStatusModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280;">×</button>
+      </div>
+      <div *ngIf="snackbarMessage()" class="tl-snackbar">
+        {{ snackbarMessage() }}
       </div>
 
       <div class="modal-body" *ngIf="selectedConfirmedInterview">
