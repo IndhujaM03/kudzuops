@@ -1,10 +1,10 @@
 import os
 import json
-from datetime import datetime, date, date
+from datetime import datetime, date
 from typing import Any, Dict, List, Optional
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Request, Depends, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import FileResponse
 
 try:

@@ -14,7 +14,7 @@ interface User {
   reporting_to_name?: string;
 }
 
-type RoleTab = 'recruiter' | 'team_leader' | 'manager' | 'business_head' | 'cluster_manager' | 'super_admin' | 'hr' | 'hr' | 'all';
+type RoleTab = 'recruiter' | 'team_leader' | 'manager' | 'business_head' | 'cluster_manager' | 'super_admin' | 'hr' | 'all';
 
 @Component({
   selector: 'app-superadmin-users',
@@ -618,7 +618,6 @@ export class SuperAdminUsersComponent implements OnInit {
   private router = inject(Router);
 
   allUsers = signal<User[]>([]);
-  private userDirectory = new Map<number, any>();
   
   // Reporting persons data
   teamLeaders = signal<any[]>([]);
@@ -630,12 +629,13 @@ export class SuperAdminUsersComponent implements OnInit {
   // Tabs
   roleTabs = [
     { label: 'All', value: 'all' as RoleTab },
-    { label: 'Admin', value: 'super_admin' as RoleTab },
-    { label: 'Manager', value: 'manager' as RoleTab },
-    { label: 'Team Lead', value: 'team_leader' as RoleTab },
     { label: 'Recruiter', value: 'recruiter' as RoleTab },
+    { label: 'TL', value: 'team_leader' as RoleTab },
+    { label: 'Manager', value: 'manager' as RoleTab },
     { label: 'HR', value: 'hr' as RoleTab },
-    { label: 'HR', value: 'hr' as RoleTab }
+    { label: 'Business Head', value: 'business_head' as RoleTab },
+    { label: 'Cluster Manager', value: 'cluster_manager' as RoleTab },
+    { label: 'Super Admin', value: 'super_admin' as RoleTab }
   ];
   activeTab = signal<RoleTab>('all');
 
@@ -740,14 +740,13 @@ export class SuperAdminUsersComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    this.loadUsersForTab(this.activeTab());
+    this.loadAllUsers();
     this.loadReportingPersons();
   }
 
   setActiveTab(tab: RoleTab): void {
     this.activeTab.set(tab);
     this.currentPage.set(1); // Reset to first page when changing tabs
-    this.loadUsersForTab(tab);
   }
 
   onSearchChange(): void {
@@ -760,70 +759,65 @@ export class SuperAdminUsersComponent implements OnInit {
     }
   }
 
-  loadUsersForTab(tab: RoleTab): void {
-    const roleParam = tab === 'all' ? '' : tab;
-    this.superAdminService.getUsersByRole(roleParam).subscribe({
-      next: (usersData: any[]) => {
-        if (tab === 'all') {
-          this.buildUserDirectory(usersData, true);
-        } else if (this.userDirectory.size === 0) {
-          this.buildUserDirectory(usersData, true);
-        } else {
-          this.buildUserDirectory(usersData);
-        }
-        this.allUsers.set(this.processUsers(usersData));
+  loadAllUsers(): void {
+    // Load all approved users at once to get reporting_to information
+    this.superAdminService.getUsersByRole('').subscribe({
+      next: (allUsersData: any[]) => {
+        console.log('Loaded users data:', allUsersData);
+        
+        // Filter only approved users (exclude pending and candidates)
+        // Backend should already filter by approval_status = true, but add safety check
+        const approvedUsers = (allUsersData || []).filter(u => {
+          return u.role && u.role !== '' && u.role !== null && u.role.toLowerCase() !== 'candidate';
+        });
+        
+        console.log('Approved users after filtering:', approvedUsers);
+        
+        // Create a map of all users for looking up reporting_to names
+        const userMap = new Map<number, any>();
+        allUsersData.forEach(u => {
+          if (u.id) userMap.set(u.id, u);
+        });
+
+        // Process all approved users
+        const processedUsers: User[] = [];
+        
+        approvedUsers.forEach(u => {
+          const user: User = {
+            id: u.id,
+            first_name: u.first_name,
+            last_name: u.last_name,
+            email: u.email,
+            role: u.role,
+            reporting_to: u.reporting_to || null
+          };
+          
+          if (user.reporting_to) {
+            const reportingUser = userMap.get(user.reporting_to);
+            if (reportingUser) {
+              user.reporting_to_name = this.getUserDisplayName(reportingUser);
+            }
+          }
+          
+          processedUsers.push(user);
+        });
+
+        // Sort by role, then by name
+        processedUsers.sort((a, b) => {
+          if (a.role !== b.role) {
+            return a.role.localeCompare(b.role);
+          }
+          return this.getUserDisplayName(a).localeCompare(this.getUserDisplayName(b));
+        });
+
+        console.log('Processed users:', processedUsers);
+        this.allUsers.set(processedUsers);
       },
       error: (err: any) => {
         console.error('Failed to load users:', err);
         this.allUsers.set([]);
       }
     });
-  }
-
-  private buildUserDirectory(usersData: any[], replace = false): void {
-    if (replace) {
-      this.userDirectory.clear();
-    }
-    (usersData || []).forEach(user => {
-      if (user?.id) {
-        this.userDirectory.set(user.id, user);
-      }
-    });
-  }
-
-  private processUsers(usersData: any[]): User[] {
-    const approvedUsers = (usersData || []).filter(u => {
-      return u.role && u.role !== '' && u.role !== null && u.role.toLowerCase() !== 'candidate';
-    });
-
-    const processedUsers: User[] = approvedUsers.map(u => {
-      const user: User = {
-        id: u.id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        email: u.email,
-        role: u.role,
-        reporting_to: u.reporting_to || null
-      };
-
-      if (user.reporting_to) {
-        const reportingUser = this.userDirectory.get(user.reporting_to);
-        if (reportingUser) {
-          user.reporting_to_name = this.getUserDisplayName(reportingUser);
-        }
-      }
-
-      return user;
-    });
-
-    processedUsers.sort((a, b) => {
-      if (a.role !== b.role) {
-        return a.role.localeCompare(b.role);
-      }
-      return this.getUserDisplayName(a).localeCompare(this.getUserDisplayName(b));
-    });
-
-    return processedUsers;
   }
 
   getUserDisplayName(user: any): string {
@@ -921,8 +915,7 @@ export class SuperAdminUsersComponent implements OnInit {
     this.superAdminService.updateUserReportingTo(userId, reportingTo).subscribe({
       next: (res: any) => {
         console.log('Reporting To updated successfully:', res.message);
-        this.refreshUserDirectory();
-        this.loadUsersForTab(this.activeTab()); // Reload to refresh data
+        this.loadAllUsers(); // Reload to refresh data
       },
       error: (err: any) => {
         console.error('Failed to update Reporting To:', err);
@@ -971,13 +964,6 @@ export class SuperAdminUsersComponent implements OnInit {
     this.superAdminService.getUsersByRole('super_admin').subscribe({
       next: (data: any[]) => this.superAdmins.set(data || []),
       error: (err: any) => console.error('Failed to load super admins:', err)
-    });
-  }
-
-  private refreshUserDirectory(): void {
-    this.superAdminService.getUsersByRole('').subscribe({
-      next: (usersData: any[]) => this.buildUserDirectory(usersData, true),
-      error: (err: any) => console.error('Failed to refresh user directory:', err)
     });
   }
 }

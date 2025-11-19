@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -46,7 +46,7 @@ interface CandidateOnboarding {
         <!-- Table -->
         <div *ngIf="!loading()">
           <ng-container *ngIf="onboardingRecords().length > 0; else onboardingEmptyState">
-          <table class="glassy-table">
+            <table class="glassy-table">
             <thead>
               <tr>
                 <th>S.No</th>
@@ -62,7 +62,7 @@ interface CandidateOnboarding {
             </thead>
             <tbody>
               <tr *ngFor="let record of paginatedRecords(); let i = index">
-                <td>{{ startIndex() + i + 1 }}</td>
+                <td>{{ getRangeStart(onboardingRecords().length, currentPage()) + i }}</td>
                 <td>{{ record.candidate_name || 'N/A' }}</td>
                 <td>{{ record.candidate_email || 'N/A' }}</td>
                 <td>{{ record.candidate_phone || 'N/A' }}</td>
@@ -91,70 +91,38 @@ interface CandidateOnboarding {
                 </td>
               </tr>
             </tbody>
-          </table>
-          <div class="tl-pagination">
-            <div class="tl-pagination-info">
-              Showing {{ getRangeStart(onboardingRecords().length, currentPage()) }} - {{ getRangeEnd(onboardingRecords().length, currentPage()) }} of {{ onboardingRecords().length }} candidates
-            </div>
-            <div class="tl-pagination-controls">
-              <button 
-                class="tl-pagination-btn"
-                [disabled]="currentPage() === 1"
-                (click)="goToPage(currentPage() - 1)">
-                Previous
-              </button>
-              <div class="tl-pagination-pages">
+            </table>
+            <div class="tl-pagination">
+              <div class="tl-pagination-info">
+                Showing {{ getRangeStart(onboardingRecords().length, currentPage()) }} - {{ getRangeEnd(onboardingRecords().length, currentPage()) }} of {{ onboardingRecords().length }} candidates
+              </div>
+              <div class="tl-pagination-controls">
                 <button 
-                  *ngFor="let page of visiblePages()"
-                  class="tl-pagination-page"
-                  [class.active]="page === currentPage()"
-                  [class.ellipsis]="page === -1"
-                  (click)="goToPage(page)"
-                  [disabled]="page === -1">
-                  {{ page === -1 ? '...' : page }}
+                  class="tl-pagination-btn"
+                  [disabled]="currentPage() === 1"
+                  (click)="goToPage(currentPage() - 1)">
+                  Previous
+                </button>
+                <div class="tl-pagination-pages">
+                  <button 
+                    *ngFor="let page of visiblePages()"
+                    class="tl-pagination-page"
+                    [class.active]="page === currentPage()"
+                    [class.ellipsis]="page === -1"
+                    (click)="goToPage(page)"
+                    [disabled]="page === -1">
+                    {{ page === -1 ? '...' : page }}
+                  </button>
+                </div>
+                <button 
+                  class="tl-pagination-btn"
+                  [disabled]="currentPage() === totalPages()"
+                  (click)="goToPage(currentPage() + 1)">
+                  Next
                 </button>
               </div>
-              <button 
-                class="tl-pagination-btn"
-                [disabled]="currentPage() === totalPages()"
-                (click)="goToPage(currentPage() + 1)">
-                Next
-              </button>
             </div>
-          </div>
-        </div>
           </ng-container>
-        </div>
-        <!-- Pagination -->
-        <div *ngIf="onboardingRecords().length > 0" class="superadmin-pagination">
-          <div class="superadmin-pagination-info">
-            Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ onboardingRecords().length }} records
-          </div>
-          <div class="superadmin-pagination-controls">
-            <button 
-              class="superadmin-pagination-btn"
-              [disabled]="currentPage() === 1"
-              (click)="goToPage(currentPage() - 1)">
-              Previous
-            </button>
-            <div class="superadmin-pagination-pages">
-              <button 
-                *ngFor="let page of visiblePages()"
-                class="superadmin-pagination-page"
-                [class.active]="page === currentPage()"
-                [class.ellipsis]="page === -1"
-                (click)="goToPage(page)"
-                [disabled]="page === -1">
-                {{ page === -1 ? '...' : page }}
-              </button>
-            </div>
-            <button 
-              class="superadmin-pagination-btn"
-              [disabled]="currentPage() === totalPages()"
-              (click)="goToPage(currentPage() + 1)">
-              Next
-            </button>
-          </div>
         </div>
         <ng-template #onboardingEmptyState>
           <div class="superadmin-empty-state">
@@ -657,57 +625,6 @@ export class OnboardingComponent implements OnInit {
   errorMsg = signal<string | null>(null);
   onboardingRecords = signal<CandidateOnboarding[]>([]);
   
-  // Pagination state
-  currentPage = signal(1);
-  itemsPerPage = 10;
-
-  // Pagination computed values
-  paginatedRecords = computed(() => {
-    const start = (this.currentPage() - 1) * this.itemsPerPage;
-    const end = start + this.itemsPerPage;
-    return this.onboardingRecords().slice(start, end);
-  });
-
-  totalPages = computed(() => Math.ceil(this.onboardingRecords().length / this.itemsPerPage));
-
-  startIndex = computed(() => (this.currentPage() - 1) * this.itemsPerPage);
-  endIndex = computed(() => Math.min(this.startIndex() + this.itemsPerPage, this.onboardingRecords().length));
-
-  visiblePages = computed(() => {
-    const total = this.totalPages();
-    const current = this.currentPage();
-    const pages: number[] = [];
-    
-    if (total <= 7) {
-      for (let i = 1; i <= total; i++) {
-        pages.push(i);
-      }
-    } else {
-      pages.push(1);
-      
-      if (current > 3) {
-        pages.push(-1); // -1 represents ellipsis
-      }
-      
-      const start = Math.max(2, current - 1);
-      const end = Math.min(total - 1, current + 1);
-      
-      for (let i = start; i <= end; i++) {
-        if (i !== 1 && i !== total) {
-          pages.push(i);
-        }
-      }
-      
-      if (current < total - 2) {
-        pages.push(-1); // -1 represents ellipsis
-      }
-      
-      pages.push(total);
-    }
-    
-    return pages;
-  });
-
   readonly itemsPerPage = 10;
   currentPage = signal(1);
   totalPages = computed(() => this.calculateTotalPages(this.onboardingRecords().length));
@@ -720,12 +637,6 @@ export class OnboardingComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadOnboardingRecords();
-  }
-
-  goToPage(page: number): void {
-    if (page >= 1 && page <= this.totalPages() && page !== -1) {
-      this.currentPage.set(page);
-    }
   }
 
   loadOnboardingRecords(): void {
@@ -742,7 +653,6 @@ export class OnboardingComponent implements OnInit {
       next: (response) => {
         this.onboardingRecords.set(response.items || []);
         this.currentPage.set(1); // Reset to first page when loading new data
-        this.currentPage.set(1);
         this.loading.set(false);
       },
       error: (error) => {

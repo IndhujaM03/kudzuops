@@ -69,94 +69,6 @@ export class InterviewComponent implements OnInit {
   spocCommunicationInterviews = computed(() => this.processSpocCommunicationInterviews());
   confirmedInterviews = computed(() => this.processConfirmedInterviews());
 
-  // Pagination state
-  currentPage = signal(1);
-  itemsPerPage = 10;
-
-  // Pagination computed values for each tab
-  paginatedWaiting = computed(() => {
-    const start = (this.currentPage() - 1) * this.itemsPerPage;
-    const end = start + this.itemsPerPage;
-    return this.waitingInterviews().slice(start, end);
-  });
-
-  paginatedSpocCommunication = computed(() => {
-    const start = (this.currentPage() - 1) * this.itemsPerPage;
-    const end = start + this.itemsPerPage;
-    return this.spocCommunicationInterviews().slice(start, end);
-  });
-
-  paginatedConfirmed = computed(() => {
-    const start = (this.currentPage() - 1) * this.itemsPerPage;
-    const end = start + this.itemsPerPage;
-    return this.confirmedInterviews().slice(start, end);
-  });
-
-  // Total pages for each tab
-  totalPagesWaiting = computed(() => Math.ceil(this.waitingInterviews().length / this.itemsPerPage));
-  totalPagesSpocCommunication = computed(() => Math.ceil(this.spocCommunicationInterviews().length / this.itemsPerPage));
-  totalPagesConfirmed = computed(() => Math.ceil(this.confirmedInterviews().length / this.itemsPerPage));
-
-  // Current tab's total pages
-  currentTotalPages = computed(() => {
-    switch (this.activeTab) {
-      case 'waiting': return this.totalPagesWaiting();
-      case 'spoc_communication': return this.totalPagesSpocCommunication();
-      case 'confirmed': return this.totalPagesConfirmed();
-      default: return 1;
-    }
-  });
-
-  // Current tab's data length
-  currentDataLength = computed(() => {
-    switch (this.activeTab) {
-      case 'waiting': return this.waitingInterviews().length;
-      case 'spoc_communication': return this.spocCommunicationInterviews().length;
-      case 'confirmed': return this.confirmedInterviews().length;
-      default: return 0;
-    }
-  });
-
-  // Start and end index for current page
-  startIndex = computed(() => (this.currentPage() - 1) * this.itemsPerPage);
-  endIndex = computed(() => Math.min(this.startIndex() + this.itemsPerPage, this.currentDataLength()));
-
-  // Visible pages for pagination UI
-  visiblePages = computed(() => {
-    const total = this.currentTotalPages();
-    const current = this.currentPage();
-    const pages: number[] = [];
-    
-    if (total <= 7) {
-      for (let i = 1; i <= total; i++) {
-        pages.push(i);
-      }
-    } else {
-      pages.push(1);
-      
-      if (current > 3) {
-        pages.push(-1); // -1 represents ellipsis
-      }
-      
-      const start = Math.max(2, current - 1);
-      const end = Math.min(total - 1, current + 1);
-      
-      for (let i = start; i <= end; i++) {
-        if (i !== 1 && i !== total) {
-          pages.push(i);
-        }
-      }
-      
-      if (current < total - 2) {
-        pages.push(-1); // -1 represents ellipsis
-      }
-      
-      pages.push(total);
-    }
-    
-    return pages;
-  });
-
   // Recruiter names cache (we'll need to fetch this)
   recruiterNames: Map<number, string> = new Map();
 
@@ -205,13 +117,6 @@ export class InterviewComponent implements OnInit {
 
   setTab(tab: 'waiting' | 'spoc_communication' | 'confirmed'): void {
     this.activeTab = tab;
-    this.currentPage.set(1); // Reset to first page when changing tabs
-  }
-
-  goToPage(page: number): void {
-    if (page >= 1 && page <= this.currentTotalPages() && page !== -1) {
-      this.currentPage.set(page);
-    }
     if (tab === 'waiting') {
       this.waitingPage.set(1);
     } else if (tab === 'spoc_communication') {

@@ -1026,6 +1026,7 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                 cv_path = None
                 demand_id = schedule.get("demand_id")
                 recruiter_id = schedule.get("recruiter_id")
+                cv_row = None
                 if demand_id:
                     cur.execute(
                         """

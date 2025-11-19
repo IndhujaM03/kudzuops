@@ -38,7 +38,8 @@ import { RecruiterDashboardComponent } from './components/recruiter/recruiter-da
 import { DemandManagementComponent } from './components/recruiter/demand-management/demand-management.component';
 import { RecruiterActivityComponent } from './components/recruiter/recruiter-activity.component';
 import { SubmittedComponent } from './components/recruiter/submitted/submitted.component';
-import { SettingsComponent } from './components/recruiter/settings/settings.component';
+import { SettingsComponent as RecruiterSettingsComponent } from './components/recruiter/settings/settings.component';
+import { SettingsComponent } from './components/shared/settings.component';
 import { InterviewScheduleComponent } from './components/recruiter/interview-schedule/interview-schedule.component';
 import { OnboardingFormComponent } from './components/onboarding/onboarding-form.component';
 
@@ -368,6 +369,7 @@ const routes: Routes = [
       { path: 'client-settings/spoc', component: ClientSettingsComponent },
       { path: 'client-settings', redirectTo: 'client-settings/client', pathMatch: 'full' },
       { path: 'pending-users', redirectTo: 'pending-approvals', pathMatch: 'full' },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -377,6 +379,7 @@ const routes: Routes = [
     canActivate: [roleGuard('manager')],
     children: [
       { path: 'dashboard', component: ManagerDashboardComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -387,6 +390,7 @@ const routes: Routes = [
     children: [
       { path: 'dashboard', component: HrDashboardComponent },
       { path: 'onboarding', component: HrOnboardingComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -396,6 +400,7 @@ const routes: Routes = [
     canActivate: [roleGuard('business_head')],
     children: [
       { path: 'dashboard', component: BusinessHeadDashboardComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -405,6 +410,7 @@ const routes: Routes = [
     canActivate: [roleGuard('cluster_manager')],
     children: [
       { path: 'dashboard', component: ClusterManagerDashboardComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -418,6 +424,7 @@ const routes: Routes = [
       { path: 'view-demand', component: ViewDemandComponent },
       { path: 'interview', component: InterviewComponent },
       { path: 'onboarding', component: TeamLeaderOnboardingComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

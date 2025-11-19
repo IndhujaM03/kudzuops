@@ -1,4 +1,4 @@
-import { Component, signal, inject, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, signal, inject, OnInit, OnDestroy, ChangeDetectorRef, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -1097,6 +1097,52 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  // Pagination helper methods
+  calculateTotalPages(totalItems: number): number {
+    return Math.ceil(totalItems / this.itemsPerPage);
+  }
+
+  paginateList<T>(list: T[], page: number): T[] {
+    const start = (page - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return list.slice(start, end);
+  }
+
+  buildVisiblePages(totalPages: number, currentPage: number): number[] {
+    const pages: number[] = [];
+    
+    if (totalPages <= 7) {
+      // Show all pages if 7 or fewer
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Show first page, current page, and last page with ellipsis
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) {
+        if (i !== 1 && i !== totalPages) {
+          pages.push(i);
+        }
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      pages.push(totalPages);
+    }
+    
+    return pages;
   }
 
   setTab(tab: 'unassigned' | 'assigned' | 'cv-received' | 'submitted' | 'reschedule') {
