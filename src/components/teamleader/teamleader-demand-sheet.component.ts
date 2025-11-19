@@ -1068,6 +1068,28 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   cvSubmitted = signal<any[]>([]);
   submitted = signal<DemandItem[]>([]);
 
+  readonly itemsPerPage = 10;
+
+  unassignedPage = signal(1);
+  assignedPage = signal(1);
+  cvReceivedPage = signal(1);
+  cvSubmittedPage = signal(1);
+  reschedulePage = signal(1);
+
+  unassignedTotalPages = computed(() => this.calculateTotalPages(this.unassigned().length));
+  assignedTotalPages = computed(() => this.calculateTotalPages(this.assigned().length));
+  cvReceivedTotalPages = computed(() => this.calculateTotalPages(this.cvReceived().length));
+  cvSubmittedTotalPages = computed(() => this.calculateTotalPages(this.cvSubmitted().length));
+  rescheduleTotalPages = computed(() => this.calculateTotalPages(this.rescheduleCandidates().length));
+
+  unassignedVisiblePages = computed(() => this.buildVisiblePages(this.unassignedTotalPages(), this.unassignedPage()));
+  assignedVisiblePages = computed(() => this.buildVisiblePages(this.assignedTotalPages(), this.assignedPage()));
+  cvReceivedVisiblePages = computed(() => this.buildVisiblePages(this.cvReceivedTotalPages(), this.cvReceivedPage()));
+  cvSubmittedVisiblePages = computed(() => this.buildVisiblePages(this.cvSubmittedTotalPages(), this.cvSubmittedPage()));
+  rescheduleVisiblePages = computed(() => this.buildVisiblePages(this.rescheduleTotalPages(), this.reschedulePage()));
+
+  paginatedUnassigned = computed(() => this.paginateList(this.unassigned(), this.unassignedPage()));
+
   ngOnInit(): void {
     this.loadReschedule();
   }

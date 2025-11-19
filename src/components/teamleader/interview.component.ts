@@ -28,6 +28,7 @@ interface ProcessedInterview {
   recruiterId: number;
   recruiterName: string;
   round: string;
+  latestRound?: string;
   slots: Array<{
     date: string;
     time: string;
@@ -159,6 +160,24 @@ export class InterviewComponent implements OnInit {
   // Recruiter names cache (we'll need to fetch this)
   recruiterNames: Map<number, string> = new Map();
 
+  // Pagination
+  readonly itemsPerPage = 10;
+  waitingPage = signal(1);
+  spocPage = signal(1);
+  confirmedPage = signal(1);
+
+  waitingTotalPages = computed(() => this.calculateTotalPages(this.waitingInterviews().length));
+  spocTotalPages = computed(() => this.calculateTotalPages(this.spocCommunicationInterviews().length));
+  confirmedTotalPages = computed(() => this.calculateTotalPages(this.confirmedInterviews().length));
+
+  waitingVisiblePages = computed(() => this.buildVisiblePages(this.waitingTotalPages(), this.waitingPage()));
+  spocVisiblePages = computed(() => this.buildVisiblePages(this.spocTotalPages(), this.spocPage()));
+  confirmedVisiblePages = computed(() => this.buildVisiblePages(this.confirmedTotalPages(), this.confirmedPage()));
+
+  paginatedWaitingInterviews = computed(() => this.paginateList(this.waitingInterviews(), this.waitingPage()));
+  paginatedSpocInterviews = computed(() => this.paginateList(this.spocCommunicationInterviews(), this.spocPage()));
+  paginatedConfirmedInterviews = computed(() => this.paginateList(this.confirmedInterviews(), this.confirmedPage()));
+
   // SPOC Confirmation Modal state
   showSpocConfirmationModal = signal(false);
   selectedInterviewForAction: ProcessedInterview | null = null;
@@ -176,6 +195,10 @@ export class InterviewComponent implements OnInit {
   nextRoundSlots = signal<Array<{date: string, time: string, slot_status: number}>>([{date: '', time: '', slot_status: 0}]);
   selectedNextRound: string = '';
 
+  // Snackbar
+  snackbarMessage = signal<string | null>(null);
+  private snackbarTimer: any = null;
+
   ngOnInit(): void {
     this.loadInterviewSchedules();
   }
@@ -188,6 +211,13 @@ export class InterviewComponent implements OnInit {
   goToPage(page: number): void {
     if (page >= 1 && page <= this.currentTotalPages() && page !== -1) {
       this.currentPage.set(page);
+    }
+    if (tab === 'waiting') {
+      this.waitingPage.set(1);
+    } else if (tab === 'spoc_communication') {
+      this.spocPage.set(1);
+    } else {
+      this.confirmedPage.set(1);
     }
   }
 
@@ -229,6 +259,7 @@ export class InterviewComponent implements OnInit {
         });
         
         this.allSchedules.set(items);
+        this.resetPagination();
         
         // Fallback: load recruiter names if not in response
         if (items.some((s: InterviewSchedule) => !s.recruiter_name)) {
@@ -438,6 +469,7 @@ export class InterviewComponent implements OnInit {
       schedule: InterviewSchedule;
       pendingRounds: Set<string>; // Use Set to avoid duplicates - rounds with round_status = 0
       activeRound?: { roundKey: string; roundData: any; slots: any[] };
+      latestRoundKey?: string;
     }>();
 
     confirmedSchedules.forEach(schedule => {
@@ -464,7 +496,8 @@ export class InterviewComponent implements OnInit {
         candidateMap.set(candidateKey, {
           schedule,
           pendingRounds: new Set<string>(), // Rounds with round_status = 0
-          activeRound: undefined
+          activeRound: undefined,
+          latestRoundKey: undefined
         });
       }
       
@@ -483,6 +516,7 @@ export class InterviewComponent implements OnInit {
         if (!roundData || !roundData.slots) return;
 
         const roundStatus = roundData.round_status;
+        candidateData.latestRoundKey = roundKey;
         
         // Collect pending rounds (round_status = 0) - add to Set to avoid duplicates
         if (roundStatus === 0 || roundStatus === '0') {
@@ -531,6 +565,7 @@ export class InterviewComponent implements OnInit {
           recruiterId: schedule.recruiter_id,
           recruiterName: schedule.recruiter_name || this.recruiterNames.get(schedule.recruiter_id) || `Recruiter ${schedule.recruiter_id}`,
           round: candidateData.activeRound.roundKey,
+          latestRound: candidateData.latestRoundKey,
           slots: candidateData.activeRound.slots,
           roundStatus: candidateData.activeRound.roundData.round_status || 0,
           candidateEmail: schedule.candidate_email,
@@ -548,6 +583,7 @@ export class InterviewComponent implements OnInit {
           recruiterId: schedule.recruiter_id,
           recruiterName: schedule.recruiter_name || this.recruiterNames.get(schedule.recruiter_id) || `Recruiter ${schedule.recruiter_id}`,
           round: pendingRoundsArray[0], // Use first pending round as default
+          latestRound: candidateData.latestRoundKey,
           slots: [],
           roundStatus: 0,
           candidateEmail: schedule.candidate_email,
@@ -623,6 +659,9 @@ export class InterviewComponent implements OnInit {
       }
     }
     
+    if (interview.latestRound) {
+      return interview.latestRound;
+    }
     return 'N/A';
   }
 
@@ -644,6 +683,7 @@ export class InterviewComponent implements OnInit {
     this.spocConfirmationAnswer = null;
     this.showRescheduleSlots.set(false);
     this.rescheduleSlots.set([{date: '', time: '', slot_status: 0}]);
+    this.clearSnackbar();
   }
 
   handleSpocConfirmation(answer: 'yes' | 'no'): void {
@@ -767,7 +807,7 @@ export class InterviewComponent implements OnInit {
     const validSlots = slots.filter(slot => slot.date && slot.time);
     
     if (validSlots.length === 0) {
-      this.errorMsg.set('Please fill in at least one date and time slot');
+      this.showSnackbar('Please provide at least one valid slot.');
       return;
     }
 
@@ -877,6 +917,7 @@ export class InterviewComponent implements OnInit {
     this.nextRoundSlots.set([{date: '', time: '', slot_status: 0}]);
     this.rescheduleSlots.set([{date: '', time: '', slot_status: 0}]);
     this.selectedNextRound = '';
+    this.clearSnackbar();
   }
 
   handleCompletedAction(action: 'final' | 'next_round'): void {
@@ -961,7 +1002,7 @@ export class InterviewComponent implements OnInit {
     const validSlots = slots.filter(slot => slot.date && slot.time);
     
     if (validSlots.length === 0) {
-      this.errorMsg.set('Please fill in at least one date and time slot');
+      this.showSnackbar('Please provide at least one valid slot.');
       return;
     }
 
@@ -1059,7 +1100,7 @@ export class InterviewComponent implements OnInit {
     const validSlots = slots.filter(slot => slot.date && slot.time);
     
     if (validSlots.length === 0) {
-      this.errorMsg.set('Please fill in at least one date and time slot');
+      this.showSnackbar('Please provide at least one valid slot.');
       return;
     }
 
@@ -1207,6 +1248,105 @@ export class InterviewComponent implements OnInit {
         this.errorMsg.set('Failed to fetch current schedule');
       }
     });
+  }
+
+  goToWaitingPage(page: number): void {
+    if (page >= 1 && page <= this.waitingTotalPages()) {
+      this.waitingPage.set(page);
+    }
+  }
+
+  goToSpocPage(page: number): void {
+    if (page >= 1 && page <= this.spocTotalPages()) {
+      this.spocPage.set(page);
+    }
+  }
+
+  goToConfirmedPage(page: number): void {
+    if (page >= 1 && page <= this.confirmedTotalPages()) {
+      this.confirmedPage.set(page);
+    }
+  }
+
+  getRangeStart(totalItems: number, currentPage: number): number {
+    if (!totalItems) {
+      return 0;
+    }
+    return (currentPage - 1) * this.itemsPerPage + 1;
+  }
+
+  getRangeEnd(totalItems: number, currentPage: number): number {
+    if (!totalItems) {
+      return 0;
+    }
+    return Math.min(currentPage * this.itemsPerPage, totalItems);
+  }
+
+  private paginateList<T>(items: T[], page: number): T[] {
+    const totalPages = Math.max(1, Math.ceil(items.length / this.itemsPerPage));
+    const currentPage = Math.min(Math.max(page, 1), totalPages);
+    const start = (currentPage - 1) * this.itemsPerPage;
+    return items.slice(start, start + this.itemsPerPage);
+  }
+
+  private calculateTotalPages(totalItems: number): number {
+    if (totalItems === 0) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil(totalItems / this.itemsPerPage));
+  }
+
+  private buildVisiblePages(total: number, current: number): number[] {
+    const pages: number[] = [];
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+      return pages;
+    }
+
+    pages.push(1);
+    if (current > 3) {
+      pages.push(-1);
+    }
+
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    if (current < total - 2) {
+      pages.push(-1);
+    }
+
+    pages.push(total);
+    return pages;
+  }
+
+  private resetPagination(): void {
+    this.waitingPage.set(1);
+    this.spocPage.set(1);
+    this.confirmedPage.set(1);
+  }
+
+  private showSnackbar(message: string): void {
+    this.snackbarMessage.set(message);
+    if (this.snackbarTimer) {
+      clearTimeout(this.snackbarTimer);
+    }
+    this.snackbarTimer = setTimeout(() => {
+      this.clearSnackbar();
+    }, 3000);
+  }
+
+  private clearSnackbar(): void {
+    if (this.snackbarTimer) {
+      clearTimeout(this.snackbarTimer);
+      this.snackbarTimer = null;
+    }
+    this.snackbarMessage.set(null);
   }
 }
 

@@ -178,12 +178,16 @@ type TabType = 'waiting' | 'scheduled';
       <!-- Empty State -->
       <div *ngIf="!loading && !error && filteredCandidates().length === 0" class="superadmin-empty-state">
         <div class="superadmin-empty-icon">📅</div>
-        <h3 class="superadmin-empty-title">No candidates found</h3>
-        <p class="superadmin-empty-description">
-          {{ searchQuery ? 'No candidates match your search criteria.' : 
-            (activeTab() === 'waiting' ? 'No candidates are waiting for slot assignment.' : 
-            'No candidates have scheduled slots.') }}
-        </p>
+        <ng-container *ngIf="activeTab() === 'scheduled'; else waitingEmptyState">
+          <h3 class="superadmin-empty-title">No candidates found</h3>
+          <p class="superadmin-empty-description">No candidates have scheduled slots.</p>
+        </ng-container>
+        <ng-template #waitingEmptyState>
+          <h3 class="superadmin-empty-title">No candidates found</h3>
+          <p class="superadmin-empty-description">
+            {{ searchQuery ? 'No candidates match your search criteria.' : 'No candidates are waiting for slot assignment.' }}
+          </p>
+        </ng-template>
       </div>
 
       <!-- Pagination -->
