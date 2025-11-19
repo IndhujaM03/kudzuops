@@ -17,6 +17,8 @@ interface InterviewSchedule {
   updated_at: string;
   status?: string; // Status column from database
   recruiter_name?: string; // Included from backend
+  skill?: string; // Skill from demand_sheet
+  spoc_name?: string; // SPOC name from client_spocs
 }
 
 interface ProcessedInterview {
@@ -34,6 +36,9 @@ interface ProcessedInterview {
   candidateEmail: string | null;
   candidatePhone: string | null;
   demandId: number;
+  completedRounds?: string[]; // All completed rounds (round_status = 2) for this candidate
+  skill?: string;
+  spocName?: string;
 }
 
 @Component({
@@ -331,7 +336,19 @@ export class InterviewComponent implements OnInit {
 
     console.log('Schedules with status confirmed:', confirmedSchedules.length);
 
+    // Group by candidate (email + demand_id or name + demand_id) to collect all completed rounds from ALL schedules
+    const candidateMap = new Map<string, {
+      schedule: InterviewSchedule;
+      completedRounds: Set<string>; // Use Set to avoid duplicates
+      activeRound?: { roundKey: string; roundData: any; slots: any[] };
+    }>();
+
     confirmedSchedules.forEach(schedule => {
+      // Create unique key for candidate (email + demand_id is most reliable)
+      const candidateKey = schedule.candidate_email 
+        ? `${schedule.candidate_email}_${schedule.demand_id || 'no_demand'}`
+        : `${schedule.candidate_name}_${schedule.demand_id || 'no_demand'}`;
+      
       const interviewSchedules = schedule.interview_schedules || {};
       
       // Check if interview_schedules is a string (needs parsing)
@@ -345,43 +362,122 @@ export class InterviewComponent implements OnInit {
         }
       }
       
-      // Iterate through each round
-      Object.keys(parsedSchedules).forEach(roundKey => {
+      // Initialize candidate data if not exists
+      if (!candidateMap.has(candidateKey)) {
+        candidateMap.set(candidateKey, {
+          schedule,
+          completedRounds: new Set<string>(),
+          activeRound: undefined
+        });
+      }
+      
+      const candidateData = candidateMap.get(candidateKey)!;
+      
+      // Sort rounds: R1, R2, R3, etc.
+      const roundKeys = Object.keys(parsedSchedules);
+      const sortRoundKey = (key: string): number => {
+        const match = key.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : 999;
+      };
+      const sortedRoundKeys = roundKeys.sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
+      
+      sortedRoundKeys.forEach(roundKey => {
         const roundData = parsedSchedules[roundKey];
         if (!roundData || !roundData.slots) return;
 
-        // Check if round_status = 0 (active/waiting round)
         const roundStatus = roundData.round_status;
-        if (roundStatus !== 0 && roundStatus !== '0') {
-          return; // Skip rounds that are not active (round_status != 0)
-        }
-
-        // Filter slots where slot_status = 1 (confirmed slot)
-        const confirmedSlots = roundData.slots.filter((slot: any) => {
-          const slotStatus = slot.slot_status;
-          return slotStatus === 1 || slotStatus === '1';
-        });
         
-        // Only include rounds that have at least one confirmed slot (slot_status = 1)
-        if (confirmedSlots.length > 0) {
-          processed.push({
-            scheduleId: schedule.id,
-            candidateName: schedule.candidate_name || 'Unknown',
-            recruiterId: schedule.recruiter_id,
-            recruiterName: schedule.recruiter_name || this.recruiterNames.get(schedule.recruiter_id) || `Recruiter ${schedule.recruiter_id}`,
-            round: roundKey,
-            slots: confirmedSlots, // Only slots with slot_status = 1
-            roundStatus: roundData.round_status || 0,
-            candidateEmail: schedule.candidate_email,
-            candidatePhone: schedule.candidate_phone,
-            demandId: schedule.demand_id
+        // Collect completed rounds (round_status = 2) - add to Set to avoid duplicates
+        if (roundStatus === 2 || roundStatus === '2') {
+          candidateData.completedRounds.add(roundKey);
+        }
+        
+        // Find active round (round_status = 0) with confirmed slots (slot_status = 1)
+        // Only set if not already set (prefer first active round found)
+        if ((roundStatus === 0 || roundStatus === '0') && !candidateData.activeRound) {
+          const confirmedSlots = roundData.slots.filter((slot: any) => {
+            const slotStatus = slot.slot_status;
+            return slotStatus === 1 || slotStatus === '1';
           });
+          
+          if (confirmedSlots.length > 0) {
+            candidateData.activeRound = {
+              roundKey,
+              roundData,
+              slots: confirmedSlots
+            };
+          }
         }
       });
+      
+      // Update schedule reference to the most recent one (for skill, spoc_name, etc.)
+      candidateData.schedule = schedule;
+    });
+
+    // Convert map to processed interviews
+    candidateMap.forEach((candidateData, candidateKey) => {
+      const schedule = candidateData.schedule;
+      
+      // Convert Set to sorted array
+      const completedRoundsArray = Array.from(candidateData.completedRounds);
+      const sortRoundKey = (key: string): number => {
+        const match = key.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : 999;
+      };
+      completedRoundsArray.sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
+      
+      // If there's an active round, create an entry for it
+      if (candidateData.activeRound) {
+        processed.push({
+          scheduleId: schedule.id,
+          candidateName: schedule.candidate_name || 'Unknown',
+          recruiterId: schedule.recruiter_id,
+          recruiterName: schedule.recruiter_name || this.recruiterNames.get(schedule.recruiter_id) || `Recruiter ${schedule.recruiter_id}`,
+          round: candidateData.activeRound.roundKey,
+          slots: candidateData.activeRound.slots,
+          roundStatus: candidateData.activeRound.roundData.round_status || 0,
+          candidateEmail: schedule.candidate_email,
+          candidatePhone: schedule.candidate_phone,
+          demandId: schedule.demand_id,
+          completedRounds: completedRoundsArray,
+          skill: schedule.skill,
+          spocName: schedule.spoc_name
+        });
+      } else if (completedRoundsArray.length > 0) {
+        // If no active round but has completed rounds, still show the candidate
+        processed.push({
+          scheduleId: schedule.id,
+          candidateName: schedule.candidate_name || 'Unknown',
+          recruiterId: schedule.recruiter_id,
+          recruiterName: schedule.recruiter_name || this.recruiterNames.get(schedule.recruiter_id) || `Recruiter ${schedule.recruiter_id}`,
+          round: completedRoundsArray[0], // Use first completed round as default
+          slots: [],
+          roundStatus: 2,
+          candidateEmail: schedule.candidate_email,
+          candidatePhone: schedule.candidate_phone,
+          demandId: schedule.demand_id,
+          completedRounds: completedRoundsArray,
+          skill: schedule.skill,
+          spocName: schedule.spoc_name
+        });
+      }
     });
 
     console.log('Total processed confirmed interviews:', processed.length);
     return processed;
+  }
+  
+  getCompletedRoundsDisplay(interview: ProcessedInterview): string {
+    if (interview.completedRounds && interview.completedRounds.length > 0) {
+      // Sort rounds: R1, R2, R3, etc.
+      const sortRoundKey = (key: string): number => {
+        const match = key.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : 999;
+      };
+      const sortedRounds = [...interview.completedRounds].sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
+      return sortedRounds.join(', ');
+    }
+    return 'N/A';
   }
 
   getRecruiterName(recruiterId: number): string {

@@ -102,7 +102,7 @@ export class ToastService {
         position: fixed;
         top: 20px;
         right: 20px;
-        z-index: 10000;
+        z-index: 1000020;
         background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(10px);
         border-radius: 8px;

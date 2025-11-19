@@ -359,13 +359,19 @@ def list_candidate_onboarding(
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
+                # Ensure demand_id column exists
+                cur.execute(
+                    "ALTER TABLE tbl_candidate_onboarding ADD COLUMN IF NOT EXISTS demand_id BIGINT;"
+                )
+                
                 where_parts: List[str] = []
                 params: List[Any] = []
 
                 if search:
                     like = f"%{search}%"
+                    # Use COALESCE to handle NULL skill values
                     where_parts.append(
-                        "(o.candidate_name ILIKE %s OR o.candidate_email ILIKE %s OR o.skill ILIKE %s)"
+                        "(o.candidate_name ILIKE %s OR o.candidate_email ILIKE %s OR COALESCE(d.skill, '') ILIKE %s)"
                     )
                     params.extend([like, like, like])
 
@@ -378,8 +384,15 @@ def list_candidate_onboarding(
                     params.append(demand_id)
 
                 where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-
-                cur.execute(f"SELECT COUNT(*) FROM tbl_candidate_onboarding o {where_clause}", params)
+                
+                # Build COUNT query with same joins as main query
+                count_query = f"""
+                    SELECT COUNT(*) 
+                    FROM tbl_candidate_onboarding o
+                    LEFT JOIN tbl_demand_sheet d ON o.demand_id = d.id
+                    {where_clause}
+                """
+                cur.execute(count_query, params)
                 total = int(cur.fetchone()[0])
 
                 query = f"""
@@ -390,10 +403,12 @@ def list_candidate_onboarding(
                             NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
                             u.email,
                             CAST(u.id AS TEXT)
-                        ) AS recruiter_name
+                        ) AS recruiter_name,
+                        d.skill
                     FROM tbl_candidate_onboarding o
                     LEFT JOIN tbl_clients c ON c.id = o.client_id
                     LEFT JOIN tbl_users u ON u.id = o.recruiter_id
+                    LEFT JOIN tbl_demand_sheet d ON o.demand_id = d.id
                     {where_clause}
                     ORDER BY o.updated_at DESC
                     LIMIT %s OFFSET %s
@@ -402,6 +417,70 @@ def list_candidate_onboarding(
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 items = [dict(zip(columns, row)) for row in rows]
+
+                # For each onboarding record, fetch ALL completed rounds from tbl_interview_schedule
+                for item in items:
+                    candidate_email = item.get("candidate_email")
+                    candidate_name = item.get("candidate_name")
+                    demand_id = item.get("demand_id")
+                    
+                    # Build lookup conditions - try multiple matching strategies
+                    lookup_conditions = []
+                    lookup_params = []
+                    
+                    # Strategy 1: Match by email (most reliable)
+                    if candidate_email:
+                        lookup_conditions.append("s.candidate_email = %s")
+                        lookup_params.append(candidate_email)
+                    
+                    # Strategy 2: Also try matching by name + demand_id (in case email doesn't match)
+                    if candidate_name and demand_id:
+                        if lookup_conditions:
+                            lookup_conditions.append("OR (s.candidate_name = %s AND s.demand_id = %s)")
+                        else:
+                            lookup_conditions.append("(s.candidate_name = %s AND s.demand_id = %s)")
+                        lookup_params.extend([candidate_name, demand_id])
+                    elif candidate_name and not candidate_email:
+                        # Fallback: just by name if no email
+                        if not lookup_conditions:
+                            lookup_conditions.append("s.candidate_name = %s")
+                            lookup_params.append(candidate_name)
+                    
+                    # Fetch all interview schedules for this candidate
+                    all_completed_rounds = {}
+                    if lookup_conditions:
+                        # Build the WHERE clause properly
+                        if len(lookup_conditions) > 1 and "OR" in lookup_conditions[1]:
+                            where_clause = " ".join(lookup_conditions)
+                        else:
+                            where_clause = " AND ".join(lookup_conditions)
+                        
+                        lookup_query = f"""
+                            SELECT s.interview_schedules
+                            FROM tbl_interview_schedule s
+                            WHERE {where_clause}
+                        """
+                        cur.execute(lookup_query, lookup_params)
+                        schedule_rows = cur.fetchall()
+                        
+                        # Merge all completed rounds from all interview schedules
+                        for schedule_row in schedule_rows:
+                            schedules_json = schedule_row[0]
+                            if schedules_json:
+                                if isinstance(schedules_json, str):
+                                    try:
+                                        schedules_json = json.loads(schedules_json)
+                                    except json.JSONDecodeError:
+                                        continue
+                                
+                                # Extract all rounds with round_status = 2
+                                if isinstance(schedules_json, dict):
+                                    for round_key, round_data in schedules_json.items():
+                                        if round_data and round_data.get("round_status") == 2:
+                                            all_completed_rounds[round_key] = round_data
+                    
+                    # Set the merged completed rounds
+                    item["interview_schedules"] = all_completed_rounds
 
                 return {
                     "items": items,

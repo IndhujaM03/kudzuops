@@ -142,7 +142,7 @@
               <tr>
                 <th>Candidate Name</th>
                 <th>Recruiter Name</th>
-                <th>Round</th>
+                <th>Interview Rounds</th>
                 <th>Slot Details</th>
                 <th>Status</th>
                 <th>Interview Status</th>
@@ -152,7 +152,7 @@
               <tr *ngFor="let interview of confirmedInterviews()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
-                <td>{{ interview.round }}</td>
+                <td>{{ getCompletedRoundsDisplay(interview) }}</td>
                 <td>
                   <div class="slots-list">
                     <div class="slot-item" *ngFor="let slot of interview.slots">
@@ -351,8 +351,6 @@
                           <option value="R3">R3</option>
                           <option value="R4">R4</option>
                           <option value="R5">R5</option>
-                          <option value="Selected">Selected</option>
-                          <option value="Rejected">Rejected</option>
                         </select>
                       </div>
                     </div>

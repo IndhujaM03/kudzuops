@@ -86,8 +86,6 @@
                       <option value="R3">R3</option>
                       <option value="R4">R4</option>
                       <option value="R5">R5</option>
-                      <option value="Selected">Selected</option>
-                      <option value="Rejected">Rejected</option>
                     </select>
                   </div>
                 </div>
@@ -552,30 +550,24 @@
         <table class="glassy-table">
           <thead>
             <tr>
-              <th>S.No</th>
-              <th>Demand ID</th>
-              <th>Submitted CV Count</th>
-              <th>Client</th>
-              <th>SPOC</th>
-              <th>Skills</th>
+              <th>Recruiter Name</th>
+              <th>Candidate Name</th>
+              <th>Round</th>
               <th>Schedule Interview</th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of reschedule(); let i = index" class="submitted-row" (dblclick)="openRescheduleProfilesModal(row)" style="cursor: pointer;">
-              <td>{{ i + 1 }}</td>
-              <td>{{ row.demand_id || '-' }}</td>
-              <td>
-                <span class="cv-count-badge">{{ row.reschedule_candidates?.length || 0 }}</span>
-              </td>
-              <td>{{ row.client_name || '-' }}</td>
-              <td>{{ row.spoc_name || '-' }}</td>
-              <td>{{ row.skill || '-' }}</td>
+            <tr *ngFor="let candidate of reschedule(); let i = index" class="submitted-row">
+              <td>{{ candidate.recruiter_name || 'N/A' }}</td>
+              <td>{{ candidate.candidate_name || 'N/A' }}</td>
+              <td>{{ candidate.round_key || candidate.round || 'N/A' }}</td>
               <td style="min-width: 60px; text-align: center;">
-                <button class="btn-schedule-interview icon-only"
-                        (click)="openRescheduleProfilesModal(row); $event.stopPropagation()"
-                        title="Open Reschedule Candidates">
-                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button class="btn-schedule-interview"
+                        (click)="handleRescheduleCandidateClick($event, candidate)"
+                        title="Schedule Interview"
+                        type="button"
+                        style="display: inline-flex; align-items: center; justify-content: center; padding: 8px; border-radius: 6px; cursor: pointer; transition: all 0.2s; border: none; background: linear-gradient(226deg, rgb(0, 242, 166) -141%, rgb(28, 35, 53) 100%); color: white; pointer-events: auto !important; position: relative; z-index: 100; min-width: 40px; height: 40px;">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                   </svg>
                 </button>

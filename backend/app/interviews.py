@@ -1,14 +1,29 @@
 import os
 import json
+import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load .env file
+backend_env = os.path.join(os.path.dirname(__file__), "..", ".env")
+if os.path.exists(backend_env):
+    load_dotenv(backend_env, override=True)
 
 # Database connection
-DATABASE_DSN = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/kudzu_operations")
+try:
+    from .config import settings
+    DATABASE_DSN = settings.database_url or ""
+except Exception:
+    DATABASE_DSN = os.getenv("DATABASE_URL", "")
+
+# Fallback to default if still empty
+if not DATABASE_DSN:
+    DATABASE_DSN = "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops"
 
 router = APIRouter(prefix="/api", tags=["Interviews"])
 
@@ -587,13 +602,18 @@ def get_scheduled_candidates(
                 # Get candidates with recruiter name from users table
                 query = f"""
                     SELECT 
-                        s.id, s.candidate_name, 
+                        s.id, 
+                        s.candidate_name,
+                        s.candidate_email,
                         COALESCE(
                             TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))),
                             'N/A'
                         ) as recruiter_name,
                         s.recruiter_id, 
-                        s.round, s.status, s.interview_schedules, s.created_at
+                        s.round, 
+                        s.status, 
+                        s.interview_schedules, 
+                        s.created_at
                     FROM tbl_interview_schedule s
                     LEFT JOIN tbl_users u ON s.recruiter_id = u.id
                     WHERE {where_clause}
@@ -617,9 +637,21 @@ def get_scheduled_candidates(
                         candidate['interview_schedules'] = {}
                     
                     # Extract round key and all slots with slot_status = 1
+                    # Sort rounds in order: R1, R2, R3, etc.
                     all_slots = []
                     if candidate.get('interview_schedules'):
-                        for round_key, round_data in candidate['interview_schedules'].items():
+                        # Extract round keys and sort them
+                        round_keys = list(candidate['interview_schedules'].keys())
+                        # Sort rounds: R1, R2, R3, etc.
+                        def sort_round_key(key):
+                            # Extract number from round key (e.g., "R1" -> 1, "R2" -> 2)
+                            match = re.search(r'(\d+)', str(key))
+                            return int(match.group(1)) if match else 999
+                        
+                        round_keys_sorted = sorted(round_keys, key=sort_round_key)
+                        
+                        for round_key in round_keys_sorted:
+                            round_data = candidate['interview_schedules'][round_key]
                             if round_data.get('slots'):
                                 for slot in round_data['slots']:
                                     if slot.get('slot_status') == 1:
@@ -813,7 +845,12 @@ def get_reschedule_candidates(
                         s.id,
                         s.submission_id,
                         s.recruiter_id,
-                        s.recruiter_name,
+                        COALESCE(
+                            NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
+                            s.recruiter_name,
+                            u.email,
+                            'N/A'
+                        ) AS recruiter_name,
                         s.candidate_name,
                         s.candidate_email,
                         s.candidate_phone,
@@ -831,6 +868,7 @@ def get_reschedule_candidates(
                     LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
                     LEFT JOIN tbl_clients c ON d.client_id = c.id
                     LEFT JOIN tbl_client_spocs cs ON d.spoc_id = cs.id
+                    LEFT JOIN tbl_users u ON s.recruiter_id = u.id
                     WHERE {where_clause}
                     ORDER BY s.created_at DESC
                     LIMIT %s OFFSET %s
@@ -899,6 +937,7 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                         s.interview_schedules,
                         d.client_id,
                         d.skill,
+                        cs.spoc_name,
                         COALESCE(
                             NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), ''),
                             u.email,
@@ -906,6 +945,7 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                         ) AS recruiter_name
                     FROM tbl_interview_schedule s
                     LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
+                    LEFT JOIN tbl_client_spocs cs ON d.spoc_id = cs.id
                     LEFT JOIN tbl_users u ON s.recruiter_id = u.id
                     WHERE s.id = %s
                     """,
@@ -929,11 +969,10 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                 if not round_data:
                     raise HTTPException(status_code=400, detail="Round not found in interview schedule")
 
+                # Update round_status to 2 (completed/final)
+                # Keep slot_status as is (1 for selected slots, 0 for others)
                 round_data["round_status"] = 2
                 slots = round_data.get("slots") or []
-                for slot in slots:
-                    if slot.get("slot_status") == 0:
-                        slot["slot_status"] = 2
                 schedules_json[payload.round_key] = round_data
 
                 cur.execute(
@@ -949,6 +988,12 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
 
                 cur.execute(
                     "ALTER TABLE tbl_candidate_onboarding ADD COLUMN IF NOT EXISTS demand_id BIGINT;"
+                )
+                cur.execute(
+                    "ALTER TABLE tbl_candidate_onboarding ADD COLUMN IF NOT EXISTS skill VARCHAR(255);"
+                )
+                cur.execute(
+                    "ALTER TABLE tbl_candidate_onboarding ADD COLUMN IF NOT EXISTS spoc_name VARCHAR(255);"
                 )
 
                 cv_path = None
@@ -989,15 +1034,67 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                                 cv_path = entry.get("cv_url") or entry.get("file_path") or entry.get("cv_path")
                                 break
 
-                onboarding_rounds = {
-                    payload.round_key: {
-                        "round_status": 2,
-                        "slots": slots,
-                    }
-                }
-
+                # Fetch ALL interview schedules for this candidate to get all completed rounds
                 candidate_email = schedule.get("candidate_email")
                 candidate_name = schedule.get("candidate_name")
+                
+                # Build lookup to find all interview schedules for this candidate
+                schedule_lookup_conditions = []
+                schedule_lookup_params = []
+                
+                if candidate_email:
+                    schedule_lookup_conditions.append("candidate_email = %s")
+                    schedule_lookup_params.append(candidate_email)
+                if demand_id is not None:
+                    schedule_lookup_conditions.append("demand_id = %s")
+                    schedule_lookup_params.append(demand_id)
+                if candidate_name and not candidate_email:
+                    schedule_lookup_conditions.append("candidate_name = %s")
+                    schedule_lookup_params.append(candidate_name)
+                
+                # Fetch all interview schedules and merge completed rounds
+                all_completed_rounds = {}
+                if schedule_lookup_conditions:
+                    cur.execute(
+                        f"""
+                        SELECT interview_schedules
+                        FROM tbl_interview_schedule
+                        WHERE {' AND '.join(schedule_lookup_conditions)}
+                        """,
+                        schedule_lookup_params,
+                    )
+                    all_schedule_rows = cur.fetchall()
+                    
+                    # Merge all completed rounds from all interview schedules
+                    for schedule_row in all_schedule_rows:
+                        schedules_json = schedule_row[0]
+                        if schedules_json:
+                            if isinstance(schedules_json, str):
+                                try:
+                                    schedules_json = json.loads(schedules_json)
+                                except json.JSONDecodeError:
+                                    continue
+                            
+                            # Extract all rounds with round_status = 2 and filter slots
+                            if isinstance(schedules_json, dict):
+                                for round_key, round_data in schedules_json.items():
+                                    if round_data and round_data.get("round_status") == 2:
+                                        # Filter slots to keep only those with slot_status = 1
+                                        all_slots = round_data.get("slots", [])
+                                        selected_slots = [
+                                            slot for slot in all_slots
+                                            if slot.get("slot_status") == 1
+                                        ]
+                                        
+                                        # Only include round if it has at least one selected slot
+                                        if selected_slots:
+                                            all_completed_rounds[round_key] = {
+                                                "round_status": 2,
+                                                "slots": selected_slots
+                                            }
+                
+                # Use the merged completed rounds
+                onboarding_rounds = all_completed_rounds
 
                 existing_onboarding_id = None
                 lookup_clauses = []
@@ -1027,6 +1124,9 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                         existing_onboarding_id = match[0]
 
                 status_value = "pending"
+                skill_value = schedule.get("skill")
+                spoc_name_value = schedule.get("spoc_name")
+                
                 if existing_onboarding_id:
                     cur.execute(
                         """
@@ -1040,6 +1140,8 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                             interview_schedules = %s::jsonb,
                             status = %s,
                             demand_id = %s,
+                            skill = COALESCE(%s, skill),
+                            spoc_name = COALESCE(%s, spoc_name),
                             updated_at = NOW()
                         WHERE id = %s
                         """,
@@ -1053,6 +1155,8 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                             json.dumps(onboarding_rounds),
                             status_value,
                             demand_id,
+                            skill_value,
+                            spoc_name_value,
                             existing_onboarding_id,
                         ),
                     )
@@ -1069,9 +1173,11 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                             cv_path,
                             interview_schedules,
                             status,
-                            demand_id
+                            demand_id,
+                            skill,
+                            spoc_name
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
                         RETURNING id
                         """,
                         (
@@ -1084,6 +1190,8 @@ def finalize_interview_schedule(payload: InterviewFinalizeRequest) -> Dict[str, 
                             json.dumps(onboarding_rounds),
                             status_value,
                             demand_id,
+                            skill_value,
+                            spoc_name_value,
                         ),
                     )
                     onboarding_id = cur.fetchone()[0]
@@ -1232,9 +1340,13 @@ def get_all_interview_schedules(
                         s.status,
                         s.interview_schedules,
                         s.created_at,
-                        s.updated_at
+                        s.updated_at,
+                        d.skill,
+                        cs.spoc_name
                     FROM tbl_interview_schedule s
                     LEFT JOIN tbl_users u ON s.recruiter_id = u.id
+                    LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
+                    LEFT JOIN tbl_client_spocs cs ON d.spoc_id = cs.id
                     WHERE {where_clause}
                     ORDER BY s.created_at DESC
                     LIMIT %s OFFSET %s
@@ -1297,6 +1409,24 @@ def create_or_update_interview_schedule(payload: InterviewScheduleRequest) -> Di
                     if row:
                         existing_id = row[0]
 
+                # When confirming, ensure skill and spoc_name are available from demand_sheet
+                skill_value = None
+                spoc_name_value = None
+                if payload.demand_id and status_value == 'confirmed':
+                    cur.execute(
+                        """
+                        SELECT d.skill, cs.spoc_name
+                        FROM tbl_demand_sheet d
+                        LEFT JOIN tbl_client_spocs cs ON d.spoc_id = cs.id
+                        WHERE d.id = %s
+                        """,
+                        (payload.demand_id,)
+                    )
+                    demand_row = cur.fetchone()
+                    if demand_row:
+                        skill_value = demand_row[0]
+                        spoc_name_value = demand_row[1]
+                
                 if existing_id:
                     cur.execute(
                         """
@@ -1327,6 +1457,27 @@ def create_or_update_interview_schedule(payload: InterviewScheduleRequest) -> Di
                         ),
                     )
                     schedule_id = existing_id
+                    
+                    # When confirming, ensure skill and spoc_name are properly updated in demand_sheet
+                    # The values are fetched from demand_sheet and spoc_id is ensured to be correct
+                    if status_value == 'confirmed' and payload.demand_id and spoc_name_value:
+                        # Ensure spoc_id is set correctly in demand_sheet
+                        cur.execute(
+                            """
+                            SELECT id FROM tbl_client_spocs 
+                            WHERE spoc_name = %s 
+                            AND client_id = (SELECT client_id FROM tbl_demand_sheet WHERE id = %s)
+                            LIMIT 1
+                            """,
+                            (spoc_name_value, payload.demand_id)
+                        )
+                        spoc_row = cur.fetchone()
+                        if spoc_row:
+                            spoc_id = spoc_row[0]
+                            cur.execute(
+                                "UPDATE tbl_demand_sheet SET spoc_id = %s WHERE id = %s",
+                                (spoc_id, payload.demand_id)
+                            )
                 else:
                     cur.execute(
                         """

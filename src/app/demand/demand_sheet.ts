@@ -302,7 +302,7 @@ export class DemandSheetComponent implements OnInit {
   }
 
   hasRescheduleRecords(): boolean {
-    return this.rescheduleAvailable();
+    return this.reschedule().length > 0;
   }
 
   loadUnassigned(): void {
@@ -482,55 +482,78 @@ export class DemandSheetComponent implements OnInit {
     const headers: Record<string, string> = token ? { Authorization: `${tokenType} ${token}` } : {};
 
     this.http.get<{ items: any[] }>(`${this.apiBase}/interview-schedule/reschedule`, { headers }).subscribe({
-      next: (response) => {
+      next: async (response) => {
         const items = response?.items || [];
         this.rescheduleAvailable.set(items.length > 0);
-        const demandMap = new Map<number, any>();
-
+        
+        // Flatten to individual candidates instead of grouping by demand
+        const candidates: any[] = [];
+        const recruiterIds = new Set<number>();
+        
         items.forEach((record: any) => {
-          const demandId = record.demand_id;
-          if (!demandId) {
-            return;
-          }
-
-          if (!demandMap.has(demandId)) {
-            demandMap.set(demandId, {
-              demand_id: demandId,
-              client_name: record.client_name || '-',
-              spoc_name: record.spoc_name || '-',
-              skill: record.skill || '-',
-              reschedule_candidates: [] as any[],
-            });
-          }
-
-          const demandEntry = demandMap.get(demandId);
           const rounds = record.reschedule_rounds || [];
           rounds.forEach((round: any) => {
-            demandEntry.reschedule_candidates.push({
+            candidates.push({
               schedule_id: record.id,
               round_key: round.round_key,
+              round: round.round_key, // For display
               slots: round.slots || [],
               candidate_name: record.candidate_name,
               candidate_email: record.candidate_email,
               candidate_phone: record.candidate_phone,
               recruiter_id: record.recruiter_id,
               recruiter_name: record.recruiter_name,
-              demand_id: demandId,
-              client_name: demandEntry.client_name,
-              spoc_name: demandEntry.spoc_name,
-              skill: demandEntry.skill,
+              demand_id: record.demand_id,
               interview_schedules: record.interview_schedules,
             });
+            
+            // Collect recruiter IDs that need name lookup
+            if (record.recruiter_id && !record.recruiter_name) {
+              recruiterIds.add(record.recruiter_id);
+            }
           });
         });
 
-        const aggregated = Array.from(demandMap.values())
-          .filter((entry) => (entry.reschedule_candidates || []).length > 0)
-          .map((entry) => ({
-            ...entry,
-            cv_count: entry.reschedule_candidates.length,
-          }));
-        this.reschedule.set(aggregated);
+        // Fetch recruiter names for those missing
+        if (recruiterIds.size > 0) {
+          try {
+            const recruitersResponse = await this.http.get<any[]>(`${this.apiBase}/users?role=recruiter`, { headers }).toPromise();
+            const recruitersMap = new Map<number, string>();
+            
+            (recruitersResponse || []).forEach((recruiter: any) => {
+              if (recruiter.id) {
+                const name = this.getRecruiterDisplayName(recruiter);
+                recruitersMap.set(recruiter.id, name);
+              }
+            });
+            
+            // Update candidates with recruiter names
+            candidates.forEach((candidate) => {
+              if (!candidate.recruiter_name && candidate.recruiter_id) {
+                candidate.recruiter_name = recruitersMap.get(candidate.recruiter_id) || 'N/A';
+              } else if (!candidate.recruiter_name) {
+                candidate.recruiter_name = 'N/A';
+              }
+            });
+          } catch (err) {
+            console.error('Failed to fetch recruiter names:', err);
+            // Set N/A for missing names
+            candidates.forEach((candidate) => {
+              if (!candidate.recruiter_name) {
+                candidate.recruiter_name = 'N/A';
+              }
+            });
+          }
+        } else {
+          // Ensure all candidates have recruiter_name set
+          candidates.forEach((candidate) => {
+            if (!candidate.recruiter_name) {
+              candidate.recruiter_name = 'N/A';
+            }
+          });
+        }
+
+        this.reschedule.set(candidates);
       },
       error: (error) => {
         console.error('Failed to load reschedule list:', error);
@@ -1093,8 +1116,16 @@ export class DemandSheetComponent implements OnInit {
         )
         .subscribe({
           next: () => {
-            this.successMsg.set('Interview slots updated successfully');
+            this.toastService.success('Interview slots updated successfully');
             this.closeScheduleInterviewModal();
+            // Remove the rescheduled candidate from the list
+            const currentReschedule = this.reschedule();
+            const updatedReschedule = currentReschedule.filter(
+              (candidate) => candidate.schedule_id !== this.selectedCandidateForSchedule.schedule_id ||
+                            candidate.round_key !== roundKey
+            );
+            this.reschedule.set(updatedReschedule);
+            // Reload to ensure consistency
             this.loadReschedule();
             this.loadSubmitted();
           },
@@ -1126,8 +1157,28 @@ export class DemandSheetComponent implements OnInit {
 
     this.http.post(`${this.apiBase}/interview-schedule/multiple-slots`, payload, { headers }).subscribe({
       next: () => {
-        this.successMsg.set('Interview schedule saved successfully');
+        this.toastService.success('Interview schedule saved successfully');
         this.closeScheduleInterviewModal();
+        
+        // If scheduling from submitted profiles modal, remove the scheduled candidate from the list
+        if (this.showSubmittedProfilesModal() && candidate.profile_index !== undefined) {
+          const currentProfiles = [...this.submittedProfiles()];
+          const remaining = currentProfiles.filter(
+            (p: any) => Number(p.profile_index) !== Number(candidate.profile_index)
+          );
+          
+          // Update the profiles list
+          this.submittedProfiles.set(remaining);
+          this.cdr.detectChanges();
+          
+          // If no profiles remain, close the submitted profiles modal
+          if (remaining.length === 0) {
+            setTimeout(() => {
+              this.closeSubmittedProfilesModal();
+            }, 300);
+          }
+        }
+        
         this.loadReschedule();
         if (this.activeTab === 'cv_received') {
           this.loadCvReceived();
@@ -1137,7 +1188,7 @@ export class DemandSheetComponent implements OnInit {
       },
       error: (err) => {
         console.error('Failed to save interview schedule:', err);
-        this.errorMsg.set(err?.error?.detail || 'Failed to save interview schedule');
+        this.toastService.error(err?.error?.detail || 'Failed to save interview schedule');
       },
     });
   }

@@ -1,8 +1,10 @@
 import { Component, signal, inject, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { TeamLeaderService } from '../../services/teamleader.service';
 import { ToastService } from '../../services/toast.service';
+import { environment } from '../../environments/environment';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
@@ -25,6 +27,13 @@ interface DemandItem {
         <button class="tl-tab" [class.active]="activeTab() === 'assigned'" (click)="setTab('assigned')">Assigned</button>
         <button class="tl-tab" [class.active]="activeTab() === 'cv-received'" (click)="setTab('cv-received')">CV Received</button>
         <button class="tl-tab" [class.active]="activeTab() === 'submitted'" (click)="setTab('submitted')">Submitted</button>
+        <button 
+          *ngIf="hasRescheduleRecords()" 
+          class="tl-tab" 
+          [class.active]="activeTab() === 'reschedule'" 
+          (click)="setTab('reschedule')">
+          Reschedule
+        </button>
       </div>
 
       <div class="tl-tab-panel" *ngIf="activeTab() === 'unassigned'">
@@ -250,6 +259,42 @@ interface DemandItem {
         </ng-template>
       </div>
 
+      <!-- Reschedule Tab -->
+      <div class="tl-tab-panel" *ngIf="activeTab() === 'reschedule'">
+        <div class="tl-refresh-section">
+          <button (click)="loadReschedule()" class="tl-refresh-btn">🔄 Refresh</button>
+        </div>
+        <ng-container *ngIf="rescheduleCandidates().length; else emptyReschedule">
+          <div class="cv-table-container">
+            <table class="cv-table">
+              <thead>
+                <tr>
+                  <th>Recruiter Name</th>
+                  <th>Candidate Name</th>
+                  <th>Round</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let candidate of rescheduleCandidates()" class="cv-row">
+                  <td class="recruiter-name">{{ candidate.recruiter_name || 'N/A' }}</td>
+                  <td class="candidate-name">{{ candidate.candidate_name || 'N/A' }}</td>
+                  <td class="round-name">{{ candidate.round_key || candidate.round || 'N/A' }}</td>
+                  <td class="actions">
+                    <button (click)="openRescheduleModal(candidate)" class="btn-approve" title="Schedule Interview">
+                      Schedule Interview
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </ng-container>
+        <ng-template #emptyReschedule>
+          <div class="tl-empty">No candidates require rescheduling</div>
+        </ng-template>
+      </div>
+
     </div>
 
     <!-- Status Edit Modal - Moved outside wrapper for proper z-index -->
@@ -301,6 +346,84 @@ interface DemandItem {
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reschedule Modal -->
+    <div class="modal-overlay" *ngIf="showRescheduleModal()" (click)="closeRescheduleModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3 class="modal-title">Reschedule Interview</h3>
+          <button class="modal-close" (click)="closeRescheduleModal()">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body" *ngIf="selectedRescheduleCandidate">
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Candidate</label>
+            <p class="modal-value">{{ selectedRescheduleCandidate.candidate_name }}</p>
+          </div>
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Recruiter</label>
+            <p class="modal-value">{{ selectedRescheduleCandidate.recruiter_name || 'N/A' }}</p>
+          </div>
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Round</label>
+            <input 
+              type="text" 
+              class="form-control" 
+              [value]="selectedRescheduleCandidate.round_key || selectedRescheduleCandidate.round || 'N/A'"
+              readonly
+              disabled
+              style="background: #f3f4f6; cursor: not-allowed;">
+          </div>
+          <div class="superadmin-form-group">
+            <label class="superadmin-form-label">Select New Slots</label>
+            <div class="slots-container-reschedule">
+              <div *ngFor="let slot of rescheduleSlots(); let i = index" class="slot-row-reschedule">
+                <input 
+                  type="date" 
+                  class="form-control" 
+                  [(ngModel)]="slot.date"
+                  placeholder="Date"
+                  style="flex: 1;">
+                <input 
+                  type="time" 
+                  class="form-control" 
+                  [(ngModel)]="slot.time"
+                  placeholder="Time"
+                  style="flex: 1;">
+                <button 
+                  *ngIf="rescheduleSlots().length > 1"
+                  (click)="removeRescheduleSlot(i)" 
+                  class="btn-remove-slot"
+                  title="Remove Slot">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </div>
+              <button (click)="addRescheduleSlot()" class="btn-add-slot" title="Add Slot">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Add Slot
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="action-buttons">
+            <button (click)="saveReschedule()" class="btn-save" [disabled]="savingReschedule || !isRescheduleFormValid()">
+              {{ savingReschedule ? 'Saving...' : 'Save' }}
+            </button>
+            <button (click)="closeRescheduleModal()" class="btn-cancel">
               Cancel
             </button>
           </div>
@@ -853,13 +976,67 @@ interface DemandItem {
       background: var(--kudzu-primary-dark);
       transform: translateY(-1px);
     }
+
+    /* Reschedule Modal Styles */
+    .slots-container-reschedule {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .slot-row-reschedule {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn-remove-slot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      border: none;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-remove-slot:hover {
+      background: #fecaca;
+      transform: translateY(-1px);
+    }
+
+    .btn-add-slot {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      border: 1px dashed #d1d5db;
+      background: white;
+      color: var(--kudzu-primary);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .btn-add-slot:hover {
+      background: rgba(24, 45, 23, 0.05);
+      border-color: var(--kudzu-primary);
+    }
   `]
 })
 export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   private teamLeaderService = inject(TeamLeaderService);
   private toastService = inject(ToastService);
+  private http = inject(HttpClient);
   private cdr = inject(ChangeDetectorRef);
   private destroy$ = new Subject<void>();
+  private apiBase = environment.apiBase;
   
   // Modal state
   showCvModal = signal(false);
@@ -875,7 +1052,15 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   statusRemark: string = '';
   selectedStatus: string = 'open';
   
-  activeTab = signal<'unassigned' | 'assigned' | 'cv-received' | 'submitted'>('unassigned');
+  // Reschedule state
+  showRescheduleModal = signal(false);
+  selectedRescheduleCandidate: any = null;
+  rescheduleSlots = signal<Array<{date: string; time: string}>>([{date: '', time: ''}]);
+  savingReschedule = false;
+  rescheduleCandidates = signal<any[]>([]);
+  hasRescheduleRecords = signal(false);
+  
+  activeTab = signal<'unassigned' | 'assigned' | 'cv-received' | 'submitted' | 'reschedule'>('unassigned');
 
   unassigned = signal<DemandItem[]>([]);
   assigned = signal<DemandItem[]>([]);
@@ -883,14 +1068,16 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   cvSubmitted = signal<any[]>([]);
   submitted = signal<DemandItem[]>([]);
 
-  ngOnInit(): void {}
+  ngOnInit(): void {
+    this.loadReschedule();
+  }
 
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
   }
 
-  setTab(tab: 'unassigned' | 'assigned' | 'cv-received' | 'submitted') {
+  setTab(tab: 'unassigned' | 'assigned' | 'cv-received' | 'submitted' | 'reschedule') {
     this.activeTab.set(tab);
     if (tab === 'unassigned') {
       console.log('🎯 Unassigned tab clicked');
@@ -904,6 +1091,9 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
     } else if (tab === 'submitted') {
       console.log('🎯 Submitted tab clicked');
       this.loadCvSubmitted();
+    } else if (tab === 'reschedule') {
+      console.log('🎯 Reschedule tab clicked');
+      this.loadReschedule();
     }
   }
 
@@ -1416,6 +1606,116 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
       return 'status-closed';
     }
     return 'status-open';
+  }
+
+  // Reschedule methods
+  loadReschedule(): void {
+    const token = localStorage.getItem('access_token') || '';
+    const tokenType = localStorage.getItem('token_type') || 'Bearer';
+    const headers = new HttpHeaders(token ? { Authorization: `${tokenType} ${token}` } : {});
+
+    this.http.get<{ items: any[] }>(`${this.apiBase}/interview-schedule/reschedule`, { headers }).subscribe({
+      next: (response) => {
+        const items = response?.items || [];
+        const candidates: any[] = [];
+        
+        items.forEach((record: any) => {
+          const rescheduleRounds = record.reschedule_rounds || [];
+          rescheduleRounds.forEach((round: any) => {
+            candidates.push({
+              schedule_id: record.id,
+              recruiter_name: record.recruiter_name || 'N/A',
+              candidate_name: record.candidate_name || 'N/A',
+              round_key: round.round_key,
+              round: round.round_key,
+              interview_schedules: record.interview_schedules
+            });
+          });
+        });
+        
+        this.rescheduleCandidates.set(candidates);
+        this.hasRescheduleRecords.set(candidates.length > 0);
+      },
+      error: (error) => {
+        console.error('Failed to load reschedule list:', error);
+        this.rescheduleCandidates.set([]);
+        this.hasRescheduleRecords.set(false);
+      }
+    });
+  }
+
+  openRescheduleModal(candidate: any): void {
+    this.selectedRescheduleCandidate = candidate;
+    this.rescheduleSlots.set([{date: '', time: ''}]);
+    this.showRescheduleModal.set(true);
+  }
+
+  closeRescheduleModal(): void {
+    this.showRescheduleModal.set(false);
+    this.selectedRescheduleCandidate = null;
+    this.rescheduleSlots.set([{date: '', time: ''}]);
+  }
+
+  addRescheduleSlot(): void {
+    const currentSlots = this.rescheduleSlots();
+    this.rescheduleSlots.set([...currentSlots, {date: '', time: ''}]);
+  }
+
+  removeRescheduleSlot(index: number): void {
+    const currentSlots = this.rescheduleSlots();
+    if (currentSlots.length > 1) {
+      const newSlots = currentSlots.filter((_, i) => i !== index);
+      this.rescheduleSlots.set(newSlots);
+    }
+  }
+
+  isRescheduleFormValid(): boolean {
+    const slots = this.rescheduleSlots();
+    return slots.length > 0 && slots.every(slot => slot.date && slot.time);
+  }
+
+  saveReschedule(): void {
+    if (!this.selectedRescheduleCandidate || !this.isRescheduleFormValid()) {
+      this.toastService.error('Please fill in all slot dates and times');
+      return;
+    }
+
+    const slots = this.rescheduleSlots().filter(slot => slot.date && slot.time);
+    if (slots.length === 0) {
+      this.toastService.error('At least one valid slot is required');
+      return;
+    }
+
+    this.savingReschedule = true;
+    const token = localStorage.getItem('access_token') || '';
+    const tokenType = localStorage.getItem('token_type') || 'Bearer';
+    const headers = new HttpHeaders(token ? { Authorization: `${tokenType} ${token}` } : {});
+
+    const payload = {
+      round_key: this.selectedRescheduleCandidate.round_key || this.selectedRescheduleCandidate.round,
+      slots: slots.map(slot => ({
+        date: slot.date,
+        time: slot.time
+      }))
+    };
+
+    this.http.post<any>(
+      `${this.apiBase}/interview-schedule/${this.selectedRescheduleCandidate.schedule_id}/reschedule`,
+      payload,
+      { headers }
+    ).subscribe({
+      next: (response) => {
+        this.savingReschedule = false;
+        this.toastService.success('Interview rescheduled successfully');
+        this.closeRescheduleModal();
+        this.loadReschedule(); // Reload to remove the record from the list
+      },
+      error: (error) => {
+        console.error('Failed to reschedule interview:', error);
+        this.savingReschedule = false;
+        this.toastService.error(`Failed to reschedule: ${error?.error?.detail || error.message || 'Unknown error'}`);
+      }
+    });
   }
 
 }

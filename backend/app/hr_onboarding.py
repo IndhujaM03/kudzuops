@@ -12,11 +12,22 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from dotenv import load_dotenv
 
-DATABASE_DSN = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:password@localhost:5432/kudzu_operations",
-)
+# Load .env file
+backend_env = os.path.join(os.path.dirname(__file__), "..", ".env")
+if os.path.exists(backend_env):
+    load_dotenv(backend_env, override=True)
+
+try:
+    from .config import settings
+    DATABASE_DSN = settings.database_url or ""
+except Exception:
+    DATABASE_DSN = os.getenv("DATABASE_URL", "")
+
+# Fallback to default if still empty
+if not DATABASE_DSN:
+    DATABASE_DSN = "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops"
 FRONTEND_BASE_URL = (
     os.getenv("ONBOARDING_FORM_BASE_URL")
     or os.getenv("FRONTEND_BASE_URL")

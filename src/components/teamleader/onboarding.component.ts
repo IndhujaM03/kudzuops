@@ -432,7 +432,19 @@ export class OnboardingComponent implements OnInit {
       schedules = interviewSchedules;
     }
 
-    return Object.keys(schedules).filter(key => schedules[key] && schedules[key].round_status === 2);
+    // Filter rounds where round_status = 2 (Completed)
+    const completedRounds = Object.keys(schedules).filter(
+      key => schedules[key] && schedules[key].round_status === 2
+    );
+    
+    // Sort rounds: R1, R2, R3, etc.
+    completedRounds.sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, '')) || 999;
+      const numB = parseInt(b.replace(/\D/g, '')) || 999;
+      return numA - numB;
+    });
+    
+    return completedRounds;
   }
 
   formatDate(dateString?: string): string {
