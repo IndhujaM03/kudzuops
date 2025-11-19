@@ -311,7 +311,15 @@
 
 
       <div class="mt-4 demand-card p-4 unassigned-panel" *ngIf="activeTab==='unassigned'">
-        <div class="table-wrapper">
+        <!-- Empty State -->
+        <div *ngIf="unassigned().length === 0" class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No demands found</h3>
+          <p class="superadmin-empty-description">No unassigned demands available.</p>
+        </div>
+        
+        <!-- Table -->
+        <div *ngIf="unassigned().length > 0" class="table-wrapper">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -328,11 +336,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngIf="unassigned().length===0">
-                <td colspan="10" class="text-gray-600">No unassigned demands</td>
-              </tr>
-              <tr *ngFor="let d of unassigned(); let i = index">
-                <td>{{ i + 1 }}</td>
+              <tr *ngFor="let d of paginatedUnassigned(); let i = index">
+                <td>{{ startIndex() + i + 1 }}</td>
                 <td>{{ d.client_name || d.client_id }}</td>
                 <td>{{ d.spoc_name || d.spoc_id }}</td>
                 <td>{{ d.skills || d.skill }}</td>
@@ -362,6 +367,37 @@
               </tr>
             </tbody>
           </table>
+        </div>
+        <!-- Pagination -->
+        <div *ngIf="unassigned().length > 0" class="superadmin-pagination">
+          <div class="superadmin-pagination-info">
+            Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} demands
+          </div>
+          <div class="superadmin-pagination-controls">
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === 1"
+              (click)="goToPage(currentPage() - 1)">
+              Previous
+            </button>
+            <div class="superadmin-pagination-pages">
+              <button 
+                *ngFor="let page of visiblePages()"
+                class="superadmin-pagination-page"
+                [class.active]="page === currentPage()"
+                [class.ellipsis]="page === -1"
+                (click)="goToPage(page)"
+                [disabled]="page === -1">
+                {{ page === -1 ? '...' : page }}
+              </button>
+            </div>
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === currentTotalPages()"
+              (click)="goToPage(currentPage() + 1)">
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
@@ -397,13 +433,18 @@
           </div>
         </div>
 
-        <div *ngIf="assigned().length===0" class="text-gray-600">No assigned demands</div>
-        <div *ngIf="assigned().length>0 && filteredAssigned().length===0" class="search-no-results">
-          <div class="no-results-icon">🔍</div>
-          <div class="no-results-title">No results found</div>
-          <div class="no-results-message">Try adjusting your search terms or clear the search to see all demands.</div>
+        <!-- Empty State -->
+        <div *ngIf="assigned().length === 0" class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No demands found</h3>
+          <p class="superadmin-empty-description">No assigned demands available.</p>
         </div>
-        <div *ngIf="assigned().length>0 && filteredAssigned().length>0" class="table-wrapper">
+        <div *ngIf="assigned().length > 0 && filteredAssigned().length === 0" class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">🔍</div>
+          <h3 class="superadmin-empty-title">No demands found</h3>
+          <p class="superadmin-empty-description">No demands match your search criteria.</p>
+        </div>
+        <div *ngIf="assigned().length > 0 && filteredAssigned().length > 0" class="table-wrapper">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -420,8 +461,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let d of filteredAssigned(); let i = index">
-                <td>{{ i + 1 }}</td>
+              <tr *ngFor="let d of paginatedAssigned(); let i = index">
+                <td>{{ startIndex() + i + 1 }}</td>
                 <td>{{ d.client_name || d.client_id }}</td>
                 <td>{{ d.spoc_name || d.spoc_id }}</td>
                 <td>{{ d.skills || d.skill }}</td>
@@ -457,11 +498,47 @@
             </tbody>
           </table>
         </div>
+        <!-- Pagination -->
+        <div *ngIf="filteredAssigned().length > 0" class="superadmin-pagination">
+          <div class="superadmin-pagination-info">
+            Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} demands
+          </div>
+          <div class="superadmin-pagination-controls">
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === 1"
+              (click)="goToPage(currentPage() - 1)">
+              Previous
+            </button>
+            <div class="superadmin-pagination-pages">
+              <button 
+                *ngFor="let page of visiblePages()"
+                class="superadmin-pagination-page"
+                [class.active]="page === currentPage()"
+                [class.ellipsis]="page === -1"
+                (click)="goToPage(page)"
+                [disabled]="page === -1">
+                {{ page === -1 ? '...' : page }}
+              </button>
+            </div>
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === currentTotalPages()"
+              (click)="goToPage(currentPage() + 1)">
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       <div *ngIf="activeTab==='cv_received'">
-        <div *ngIf="cvReceived().length===0" class="text-gray-600">No CVs received yet</div>
-        <div *ngIf="cvReceived().length>0" class="table-wrapper">
+        <!-- Empty State -->
+        <div *ngIf="cvReceived().length === 0" class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No CVs found</h3>
+          <p class="superadmin-empty-description">No CVs received yet.</p>
+        </div>
+        <div *ngIf="cvReceived().length > 0" class="table-wrapper">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -478,8 +555,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let cv of cvReceived(); let i = index">
-                <td>{{ i + 1 }}</td>
+              <tr *ngFor="let cv of paginatedCvReceived(); let i = index">
+                <td>{{ startIndex() + i + 1 }}</td>
                 <td>{{ cv.demand_id || '-' }}</td>
                 <td>
                   <span class="cv-count-badge">{{ cv.uploaded_cv_count || 0 }}/{{ cv.required_cv_count || 0 }}</span>
@@ -507,11 +584,47 @@
             </tbody>
           </table>
         </div>
+        <!-- Pagination -->
+        <div *ngIf="cvReceived().length > 0" class="superadmin-pagination">
+          <div class="superadmin-pagination-info">
+            Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} CVs
+          </div>
+          <div class="superadmin-pagination-controls">
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === 1"
+              (click)="goToPage(currentPage() - 1)">
+              Previous
+            </button>
+            <div class="superadmin-pagination-pages">
+              <button 
+                *ngFor="let page of visiblePages()"
+                class="superadmin-pagination-page"
+                [class.active]="page === currentPage()"
+                [class.ellipsis]="page === -1"
+                (click)="goToPage(page)"
+                [disabled]="page === -1">
+                {{ page === -1 ? '...' : page }}
+              </button>
+            </div>
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === currentTotalPages()"
+              (click)="goToPage(currentPage() + 1)">
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       <div *ngIf="activeTab==='submitted'">
-        <div *ngIf="submitted().length===0" class="text-gray-600">No demands submitted by team yet</div>
-        <div *ngIf="submitted().length>0" class="table-wrapper">
+        <!-- Empty State -->
+        <div *ngIf="submitted().length === 0" class="superadmin-empty-state">
+          <div class="superadmin-empty-icon">👥</div>
+          <h3 class="superadmin-empty-title">No demands found</h3>
+          <p class="superadmin-empty-description">No demands submitted by team yet.</p>
+        </div>
+        <div *ngIf="submitted().length > 0" class="table-wrapper">
           <table class="glassy-table">
             <thead>
               <tr>
@@ -524,12 +637,12 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let demand of submitted(); let i = index" 
+              <tr *ngFor="let demand of paginatedSubmitted(); let i = index" 
                   class="submitted-row" 
                   (dblclick)="openSubmittedProfilesModal(demand)"
                   style="cursor: pointer;"
                   title="Double-click to view profiles">
-                <td>{{ i + 1 }}</td>
+                <td>{{ startIndex() + i + 1 }}</td>
                 <td>{{ demand.demand_id || '-' }}</td>
                 <td>
                   <span class="cv-count-badge">{{ demand.cv_count || 0 }}</span>
@@ -541,12 +654,48 @@
             </tbody>
           </table>
         </div>
+        <!-- Pagination -->
+        <div *ngIf="submitted().length > 0" class="superadmin-pagination">
+          <div class="superadmin-pagination-info">
+            Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} demands
+          </div>
+          <div class="superadmin-pagination-controls">
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === 1"
+              (click)="goToPage(currentPage() - 1)">
+              Previous
+            </button>
+            <div class="superadmin-pagination-pages">
+              <button 
+                *ngFor="let page of visiblePages()"
+                class="superadmin-pagination-page"
+                [class.active]="page === currentPage()"
+                [class.ellipsis]="page === -1"
+                (click)="goToPage(page)"
+                [disabled]="page === -1">
+                {{ page === -1 ? '...' : page }}
+              </button>
+            </div>
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === currentTotalPages()"
+              (click)="goToPage(currentPage() + 1)">
+              Next
+            </button>
+          </div>
+        </div>
     </div>
 
     <!-- Reschedule Tab Content -->
     <div *ngIf="activeTab==='reschedule'">
-      <div *ngIf="reschedule().length===0" class="text-gray-600">No candidates require rescheduling</div>
-      <div *ngIf="reschedule().length>0" class="table-wrapper">
+      <!-- Empty State -->
+      <div *ngIf="reschedule().length === 0" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">👥</div>
+        <h3 class="superadmin-empty-title">No candidates found</h3>
+        <p class="superadmin-empty-description">No candidates require rescheduling.</p>
+      </div>
+      <div *ngIf="reschedule().length > 0" class="table-wrapper">
         <table class="glassy-table">
           <thead>
             <tr>
@@ -557,7 +706,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let candidate of reschedule(); let i = index" class="submitted-row">
+            <tr *ngFor="let candidate of paginatedReschedule(); let i = index" class="submitted-row">
               <td>{{ candidate.recruiter_name || 'N/A' }}</td>
               <td>{{ candidate.candidate_name || 'N/A' }}</td>
               <td>{{ candidate.round_key || candidate.round || 'N/A' }}</td>
@@ -575,6 +724,37 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      <!-- Pagination -->
+      <div *ngIf="reschedule().length > 0" class="superadmin-pagination">
+        <div class="superadmin-pagination-info">
+          Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} candidates
+        </div>
+        <div class="superadmin-pagination-controls">
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === 1"
+            (click)="goToPage(currentPage() - 1)">
+            Previous
+          </button>
+          <div class="superadmin-pagination-pages">
+            <button 
+              *ngFor="let page of visiblePages()"
+              class="superadmin-pagination-page"
+              [class.active]="page === currentPage()"
+              [class.ellipsis]="page === -1"
+              (click)="goToPage(page)"
+              [disabled]="page === -1">
+              {{ page === -1 ? '...' : page }}
+            </button>
+          </div>
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === currentTotalPages()"
+            (click)="goToPage(currentPage() + 1)">
+            Next
+          </button>
+        </div>
       </div>
     </div>
   </div>

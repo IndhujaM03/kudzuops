@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
@@ -64,8 +64,8 @@ interface CandidateOnboarding {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let record of onboardingRecords(); let i = index">
-                <td>{{ i + 1 }}</td>
+              <tr *ngFor="let record of paginatedRecords(); let i = index">
+                <td>{{ startIndex() + i + 1 }}</td>
                 <td>{{ record.candidate_name || 'N/A' }}</td>
                 <td>{{ record.candidate_email || 'N/A' }}</td>
                 <td>{{ record.candidate_phone || 'N/A' }}</td>
@@ -96,6 +96,37 @@ interface CandidateOnboarding {
               </tr>
             </tbody>
           </table>
+        </div>
+        <!-- Pagination -->
+        <div *ngIf="onboardingRecords().length > 0" class="superadmin-pagination">
+          <div class="superadmin-pagination-info">
+            Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ onboardingRecords().length }} records
+          </div>
+          <div class="superadmin-pagination-controls">
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === 1"
+              (click)="goToPage(currentPage() - 1)">
+              Previous
+            </button>
+            <div class="superadmin-pagination-pages">
+              <button 
+                *ngFor="let page of visiblePages()"
+                class="superadmin-pagination-page"
+                [class.active]="page === currentPage()"
+                [class.ellipsis]="page === -1"
+                (click)="goToPage(page)"
+                [disabled]="page === -1">
+                {{ page === -1 ? '...' : page }}
+              </button>
+            </div>
+            <button 
+              class="superadmin-pagination-btn"
+              [disabled]="currentPage() === totalPages()"
+              (click)="goToPage(currentPage() + 1)">
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -376,6 +407,100 @@ interface CandidateOnboarding {
         padding: 8px 10px;
       }
     }
+
+    /* Pagination Styles - Matching Super Admin */
+    .superadmin-pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+      border-top: 1px solid #e2e8f0;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .superadmin-pagination-info {
+      font-size: 14px;
+      color: #4a5568;
+      font-family: 'Manrope', 'Manrope Placeholder', sans-serif;
+    }
+
+    .superadmin-pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .superadmin-pagination-btn {
+      padding: 8px 16px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #4a5568;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: 'Manrope', 'Manrope Placeholder', sans-serif;
+    }
+
+    .superadmin-pagination-btn:hover:not(:disabled) {
+      background: #f7fafc;
+      border-color: var(--kudzu-primary);
+      color: var(--kudzu-primary);
+    }
+
+    .superadmin-pagination-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .superadmin-pagination-pages {
+      display: flex;
+      gap: 4px;
+    }
+
+    .superadmin-pagination-page {
+      min-width: 36px;
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #4a5568;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: 'Manrope', 'Manrope Placeholder', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .superadmin-pagination-page:hover:not(:disabled) {
+      background: #f7fafc;
+      border-color: var(--kudzu-primary);
+    }
+
+    .superadmin-pagination-page.active {
+      background: var(--kudzu-primary);
+      color: white;
+      border-color: var(--kudzu-primary);
+    }
+
+    .superadmin-pagination-page.ellipsis {
+      border: none;
+      background: transparent;
+      cursor: default;
+      min-width: auto;
+      padding: 0 8px;
+    }
+
+    .superadmin-pagination-page.ellipsis:hover {
+      background: transparent;
+      border: none;
+    }
   `]
 })
 export class OnboardingComponent implements OnInit {
@@ -387,12 +512,69 @@ export class OnboardingComponent implements OnInit {
   errorMsg = signal<string | null>(null);
   onboardingRecords = signal<CandidateOnboarding[]>([]);
   
+  // Pagination state
+  currentPage = signal(1);
+  itemsPerPage = 10;
+
+  // Pagination computed values
+  paginatedRecords = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.onboardingRecords().slice(start, end);
+  });
+
+  totalPages = computed(() => Math.ceil(this.onboardingRecords().length / this.itemsPerPage));
+
+  startIndex = computed(() => (this.currentPage() - 1) * this.itemsPerPage);
+  endIndex = computed(() => Math.min(this.startIndex() + this.itemsPerPage, this.onboardingRecords().length));
+
+  visiblePages = computed(() => {
+    const total = this.totalPages();
+    const current = this.currentPage();
+    const pages: number[] = [];
+    
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      
+      if (current > 3) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      const start = Math.max(2, current - 1);
+      const end = Math.min(total - 1, current + 1);
+      
+      for (let i = start; i <= end; i++) {
+        if (i !== 1 && i !== total) {
+          pages.push(i);
+        }
+      }
+      
+      if (current < total - 2) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      pages.push(total);
+    }
+    
+    return pages;
+  });
+  
   // CV Modal state
   showCvModal = signal(false);
   selectedCvUrl = signal<string | null>(null);
 
   ngOnInit(): void {
     this.loadOnboardingRecords();
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages() && page !== -1) {
+      this.currentPage.set(page);
+    }
   }
 
   loadOnboardingRecords(): void {
@@ -408,6 +590,7 @@ export class OnboardingComponent implements OnInit {
     this.http.get<{ items: CandidateOnboarding[] }>(`${this.apiBase}/candidate-onboarding/all`, { headers }).subscribe({
       next: (response) => {
         this.onboardingRecords.set(response.items || []);
+        this.currentPage.set(1); // Reset to first page when loading new data
         this.loading.set(false);
       },
       error: (error) => {
@@ -433,9 +616,10 @@ export class OnboardingComponent implements OnInit {
     }
 
     // Filter rounds where round_status = 2 (Completed)
-    const completedRounds = Object.keys(schedules).filter(
-      key => schedules[key] && schedules[key].round_status === 2
-    );
+    const completedRounds = Object.keys(schedules).filter(key => {
+      const roundData = schedules[key];
+      return roundData && (roundData.round_status === 2 || roundData.round_status === '2');
+    });
     
     // Sort rounds: R1, R2, R3, etc.
     completedRounds.sort((a, b) => {

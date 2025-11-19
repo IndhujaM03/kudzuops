@@ -363,3 +363,122 @@
   gap: 10px;
 }
 
+/* Superadmin Empty State Styles */
+.superadmin-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #718096;
+}
+
+/* Pagination Styles - Matching Super Admin */
+.superadmin-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.superadmin-pagination-info {
+  font-size: 14px;
+  color: #4a5568;
+  font-family: 'Manrope', 'Manrope Placeholder', sans-serif;
+}
+
+.superadmin-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.superadmin-pagination-btn {
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #4a5568;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Manrope', 'Manrope Placeholder', sans-serif;
+}
+
+.superadmin-pagination-btn:hover:not(:disabled) {
+  background: #f7fafc;
+  border-color: var(--kudzu-primary);
+  color: var(--kudzu-primary);
+}
+
+.superadmin-pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.superadmin-pagination-pages {
+  display: flex;
+  gap: 4px;
+}
+
+.superadmin-pagination-page {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #4a5568;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Manrope', 'Manrope Placeholder', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.superadmin-pagination-page:hover:not(:disabled) {
+  background: #f7fafc;
+  border-color: var(--kudzu-primary);
+}
+
+.superadmin-pagination-page.active {
+  background: var(--kudzu-primary);
+  color: white;
+  border-color: var(--kudzu-primary);
+}
+
+.superadmin-pagination-page.ellipsis {
+  border: none;
+  background: transparent;
+  cursor: default;
+  min-width: auto;
+  padding: 0 8px;
+}
+
+.superadmin-pagination-page.ellipsis:hover {
+  background: transparent;
+  border: none;
+}
+
+.superadmin-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.superadmin-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #4a5568;
+}
+
+.superadmin-empty-description {
+  font-size: 14px;
+  color: #718096;
+}
+

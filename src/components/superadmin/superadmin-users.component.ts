@@ -14,7 +14,7 @@ interface User {
   reporting_to_name?: string;
 }
 
-type RoleTab = 'recruiter' | 'team_leader' | 'manager' | 'business_head' | 'cluster_manager' | 'super_admin' | 'all';
+type RoleTab = 'recruiter' | 'team_leader' | 'manager' | 'business_head' | 'cluster_manager' | 'super_admin' | 'hr' | 'all';
 
 @Component({
   selector: 'app-superadmin-users',
@@ -629,12 +629,11 @@ export class SuperAdminUsersComponent implements OnInit {
   // Tabs
   roleTabs = [
     { label: 'All', value: 'all' as RoleTab },
-    { label: 'Recruiter', value: 'recruiter' as RoleTab },
-    { label: 'TL', value: 'team_leader' as RoleTab },
+    { label: 'Admin', value: 'super_admin' as RoleTab },
     { label: 'Manager', value: 'manager' as RoleTab },
-    { label: 'Business Head', value: 'business_head' as RoleTab },
-    { label: 'Cluster Manager', value: 'cluster_manager' as RoleTab },
-    { label: 'Super Admin', value: 'super_admin' as RoleTab }
+    { label: 'Team Lead', value: 'team_leader' as RoleTab },
+    { label: 'Recruiter', value: 'recruiter' as RoleTab },
+    { label: 'HR', value: 'hr' as RoleTab }
   ];
   activeTab = signal<RoleTab>('all');
 

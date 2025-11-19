@@ -123,6 +123,112 @@ export class DemandSheetComponent implements OnInit {
   // CV Received count
   cvReceivedCount = computed(() => this.cvReceived().length);
 
+  // Pagination state
+  currentPage = signal(1);
+  itemsPerPage = 10;
+
+  // Pagination computed values for each tab
+  paginatedUnassigned = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.unassigned().slice(start, end);
+  });
+
+  paginatedAssigned = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.filteredAssigned().slice(start, end);
+  });
+
+  paginatedCvReceived = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.cvReceived().slice(start, end);
+  });
+
+  paginatedSubmitted = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.submitted().slice(start, end);
+  });
+
+  paginatedReschedule = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.reschedule().slice(start, end);
+  });
+
+  // Total pages for each tab
+  totalPagesUnassigned = computed(() => Math.ceil(this.unassigned().length / this.itemsPerPage));
+  totalPagesAssigned = computed(() => Math.ceil(this.filteredAssigned().length / this.itemsPerPage));
+  totalPagesCvReceived = computed(() => Math.ceil(this.cvReceived().length / this.itemsPerPage));
+  totalPagesSubmitted = computed(() => Math.ceil(this.submitted().length / this.itemsPerPage));
+  totalPagesReschedule = computed(() => Math.ceil(this.reschedule().length / this.itemsPerPage));
+
+  // Current tab's total pages
+  currentTotalPages = computed(() => {
+    switch (this.activeTab) {
+      case 'unassigned': return this.totalPagesUnassigned();
+      case 'assigned': return this.totalPagesAssigned();
+      case 'cv_received': return this.totalPagesCvReceived();
+      case 'submitted': return this.totalPagesSubmitted();
+      case 'reschedule': return this.totalPagesReschedule();
+      default: return 1;
+    }
+  });
+
+  // Current tab's data length
+  currentDataLength = computed(() => {
+    switch (this.activeTab) {
+      case 'unassigned': return this.unassigned().length;
+      case 'assigned': return this.filteredAssigned().length;
+      case 'cv_received': return this.cvReceived().length;
+      case 'submitted': return this.submitted().length;
+      case 'reschedule': return this.reschedule().length;
+      default: return 0;
+    }
+  });
+
+  // Start and end index for current page
+  startIndex = computed(() => (this.currentPage() - 1) * this.itemsPerPage);
+  endIndex = computed(() => Math.min(this.startIndex() + this.itemsPerPage, this.currentDataLength()));
+
+  // Visible pages for pagination UI
+  visiblePages = computed(() => {
+    const total = this.currentTotalPages();
+    const current = this.currentPage();
+    const pages: number[] = [];
+    
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      
+      if (current > 3) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      const start = Math.max(2, current - 1);
+      const end = Math.min(total - 1, current + 1);
+      
+      for (let i = start; i <= end; i++) {
+        if (i !== 1 && i !== total) {
+          pages.push(i);
+        }
+      }
+      
+      if (current < total - 2) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      pages.push(total);
+    }
+    
+    return pages;
+  });
+
   // Status edit modal state
   showStatusModal = signal(false);
   // Also use a regular property as backup for template binding
@@ -294,11 +400,18 @@ export class DemandSheetComponent implements OnInit {
 
   setTab(tab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' | 'reschedule') {
     this.activeTab = tab;
+    this.currentPage.set(1); // Reset to first page when changing tabs
     if (tab === 'unassigned') this.loadUnassigned();
     if (tab === 'assigned') this.loadAssigned();
     if (tab === 'cv_received') this.loadCvReceived();
     if (tab === 'submitted') this.loadSubmitted();
     if (tab === 'reschedule') this.loadReschedule();
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.currentTotalPages() && page !== -1) {
+      this.currentPage.set(page);
+    }
   }
 
   hasRescheduleRecords(): boolean {
@@ -355,12 +468,14 @@ export class DemandSheetComponent implements OnInit {
     const target = event.target as HTMLInputElement;
     this.assignedSearchTerm.set(target.value);
     this.filterAssigned();
+    this.currentPage.set(1); // Reset to first page when searching
   }
 
   // Clear search
   clearAssignedSearch(): void {
     this.assignedSearchTerm.set('');
     this.filterAssigned();
+    this.currentPage.set(1); // Reset to first page when clearing search
   }
 
   loadCvReceived(): void {
@@ -962,13 +1077,16 @@ export class DemandSheetComponent implements OnInit {
     // Since we're now showing individual CV records, create a single profile entry
     const enriched = [{
       recruiter_name: cv.recruiter_name || cv.recruiter_email || '',
+      recruiter_id: cv.recruiter_id || null,
       profile_name: cv.candidate_name || cv.profile_name,
+      candidate_name: cv.candidate_name || cv.profile_name,
       candidate_email: cv.email || cv.candidate_email,
       candidate_phone: cv.phone || cv.candidate_phone,
       remark: cv.remarks || cv.remark,
       status: cv.status,
       cv_url: cvUrl,
       cv_available: cvAvailable,
+      demand_id: cv.demand_id || null,
       _cv_index: cv._cv_index || 0,
       _cv_id: cv.candidate_id || cv._cv_id || null // Use candidate_id for identification
     }];
@@ -1090,7 +1208,7 @@ export class DemandSheetComponent implements OnInit {
       }
       const validSlots = targetRound.slots.filter((slot) => slot.date && slot.time);
       if (!validSlots.length) {
-        this.errorMsg.set('Please provide at least one valid slot');
+        this.toastService.error('Please provide at least one valid slot.');
         return;
       }
       const roundKey =
@@ -1139,7 +1257,7 @@ export class DemandSheetComponent implements OnInit {
 
     const schedulePayload = this.buildInterviewSchedulePayload();
     if (!schedulePayload || Object.keys(schedulePayload).length === 0) {
-      this.errorMsg.set('Please provide at least one valid slot');
+      this.toastService.error('Please provide at least one valid slot.');
       return;
     }
 
@@ -1432,13 +1550,72 @@ export class DemandSheetComponent implements OnInit {
   approveCv(activityId: number, cvIndex: number, cvId?: string | null): void {
     if (!activityId && this.selectedActivityId != null) activityId = this.selectedActivityId;
     const url = `${this.apiBase}/cv-approve/${activityId}`;
+    
+    // Get profile data for the second API call
+    const profiles = this.profiles();
+    const profile = profiles.find(p => 
+      (p._cv_index === cvIndex) || 
+      (cvId && (p._cv_id === cvId || p._cv_id?.toString() === cvId?.toString()))
+    );
+    
+    // Get demand_id from profile or selectedDemand
+    const demandId = profile?.demand_id || this.selectedDemand?.demand_id || this.selectedDemand?.id;
+    const recruiterId = profile?.recruiter_id || this.selectedDemand?.recruiter_id;
+    const candidateName = profile?.profile_name || profile?.candidate_name;
+    const candidateEmail = profile?.candidate_email || profile?.email;
+    const candidatePhone = profile?.candidate_phone || profile?.phone;
+    const cvUrl = profile?.cv_url || null;
+    const remark = profile?.remark || null;
+    
+    // Call cv-approve API first
     this.http.post(url, { cv_index: cvIndex, cv_id: cvId ?? null }).subscribe({
       next: () => {
-        this.showToastMessage('✅ CV accepted', 'success');
-        // Refresh current lists and close modal
-        this.loadCvReceived();
-        this.loadSubmitted();
-        this.closeProfileModal(); // Close modal automatically after action
+        // After cv-approve succeeds, call profile-action API to insert into tbl_submissions
+        if (demandId && recruiterId && candidateName) {
+          const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+          const headers: any = { 'Content-Type': 'application/json' };
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
+          
+          const profileActionPayload = {
+            recruiter_id: recruiterId,
+            candidate_name: candidateName,
+            candidate_email: candidateEmail || null,
+            candidate_phone: candidatePhone || null,
+            cv_url: cvUrl,
+            shortlisted: 1, // Accepted
+            feedback: remark || null
+          };
+          
+          this.http.post<any>(
+            `${this.apiBase}/demand/${demandId}/profile-action`,
+            profileActionPayload,
+            { headers }
+          ).subscribe({
+            next: () => {
+              this.showToastMessage('✅ CV accepted', 'success');
+              // Refresh current lists and close modal
+              this.loadCvReceived();
+              this.loadSubmitted();
+              this.closeProfileModal(); // Close modal automatically after action
+            },
+            error: (err) => {
+              console.error('Failed to insert into tbl_submissions:', err);
+              // Still show success for cv-approve, but log the error
+              this.showToastMessage('✅ CV accepted (but submission record failed)', 'success');
+              this.loadCvReceived();
+              this.loadSubmitted();
+              this.closeProfileModal();
+            }
+          });
+        } else {
+          // If we don't have enough data for profile-action, just proceed with cv-approve success
+          this.showToastMessage('✅ CV accepted', 'success');
+          this.loadCvReceived();
+          this.loadSubmitted();
+          this.closeProfileModal();
+        }
       },
       error: (err) => this.showToastMessage(err?.error?.detail || 'Failed to accept CV', 'error')
     });

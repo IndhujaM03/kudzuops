@@ -13,7 +13,7 @@ interface InterviewSchedule {
   recruiter_id?: number;
   email?: string;
   round?: string;
-  status: 'scheduled' | 'slot_allocated' | 'reschedule';
+  status: 'scheduled' | 'slot_allocated' | 'reschedule' | 'confirmed';
   interview_schedules?: {
     [key: string]: {
       slots: Array<{
@@ -183,16 +183,6 @@ type TabType = 'waiting' | 'scheduled';
           {{ searchQuery ? 'No candidates match your search criteria.' : 
             (activeTab() === 'waiting' ? 'No candidates are waiting for slot assignment.' : 
             'No candidates have scheduled slots.') }}
-        </p>
-      </div>
-
-      <!-- Empty State for Scheduled Timeline -->
-      <div *ngIf="activeTab() === 'scheduled' && !loading && !error && filteredCandidates().length === 0" class="superadmin-empty-state">
-        <div class="superadmin-empty-icon">📅</div>
-        <h3 class="superadmin-empty-title">No scheduled interviews</h3>
-        <p class="superadmin-empty-description">
-          {{ searchQuery ? 'No candidates match your search criteria.' : 
-            'No candidates have scheduled interview rounds yet.' }}
         </p>
       </div>
 
@@ -1321,6 +1311,8 @@ export class InterviewScheduleComponent implements OnInit {
         return 'WAITING';
       case 'slot_allocated':
         return 'ALLOCATED';
+      case 'confirmed':
+        return 'CONFIRMED';
       case 'reschedule':
         return 'RESCHEDULE';
       default:
@@ -1332,6 +1324,7 @@ export class InterviewScheduleComponent implements OnInit {
     const status = (candidate.status ?? '') as string;
     switch (status) {
       case 'slot_allocated':
+      case 'confirmed':
         return 'status-allocated';
       case 'reschedule':
         return 'status-reschedule';
@@ -1416,8 +1409,8 @@ export class InterviewScheduleComponent implements OnInit {
   }
 
   getTimelineItems(candidate: InterviewSchedule): Array<{round: string; roundLabel: string; date: string; time: string}> {
-    // Only show rounds where status = "slot_allocated" and slot_status = 1
-    if (candidate.status !== 'slot_allocated') {
+    // Only show rounds where status = "slot_allocated" OR "confirmed" and slot_status = 1
+    if (candidate.status !== 'slot_allocated' && candidate.status !== 'confirmed') {
       return [];
     }
 

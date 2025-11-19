@@ -42,8 +42,11 @@
 
     <!-- Waiting Tab Content -->
     <div *ngIf="!loading() && activeTab === 'waiting'">
-      <div *ngIf="waitingInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p class="text-gray-500">No candidates waiting for interview slots.</p>
+      <!-- Empty State -->
+      <div *ngIf="waitingInterviews().length === 0" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">👥</div>
+        <h3 class="superadmin-empty-title">No candidates found</h3>
+        <p class="superadmin-empty-description">No candidates waiting for interview slots.</p>
       </div>
 
       <div *ngIf="waitingInterviews().length > 0" class="table-wrapper">
@@ -58,7 +61,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let interview of waitingInterviews()">
+              <tr *ngFor="let interview of paginatedWaiting()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
                 <td>{{ interview.round }}</td>
@@ -77,12 +80,46 @@
             </tbody>
           </table>
       </div>
+      <!-- Pagination -->
+      <div *ngIf="waitingInterviews().length > 0" class="superadmin-pagination">
+        <div class="superadmin-pagination-info">
+          Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} candidates
+        </div>
+        <div class="superadmin-pagination-controls">
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === 1"
+            (click)="goToPage(currentPage() - 1)">
+            Previous
+          </button>
+          <div class="superadmin-pagination-pages">
+            <button 
+              *ngFor="let page of visiblePages()"
+              class="superadmin-pagination-page"
+              [class.active]="page === currentPage()"
+              [class.ellipsis]="page === -1"
+              (click)="goToPage(page)"
+              [disabled]="page === -1">
+              {{ page === -1 ? '...' : page }}
+            </button>
+          </div>
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === currentTotalPages()"
+            (click)="goToPage(currentPage() + 1)">
+            Next
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- SPOC Communication Tab Content -->
     <div *ngIf="!loading() && activeTab === 'spoc_communication'">
-      <div *ngIf="spocCommunicationInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p class="text-gray-500">No candidates have selected interview slots yet.</p>
+      <!-- Empty State -->
+      <div *ngIf="spocCommunicationInterviews().length === 0" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">👥</div>
+        <h3 class="superadmin-empty-title">No candidates found</h3>
+        <p class="superadmin-empty-description">No candidates have selected interview slots yet.</p>
       </div>
 
       <div *ngIf="spocCommunicationInterviews().length > 0" class="table-wrapper">
@@ -98,7 +135,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let interview of spocCommunicationInterviews()">
+              <tr *ngFor="let interview of paginatedSpocCommunication()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
                 <td>{{ interview.round }}</td>
@@ -128,12 +165,46 @@
             </tbody>
           </table>
       </div>
+      <!-- Pagination -->
+      <div *ngIf="spocCommunicationInterviews().length > 0" class="superadmin-pagination">
+        <div class="superadmin-pagination-info">
+          Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} candidates
+        </div>
+        <div class="superadmin-pagination-controls">
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === 1"
+            (click)="goToPage(currentPage() - 1)">
+            Previous
+          </button>
+          <div class="superadmin-pagination-pages">
+            <button 
+              *ngFor="let page of visiblePages()"
+              class="superadmin-pagination-page"
+              [class.active]="page === currentPage()"
+              [class.ellipsis]="page === -1"
+              (click)="goToPage(page)"
+              [disabled]="page === -1">
+              {{ page === -1 ? '...' : page }}
+            </button>
+          </div>
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === currentTotalPages()"
+            (click)="goToPage(currentPage() + 1)">
+            Next
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Confirmed Tab Content -->
     <div *ngIf="!loading() && activeTab === 'confirmed'">
-      <div *ngIf="confirmedInterviews().length === 0" class="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p class="text-gray-500">No confirmed interviews yet.</p>
+      <!-- Empty State -->
+      <div *ngIf="confirmedInterviews().length === 0" class="superadmin-empty-state">
+        <div class="superadmin-empty-icon">👥</div>
+        <h3 class="superadmin-empty-title">No candidates found</h3>
+        <p class="superadmin-empty-description">No confirmed interviews yet.</p>
       </div>
 
       <div *ngIf="confirmedInterviews().length > 0" class="table-wrapper">
@@ -149,7 +220,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let interview of confirmedInterviews()">
+              <tr *ngFor="let interview of paginatedConfirmed()">
                 <td>{{ interview.candidateName }}</td>
                 <td>{{ interview.recruiterName }}</td>
                 <td>{{ getCompletedRoundsDisplay(interview) }}</td>
@@ -183,6 +254,37 @@
               </tr>
             </tbody>
           </table>
+      </div>
+      <!-- Pagination -->
+      <div *ngIf="confirmedInterviews().length > 0" class="superadmin-pagination">
+        <div class="superadmin-pagination-info">
+          Showing {{ startIndex() + 1 }} - {{ endIndex() }} of {{ currentDataLength() }} candidates
+        </div>
+        <div class="superadmin-pagination-controls">
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === 1"
+            (click)="goToPage(currentPage() - 1)">
+            Previous
+          </button>
+          <div class="superadmin-pagination-pages">
+            <button 
+              *ngFor="let page of visiblePages()"
+              class="superadmin-pagination-page"
+              [class.active]="page === currentPage()"
+              [class.ellipsis]="page === -1"
+              (click)="goToPage(page)"
+              [disabled]="page === -1">
+              {{ page === -1 ? '...' : page }}
+            </button>
+          </div>
+          <button 
+            class="superadmin-pagination-btn"
+            [disabled]="currentPage() === currentTotalPages()"
+            (click)="goToPage(currentPage() + 1)">
+            Next
+          </button>
+        </div>
       </div>
     </div>
   </div>

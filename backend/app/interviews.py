@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -26,6 +26,14 @@ if not DATABASE_DSN:
     DATABASE_DSN = "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops"
 
 router = APIRouter(prefix="/api", tags=["Interviews"])
+
+# Import recruiter ID extraction function
+try:
+    from .login import extract_recruiter_id_from_request
+except ImportError:
+    # Fallback if import fails
+    def extract_recruiter_id_from_request(request: Request, query_param: Optional[int] = None) -> Optional[int]:
+        return None
 
 # Pydantic models
 class InterviewCreate(BaseModel):
@@ -461,17 +469,26 @@ def _ensure_interview_schedule_table():
 
 @router.get("/interview-schedule/waiting")
 def get_waiting_candidates(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(1000, ge=1, le=10000),
     search: Optional[str] = Query(None)
 ) -> Dict[str, Any]:
-    """Get candidates in Waiting tab: status='scheduled' and round_status=0"""
+    """Get candidates in Waiting tab: status='scheduled' and round_status=0, filtered by logged-in recruiter"""
     _ensure_interview_schedule_table()
     try:
+        # Extract recruiter_id from request (JWT token or header)
+        recruiter_id = extract_recruiter_id_from_request(request)
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 where_conditions = ["s.status = 'scheduled'"]
                 params = []
+                
+                # Filter by recruiter_id if available
+                if recruiter_id:
+                    where_conditions.append("s.recruiter_id = %s")
+                    params.append(recruiter_id)
                 
                 # Filter for round_status = 0 in JSON (handle NULL)
                 where_conditions.append("""
@@ -566,17 +583,27 @@ def get_waiting_candidates(
 
 @router.get("/interview-schedule/scheduled")
 def get_scheduled_candidates(
+    request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(1000, ge=1, le=10000),
     search: Optional[str] = Query(None)
 ) -> Dict[str, Any]:
-    """Get candidates in Scheduled tab: status='slot_allocated' and at least one slot_status=1"""
+    """Get candidates in Scheduled tab: status='slot_allocated' OR status='confirmed' with at least one slot_status=1, filtered by logged-in recruiter"""
     _ensure_interview_schedule_table()
     try:
+        # Extract recruiter_id from request (JWT token or header)
+        recruiter_id = extract_recruiter_id_from_request(request)
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                where_conditions = ["s.status = 'slot_allocated'"]
+                # Filter for status = 'slot_allocated' OR status = 'confirmed'
+                where_conditions = ["(s.status = 'slot_allocated' OR s.status = 'confirmed')"]
                 params = []
+                
+                # Filter by recruiter_id if available
+                if recruiter_id:
+                    where_conditions.append("s.recruiter_id = %s")
+                    params.append(recruiter_id)
                 
                 # Filter for at least one slot with slot_status = 1 (handle NULL)
                 where_conditions.append("""

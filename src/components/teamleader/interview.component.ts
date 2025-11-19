@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
+import { ToastService } from '../../services/toast.service';
 
 interface InterviewSchedule {
   id: number;
@@ -50,6 +51,7 @@ interface ProcessedInterview {
 })
 export class InterviewComponent implements OnInit {
   private http = inject(HttpClient);
+  private toastService = inject(ToastService);
 
   apiBase = environment.apiBase || '';
   loading = signal(false);
@@ -65,6 +67,94 @@ export class InterviewComponent implements OnInit {
   waitingInterviews = computed(() => this.processWaitingInterviews());
   spocCommunicationInterviews = computed(() => this.processSpocCommunicationInterviews());
   confirmedInterviews = computed(() => this.processConfirmedInterviews());
+
+  // Pagination state
+  currentPage = signal(1);
+  itemsPerPage = 10;
+
+  // Pagination computed values for each tab
+  paginatedWaiting = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.waitingInterviews().slice(start, end);
+  });
+
+  paginatedSpocCommunication = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.spocCommunicationInterviews().slice(start, end);
+  });
+
+  paginatedConfirmed = computed(() => {
+    const start = (this.currentPage() - 1) * this.itemsPerPage;
+    const end = start + this.itemsPerPage;
+    return this.confirmedInterviews().slice(start, end);
+  });
+
+  // Total pages for each tab
+  totalPagesWaiting = computed(() => Math.ceil(this.waitingInterviews().length / this.itemsPerPage));
+  totalPagesSpocCommunication = computed(() => Math.ceil(this.spocCommunicationInterviews().length / this.itemsPerPage));
+  totalPagesConfirmed = computed(() => Math.ceil(this.confirmedInterviews().length / this.itemsPerPage));
+
+  // Current tab's total pages
+  currentTotalPages = computed(() => {
+    switch (this.activeTab) {
+      case 'waiting': return this.totalPagesWaiting();
+      case 'spoc_communication': return this.totalPagesSpocCommunication();
+      case 'confirmed': return this.totalPagesConfirmed();
+      default: return 1;
+    }
+  });
+
+  // Current tab's data length
+  currentDataLength = computed(() => {
+    switch (this.activeTab) {
+      case 'waiting': return this.waitingInterviews().length;
+      case 'spoc_communication': return this.spocCommunicationInterviews().length;
+      case 'confirmed': return this.confirmedInterviews().length;
+      default: return 0;
+    }
+  });
+
+  // Start and end index for current page
+  startIndex = computed(() => (this.currentPage() - 1) * this.itemsPerPage);
+  endIndex = computed(() => Math.min(this.startIndex() + this.itemsPerPage, this.currentDataLength()));
+
+  // Visible pages for pagination UI
+  visiblePages = computed(() => {
+    const total = this.currentTotalPages();
+    const current = this.currentPage();
+    const pages: number[] = [];
+    
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      
+      if (current > 3) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      const start = Math.max(2, current - 1);
+      const end = Math.min(total - 1, current + 1);
+      
+      for (let i = start; i <= end; i++) {
+        if (i !== 1 && i !== total) {
+          pages.push(i);
+        }
+      }
+      
+      if (current < total - 2) {
+        pages.push(-1); // -1 represents ellipsis
+      }
+      
+      pages.push(total);
+    }
+    
+    return pages;
+  });
 
   // Recruiter names cache (we'll need to fetch this)
   recruiterNames: Map<number, string> = new Map();
@@ -92,6 +182,13 @@ export class InterviewComponent implements OnInit {
 
   setTab(tab: 'waiting' | 'spoc_communication' | 'confirmed'): void {
     this.activeTab = tab;
+    this.currentPage.set(1); // Reset to first page when changing tabs
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.currentTotalPages() && page !== -1) {
+      this.currentPage.set(page);
+    }
   }
 
   refreshData(): void {
@@ -336,10 +433,10 @@ export class InterviewComponent implements OnInit {
 
     console.log('Schedules with status confirmed:', confirmedSchedules.length);
 
-    // Group by candidate (email + demand_id or name + demand_id) to collect all completed rounds from ALL schedules
+    // Group by candidate (email + demand_id or name + demand_id) to collect all pending rounds (round_status = 0) from ALL schedules
     const candidateMap = new Map<string, {
       schedule: InterviewSchedule;
-      completedRounds: Set<string>; // Use Set to avoid duplicates
+      pendingRounds: Set<string>; // Use Set to avoid duplicates - rounds with round_status = 0
       activeRound?: { roundKey: string; roundData: any; slots: any[] };
     }>();
 
@@ -366,7 +463,7 @@ export class InterviewComponent implements OnInit {
       if (!candidateMap.has(candidateKey)) {
         candidateMap.set(candidateKey, {
           schedule,
-          completedRounds: new Set<string>(),
+          pendingRounds: new Set<string>(), // Rounds with round_status = 0
           activeRound: undefined
         });
       }
@@ -387,9 +484,9 @@ export class InterviewComponent implements OnInit {
 
         const roundStatus = roundData.round_status;
         
-        // Collect completed rounds (round_status = 2) - add to Set to avoid duplicates
-        if (roundStatus === 2 || roundStatus === '2') {
-          candidateData.completedRounds.add(roundKey);
+        // Collect pending rounds (round_status = 0) - add to Set to avoid duplicates
+        if (roundStatus === 0 || roundStatus === '0') {
+          candidateData.pendingRounds.add(roundKey);
         }
         
         // Find active round (round_status = 0) with confirmed slots (slot_status = 1)
@@ -418,13 +515,13 @@ export class InterviewComponent implements OnInit {
     candidateMap.forEach((candidateData, candidateKey) => {
       const schedule = candidateData.schedule;
       
-      // Convert Set to sorted array
-      const completedRoundsArray = Array.from(candidateData.completedRounds);
+      // Convert Set to sorted array - pending rounds (round_status = 0)
+      const pendingRoundsArray = Array.from(candidateData.pendingRounds);
       const sortRoundKey = (key: string): number => {
         const match = key.match(/(\d+)/);
         return match ? parseInt(match[1], 10) : 999;
       };
-      completedRoundsArray.sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
+      pendingRoundsArray.sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
       
       // If there's an active round, create an entry for it
       if (candidateData.activeRound) {
@@ -439,24 +536,24 @@ export class InterviewComponent implements OnInit {
           candidateEmail: schedule.candidate_email,
           candidatePhone: schedule.candidate_phone,
           demandId: schedule.demand_id,
-          completedRounds: completedRoundsArray,
+          completedRounds: pendingRoundsArray, // Store pending rounds for display
           skill: schedule.skill,
           spocName: schedule.spoc_name
         });
-      } else if (completedRoundsArray.length > 0) {
-        // If no active round but has completed rounds, still show the candidate
+      } else if (pendingRoundsArray.length > 0) {
+        // If no active round but has pending rounds, still show the candidate
         processed.push({
           scheduleId: schedule.id,
           candidateName: schedule.candidate_name || 'Unknown',
           recruiterId: schedule.recruiter_id,
           recruiterName: schedule.recruiter_name || this.recruiterNames.get(schedule.recruiter_id) || `Recruiter ${schedule.recruiter_id}`,
-          round: completedRoundsArray[0], // Use first completed round as default
+          round: pendingRoundsArray[0], // Use first pending round as default
           slots: [],
-          roundStatus: 2,
+          roundStatus: 0,
           candidateEmail: schedule.candidate_email,
           candidatePhone: schedule.candidate_phone,
           demandId: schedule.demand_id,
-          completedRounds: completedRoundsArray,
+          completedRounds: pendingRoundsArray, // Store pending rounds for display
           skill: schedule.skill,
           spocName: schedule.spoc_name
         });
@@ -468,6 +565,7 @@ export class InterviewComponent implements OnInit {
   }
   
   getCompletedRoundsDisplay(interview: ProcessedInterview): string {
+    // For Confirmed tab, show pending rounds (round_status = 0) instead of completed rounds
     if (interview.completedRounds && interview.completedRounds.length > 0) {
       // Sort rounds: R1, R2, R3, etc.
       const sortRoundKey = (key: string): number => {
@@ -477,6 +575,54 @@ export class InterviewComponent implements OnInit {
       const sortedRounds = [...interview.completedRounds].sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
       return sortedRounds.join(', ');
     }
+    
+    // If no pending rounds in completedRounds, try to get rounds with round_status = 0 from the schedule
+    // Fetch from all schedules for this candidate with status = "confirmed"
+    const schedules = this.allSchedules();
+    const candidateSchedules = schedules.filter(s => 
+      s.status === 'confirmed' &&
+      ((s.candidate_email && interview.candidateEmail && s.candidate_email === interview.candidateEmail) ||
+       (s.candidate_name && interview.candidateName && s.candidate_name === interview.candidateName))
+    );
+    
+    if (candidateSchedules.length > 0) {
+      // Collect all rounds with round_status = 0 from all confirmed schedules for this candidate
+      const pendingRounds: string[] = [];
+      
+      candidateSchedules.forEach(schedule => {
+        if (schedule.interview_schedules) {
+          let parsedSchedules = schedule.interview_schedules;
+          if (typeof parsedSchedules === 'string') {
+            try {
+              parsedSchedules = JSON.parse(parsedSchedules);
+            } catch (e) {
+              return;
+            }
+          }
+          
+          // Get all rounds with round_status = 0
+          Object.keys(parsedSchedules).forEach(roundKey => {
+            const roundData = parsedSchedules[roundKey];
+            if (roundData && (roundData.round_status === 0 || roundData.round_status === '0')) {
+              if (!pendingRounds.includes(roundKey)) {
+                pendingRounds.push(roundKey);
+              }
+            }
+          });
+        }
+      });
+      
+      if (pendingRounds.length > 0) {
+        // Sort rounds: R1, R2, R3, etc.
+        const sortRoundKey = (key: string): number => {
+          const match = key.match(/(\d+)/);
+          return match ? parseInt(match[1], 10) : 999;
+        };
+        const sortedRounds = pendingRounds.sort((a, b) => sortRoundKey(a) - sortRoundKey(b));
+        return sortedRounds.join(', ');
+      }
+    }
+    
     return 'N/A';
   }
 
@@ -807,7 +953,7 @@ export class InterviewComponent implements OnInit {
 
   saveNextRound(): void {
     if (!this.selectedConfirmedInterview || !this.selectedNextRound) {
-      this.errorMsg.set('Please select a round');
+      this.toastService.error('Please select a round');
       return;
     }
 

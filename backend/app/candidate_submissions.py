@@ -424,6 +424,18 @@ def list_candidate_onboarding(
                     candidate_name = item.get("candidate_name")
                     demand_id = item.get("demand_id")
                     
+                    # First, check if interview_schedules already exists in tbl_candidate_onboarding
+                    existing_schedules = item.get("interview_schedules")
+                    if existing_schedules:
+                        # Parse if it's a string
+                        if isinstance(existing_schedules, str):
+                            try:
+                                existing_schedules = json.loads(existing_schedules)
+                            except json.JSONDecodeError:
+                                existing_schedules = {}
+                    else:
+                        existing_schedules = {}
+                    
                     # Build lookup conditions - try multiple matching strategies
                     lookup_conditions = []
                     lookup_params = []
@@ -446,8 +458,10 @@ def list_candidate_onboarding(
                             lookup_conditions.append("s.candidate_name = %s")
                             lookup_params.append(candidate_name)
                     
-                    # Fetch all interview schedules for this candidate
-                    all_completed_rounds = {}
+                    # Start with existing schedules from tbl_candidate_onboarding (if any)
+                    all_completed_rounds = existing_schedules.copy() if isinstance(existing_schedules, dict) else {}
+                    
+                    # Fetch all interview schedules for this candidate from tbl_interview_schedule
                     if lookup_conditions:
                         # Build the WHERE clause properly
                         if len(lookup_conditions) > 1 and "OR" in lookup_conditions[1]:
@@ -473,14 +487,19 @@ def list_candidate_onboarding(
                                     except json.JSONDecodeError:
                                         continue
                                 
-                                # Extract all rounds with round_status = 2
+                                # Extract all rounds with round_status = 2 and merge with existing
                                 if isinstance(schedules_json, dict):
                                     for round_key, round_data in schedules_json.items():
-                                        if round_data and round_data.get("round_status") == 2:
+                                        if round_data and (round_data.get("round_status") == 2 or round_data.get("round_status") == "2"):
                                             all_completed_rounds[round_key] = round_data
                     
-                    # Set the merged completed rounds
-                    item["interview_schedules"] = all_completed_rounds
+                    # Set the merged completed rounds (filter to only completed rounds)
+                    # Filter to only keep rounds with round_status = 2
+                    filtered_rounds = {
+                        k: v for k, v in all_completed_rounds.items()
+                        if v and (v.get("round_status") == 2 or v.get("round_status") == "2")
+                    }
+                    item["interview_schedules"] = filtered_rounds
 
                 return {
                     "items": items,
