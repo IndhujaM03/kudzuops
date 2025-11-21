@@ -2871,23 +2871,8 @@ def serve_resume_file(recruiter_id: int, demand_id: int, filename: str):
                 elif lower.endswith('.docx'):
                     media = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 headers = {"Content-Disposition": "inline"}
-                # Upsert a row into tbl_cv_downloads when a file is opened, so UI lists always reflect openings
-                try:
-                    normalized_path = p.replace('\\', '/')
-                    with psycopg.connect(DATABASE_DSN) as conn:
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                """
-                                INSERT INTO tbl_cv_downloads (recruiter_id, demand_id, filename, file_path)
-                                VALUES (%s, %s, %s, %s)
-                                ON CONFLICT DO NOTHING
-                                """,
-                                (recruiter_id, demand_id, os.path.basename(p), normalized_path)
-                            )
-                        conn.commit()
-                except Exception:
-                    # Non-fatal; still serve the file
-                    pass
+                # Note: Removed insert into tbl_cv_downloads when file is opened via "Add Details" button
+                # The insert should only happen during file upload, not when viewing/adding details
                 return FileResponse(p, media_type=media, headers=headers)
         raise HTTPException(status_code=404, detail="File not found")
     except HTTPException:

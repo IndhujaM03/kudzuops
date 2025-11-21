@@ -29,6 +29,62 @@ def _rows_to_dicts(columns: List[str], rows: List[tuple]) -> List[Dict[str, Any]
     return [dict(zip(columns, row)) for row in rows]
 
 
+def _get_tl_demand_and_recruiter_ids(cur, team_leader_id: int) -> tuple[List[int], List[int]]:
+    """
+    Get demand_ids created by the TL and recruiter_ids assigned to those demands.
+    This is the correct filtering logic: based on tl_id in tbl_demand_sheet, not reporting_to.
+    
+    Returns:
+        tuple: (demand_ids list, recruiter_ids list)
+    """
+    try:
+        # Step 1: Get all demand_ids where tl_id = team_leader_id
+        cur.execute("""
+            SELECT id FROM tbl_demand_sheet 
+            WHERE tl_id = %s
+        """, (team_leader_id,))
+        demand_rows = cur.fetchall()
+        demand_ids = [row[0] for row in demand_rows] if demand_rows else []
+        
+        if not demand_ids:
+            return ([], [])
+        
+        # Step 2: Get all recruiter_ids assigned to those demands from tbl_recruiter_activity
+        cur.execute("""
+            SELECT DISTINCT recruiter_id 
+            FROM tbl_recruiter_activity 
+            WHERE demand_id = ANY(%s)
+        """, (demand_ids,))
+        recruiter_rows = cur.fetchall()
+        recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+        
+        return (demand_ids, recruiter_ids)
+    except Exception as e:
+        print(f"Error in _get_tl_demand_and_recruiter_ids: {e}")
+        return ([], [])
+
+
+def _get_team_leader_id(cur) -> Optional[int]:
+    """Fetch the Team Leader's user ID from tbl_users table based on role."""
+    try:
+        # Get the first active team leader (role = 'team_leader' or 'tl')
+        cur.execute("""
+            SELECT id FROM tbl_users 
+            WHERE role IN ('team_leader', 'tl') 
+            AND is_active = TRUE 
+            AND approval_status = TRUE
+            ORDER BY id ASC 
+            LIMIT 1
+        """)
+        result = cur.fetchone()
+        if result:
+            return result[0]
+        return None
+    except Exception as e:
+        print(f"Error fetching team leader ID: {e}")
+        return None
+
+
 def _check_and_update_demand_status(demand_id: int, cur) -> None:
     """Check if demand should be closed or opened based on CV count and update status accordingly"""
     try:
@@ -162,12 +218,15 @@ def create_demand(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
+                # Fetch Team Leader ID
+                tl_id = _get_team_leader_id(cur)
+                
                 cur.execute(
                     """
                     INSERT INTO tbl_demand_sheet 
                     (demand_date, client_id, spoc_id, skill, no_of_positions, 
-                     required_cv_count, priority, job_description_url, remarks, status, assigned_to, created_at)
-                    VALUES (CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, NOW())
+                     required_cv_count, priority, job_description_url, remarks, status, assigned_to, tl_id, created_at)
+                    VALUES (CURRENT_DATE, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, NOW())
                     RETURNING id
                     """,
                     (
@@ -181,6 +240,7 @@ def create_demand(payload: Dict[str, Any]) -> Dict[str, Any]:
                         remarks,
                         status,
                         assigned_to,
+                        tl_id,
                     ),
                 )
                 new_id = cur.fetchone()[0]
@@ -276,9 +336,13 @@ def add_client_and_spoc(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 # New listing endpoints for TL tabs
 @router.get("/demand/unassigned")
-def list_unassigned() -> List[Dict[str, Any]]:
-    """Demand sheets where assigned_to IS NULL or empty JSON array."""
+async def list_unassigned(current_user: Dict[str, Any] = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Demand sheets where assigned_to IS NULL or empty JSON array, filtered by logged-in TL's tl_id."""
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -287,41 +351,50 @@ def list_unassigned() -> List[Dict[str, Any]]:
                     FROM tbl_demand_sheet d 
                     LEFT JOIN tbl_clients c ON c.id = d.client_id 
                     LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id 
-                    WHERE d.assigned_to IS NULL 
+                    WHERE d.tl_id = %s
+                      AND (d.assigned_to IS NULL 
                        OR d.assigned_to = '[]'::jsonb 
                        OR d.assigned_to = 'null'::jsonb
-                       OR jsonb_array_length(COALESCE(d.assigned_to, '[]'::jsonb)) = 0
+                       OR jsonb_array_length(COALESCE(d.assigned_to, '[]'::jsonb)) = 0)
                     ORDER BY d.id DESC
-                    """
+                    """,
+                    (team_leader_id,)
                 )
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 return _rows_to_dicts(columns, rows)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch unassigned demands: {e}")
 
 
 @router.get("/demand/assigned")
-def list_assigned(recruiter_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Demand sheets where assigned_to contains recruiter assignments."""
+async def list_assigned(recruiter_id: Optional[int] = None, current_user: Dict[str, Any] = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Demand sheets where assigned_to contains recruiter assignments, filtered by logged-in TL's tl_id."""
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 if recruiter_id:
-                    # Get demands assigned to specific recruiter
+                    # Get demands assigned to specific recruiter, filtered by TL
                     cur.execute(
                         """
                         SELECT d.*, c.client_name, s.spoc_name
                         FROM tbl_demand_sheet d 
                         LEFT JOIN tbl_clients c ON c.id = d.client_id 
                         LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id 
-                        WHERE d.assigned_to::text LIKE %s
+                        WHERE d.tl_id = %s
+                          AND d.assigned_to::text LIKE %s
                         ORDER BY d.id DESC
                         """,
-                        (f"%{recruiter_id}%",)
+                        (team_leader_id, f"%{recruiter_id}%")
                     )
                 else:
-                    # Get all assigned demands with aggregated CV counts
+                    # Get all assigned demands with aggregated CV counts, filtered by TL
                     cur.execute(
                         """
                         SELECT 
@@ -334,13 +407,15 @@ def list_assigned(recruiter_id: Optional[int] = None) -> List[Dict[str, Any]]:
                         LEFT JOIN tbl_clients c ON c.id = d.client_id 
                         LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id 
                         LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = d.id
-                        WHERE d.assigned_to IS NOT NULL 
+                        WHERE d.tl_id = %s
+                          AND d.assigned_to IS NOT NULL 
                            AND d.assigned_to != '[]'::jsonb 
                            AND d.assigned_to != 'null'::jsonb
                            AND jsonb_array_length(COALESCE(d.assigned_to, '[]'::jsonb)) > 0
                         GROUP BY d.id, d.demand_date, d.client_id, d.spoc_id, d.skill, d.no_of_positions, d.status, d.priority, d.job_description_url, d.remarks, d.created_at, d.updated_at, d.required_cv_count, d.assigned_to, c.client_name, s.spoc_name
                         ORDER BY d.id DESC
-                        """
+                        """,
+                        (team_leader_id,)
                     )
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
@@ -496,9 +571,13 @@ def assign_demand_to_recruiter(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.get("/demand/submitted")
-def list_submitted() -> List[Dict[str, Any]]:
-    """Submitted demand sheets with profile count from tbl_recruiter_activity."""
+async def list_submitted(current_user: Dict[str, Any] = Depends(get_current_user)) -> List[Dict[str, Any]]:
+    """Submitted demand sheets with profile count from tbl_recruiter_activity, filtered by logged-in TL's tl_id."""
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -509,15 +588,19 @@ def list_submitted() -> List[Dict[str, Any]]:
                         "LEFT JOIN tbl_clients c ON c.id = d.client_id "
                         "LEFT JOIN tbl_client_spocs s ON s.id = d.spoc_id "
                         "LEFT JOIN tbl_recruiter_activity ra ON ra.demand_id = d.id "
-                        "WHERE d.assigned_to IS NOT NULL "
+                        "WHERE d.tl_id = %s "
+                        "  AND d.assigned_to IS NOT NULL "
                         "GROUP BY d.id, c.client_name, s.spoc_name "
                         "HAVING COUNT(ra.id) > 0 "
                         "ORDER BY d.id DESC"
-                    )
+                    ),
+                    (team_leader_id,)
                 )
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 return _rows_to_dicts(columns, rows)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch submitted demands: {e}")
 
@@ -769,13 +852,19 @@ def list_recruiters_by_team_leader(team_leader_id: int) -> List[Dict[str, Any]]:
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 # Get recruiters that report to this team leader
+                # Filter by reporting_to and only show approved recruiters
                 cur.execute(
-                    "SELECT id, first_name, last_name, email, role FROM tbl_users WHERE role = 'recruiter' AND reporting_to = %s ORDER BY first_name",
+                    "SELECT id, first_name, last_name, email, role, reporting_to FROM tbl_users WHERE role = 'recruiter' AND reporting_to = %s AND approval_status = TRUE ORDER BY first_name",
                     (team_leader_id,)
                 )
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
-                return _rows_to_dicts(columns, rows)
+                result = _rows_to_dicts(columns, rows)
+                # Add name field for consistency
+                for recruiter in result:
+                    name = f"{recruiter.get('first_name', '')} {recruiter.get('last_name', '')}".strip()
+                    recruiter['name'] = name if name else recruiter.get('email', 'Unknown')
+                return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch recruiters: {e}")
 
@@ -803,7 +892,7 @@ def list_users_by_role(role: str = None) -> List[Dict[str, Any]]:
 
 @router.get("/cv-received")
 async def get_cv_received(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Get CVs waiting for approval (status = 0) from tbl_recruiter_activity with aggregated CV counts, filtered by Team Leader"""
+    """Get CVs waiting for approval (status = 0) from tbl_recruiter_activity with aggregated CV counts, filtered by Team Leader's tl_id"""
     try:
         team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
         if not team_leader_id:
@@ -811,18 +900,8 @@ async def get_cv_received(current_user: Dict[str, Any] = Depends(get_current_use
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
-                
-                if not recruiter_ids:
-                    return []
-                
                 # Query to get CVs with status = 0 (waiting for approval) with aggregated CV counts
+                # Filter by tl_id in demand sheet to ensure only this TL's demands are shown
                 query = """
                     SELECT 
                         ra.id,
@@ -855,7 +934,7 @@ async def get_cv_received(current_user: Dict[str, Any] = Depends(get_current_use
                     LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
                     LEFT JOIN tbl_clients c ON ds.client_id = c.id
                     LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
-                    WHERE ra.recruiter_id = ANY(%s)
+                    WHERE ds.tl_id = %s
                     AND ra.cv_list IS NOT NULL 
                     AND jsonb_array_length(ra.cv_list) > 0
                     AND EXISTS (
@@ -864,7 +943,7 @@ async def get_cv_received(current_user: Dict[str, Any] = Depends(get_current_use
                     )
                     ORDER BY ra.created_at DESC
                 """
-                cur.execute(query, (recruiter_ids,))
+                cur.execute(query, (team_leader_id,))
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 result = _rows_to_dicts(columns, rows)
@@ -1435,7 +1514,15 @@ async def get_activity_profiles(activity_id: int):
 
 @router.get("/cv-submitted")
 async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Get approved CVs (status = 1) for the Submitted tab with aggregated CV counts, filtered by Team Leader"""
+    """
+    Get submitted CVs (status = 1) for the Submitted tab, filtered by Team Leader.
+    
+    Requirements:
+    - Fetch from tbl_recruiter_activity
+    - Only records where cv_list status key = 1 (submitted CVs)
+    - Join with tbl_demand_sheet using demand_id
+    - Filter using tl_id = logged_in_tl_id
+    """
     try:
         team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
         if not team_leader_id:
@@ -1443,18 +1530,10 @@ async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_us
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
-                
-                if not recruiter_ids:
-                    return []
-                
-                # Query to get approved CVs (status = 1) with aggregated CV counts, filtered by team leader's recruiters
+                # Query to get submitted CVs (status = 1) from tbl_recruiter_activity
+                # Join with tbl_demand_sheet using demand_id
+                # Filter by tl_id = logged_in_tl_id
+                # Only include records where cv_list contains at least one CV with status = 1
                 cur.execute("""
                     SELECT 
                         ra.id,
@@ -1483,11 +1562,11 @@ async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_us
                             AND jsonb_array_length(ra_all.cv_list) > 0
                         ) as total_uploaded_cv_count
                     FROM tbl_recruiter_activity ra
+                    INNER JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
                     LEFT JOIN tbl_users u ON ra.recruiter_id = u.id
-                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
                     LEFT JOIN tbl_clients c ON ds.client_id = c.id
                     LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
-                    WHERE ra.recruiter_id = ANY(%s)
+                    WHERE ds.tl_id = %s
                     AND ra.cv_list IS NOT NULL 
                     AND jsonb_array_length(ra.cv_list) > 0
                     AND EXISTS (
@@ -1495,25 +1574,14 @@ async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_us
                         WHERE cv->>'status' = '1'
                     )
                     ORDER BY ra.updated_at DESC
-                """, (recruiter_ids,))
+                """, (team_leader_id,))
                 rows = cur.fetchall()
                 columns = [desc[0] for desc in cur.description]
                 result = _rows_to_dicts(columns, rows)
                 
-                # Get all processed profiles from tbl_submissions to filter them out
-                cur.execute("""
-                    SELECT demand_id, recruiter_id, candidate_name
-                    FROM tbl_submissions
-                """)
-                processed_profiles = cur.fetchall()
-                processed_set = set()
-                for proc in processed_profiles:
-                    # Create a unique key: (demand_id, recruiter_id, candidate_name)
-                    # Match by these three fields regardless of submission date
-                    key = (proc[0], proc[1], proc[2] if proc[2] else '')
-                    processed_set.add(key)
-                
-                # Update CV URLs in the cv_list and filter out already-processed profiles
+                # Update CV URLs in the cv_list and filter to only show CVs with status = 1
+                # Note: We show ALL submitted CVs (status = 1), regardless of whether they're in tbl_submissions
+                # The Submitted tab should display all submitted profiles
                 filtered_result = []
                 for row in result:
                     if row.get('cv_list'):
@@ -1527,45 +1595,36 @@ async def get_cv_submitted(current_user: Dict[str, Any] = Depends(get_current_us
                         if isinstance(cv_list, list):
                             filtered_cv_list = []
                             for cv in cv_list:
-                                # Only include CVs with status = 1 that haven't been processed
+                                # Only include CVs with status = 1 (submitted CVs)
                                 if cv.get('status') == 1 or cv.get('status') == '1':
-                                    candidate_name = cv.get('candidate_name', '') or ''
-                                    demand_id = row.get('demand_id')
-                                    recruiter_id = row.get('recruiter_id')
-                                    
-                                    # Check if this profile has been processed (exists in tbl_submissions)
-                                    # Match by demand_id, recruiter_id, and candidate_name
-                                    key = (demand_id, recruiter_id, candidate_name)
-                                    
-                                    if key not in processed_set:
-                                        # Update CV URL if needed
-                                        if cv.get('cv_url') and not cv['cv_url'].startswith('http'):
-                                            # Extract just the filename from the cv_url path
-                                            original_url = cv['cv_url']
-                                            if original_url.startswith("src/assets/cv_uploads/"):
-                                                # Extract just the filename from the full path
-                                                filename = os.path.basename(original_url)
-                                            else:
-                                                # It's already just a filename
-                                                filename = original_url
-                                            
-                                            # URL encode the filename to handle spaces and special characters
-                                            import urllib.parse
-                                            encoded_filename = urllib.parse.quote(filename)
-                                            cv['cv_url'] = f"{API_BASE_URL}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}" if API_BASE_URL else None
-                                            # Add file availability check
-                                            cv['cv_available'] = True
-                                        elif not cv.get('cv_url'):
-                                            # If no cv_url, mark as not available
-                                            cv['cv_url'] = None
-                                            cv['cv_available'] = False
+                                    # Update CV URL if needed
+                                    if cv.get('cv_url') and not cv['cv_url'].startswith('http'):
+                                        # Extract just the filename from the cv_url path
+                                        original_url = cv['cv_url']
+                                        if original_url.startswith("src/assets/cv_uploads/"):
+                                            # Extract just the filename from the full path
+                                            filename = os.path.basename(original_url)
                                         else:
-                                            # Already has full URL, assume available
-                                            cv['cv_available'] = True
+                                            # It's already just a filename
+                                            filename = original_url
                                         
-                                        filtered_cv_list.append(cv)
+                                        # URL encode the filename to handle spaces and special characters
+                                        import urllib.parse
+                                        encoded_filename = urllib.parse.quote(filename)
+                                        cv['cv_url'] = f"{API_BASE_URL}/cv-file/{row['recruiter_id']}/{row['demand_id']}/{encoded_filename}" if API_BASE_URL else None
+                                        # Add file availability check
+                                        cv['cv_available'] = True
+                                    elif not cv.get('cv_url'):
+                                        # If no cv_url, mark as not available
+                                        cv['cv_url'] = None
+                                        cv['cv_available'] = False
+                                    else:
+                                        # Already has full URL, assume available
+                                        cv['cv_available'] = True
+                                    
+                                    filtered_cv_list.append(cv)
                             
-                            # Only include the row if there are unprocessed CVs
+                            # Only include the row if there are submitted CVs (status = 1)
                             if filtered_cv_list:
                                 row['cv_list'] = filtered_cv_list
                                 filtered_result.append(row)
@@ -1878,19 +1937,14 @@ async def get_key_highlights(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                # Get demand_ids and recruiter_ids based on tl_id (not reporting_to)
+                demand_ids, recruiter_ids = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
-                print(f"DEBUG: Team leader ID: {team_leader_id}, Found {len(recruiter_ids)} recruiters: {recruiter_ids}")
+                print(f"DEBUG: Team leader ID: {team_leader_id}, Found {len(demand_ids)} demands, {len(recruiter_ids)} recruiters")
                 
                 # Total Submissions: Count total number of CVs with status = 1 (submitted) within date range
                 total_submissions = 0
-                if recruiter_ids:
+                if recruiter_ids and demand_ids:
                     # Build the query with proper parameter handling
                     # Check for status = 1 (can be stored as integer 1 or string '1')
                     # Handle both integer and string representations safely
@@ -1903,14 +1957,15 @@ async def get_key_highlights(
                                      cv->>'status' = '1' 
                                      OR (cv->>'status') ~ '^[0-9]+$' AND (cv->>'status')::int = 1
                                  )
-                                 {date_filter})
+                                 {date_filter}) 
                             ), 0) as total_count
                             FROM tbl_recruiter_activity ra
                             WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.demand_id = ANY(%s)
                             AND ra.cv_list IS NOT NULL
                             AND jsonb_array_length(ra.cv_list) > 0
                         """
-                        params = [recruiter_ids] + date_params
+                        params = [recruiter_ids, demand_ids] + date_params
                     else:
                         query = """
                             SELECT COALESCE(SUM(
@@ -1923,10 +1978,11 @@ async def get_key_highlights(
                             ), 0) as total_count
                             FROM tbl_recruiter_activity ra
                             WHERE ra.recruiter_id = ANY(%s)
+                            AND ra.demand_id = ANY(%s)
                             AND ra.cv_list IS NOT NULL
                             AND jsonb_array_length(ra.cv_list) > 0
                         """
-                        params = [recruiter_ids]
+                        params = [recruiter_ids, demand_ids]
                     cur.execute(query, params)
                     result = cur.fetchone()
                     total_submissions = result[0] if result else 0
@@ -1934,24 +1990,19 @@ async def get_key_highlights(
                 else:
                     print("DEBUG: No recruiters found, total_submissions will be 0")
                 
-                # Current Demand: Count distinct demands from recruiter_activity table for recruiters under this team leader
+                # Current Demand: Count distinct demands created by this TL
                 # Note: Current demand count doesn't use date filtering as it's a snapshot of active demands
-                current_demand = 0
-                if recruiter_ids:
-                    query = """
-                        SELECT COUNT(DISTINCT ra.demand_id)
-                        FROM tbl_recruiter_activity ra
-                        WHERE ra.recruiter_id = ANY(%s)
-                    """
-                    cur.execute(query, (recruiter_ids,))
-                    result = cur.fetchone()
-                    current_demand = result[0] if result else 0
-                    print(f"DEBUG: Current demand query result: {current_demand}")
-                else:
-                    print("DEBUG: No recruiters found, current_demand will be 0")
+                current_demand = len(demand_ids) if demand_ids else 0
+                print(f"DEBUG: Current demand count: {current_demand}")
                 
-                # Number of Recruiters: Count recruiters reporting to this team leader
-                number_of_recruiters = len(recruiter_ids)
+                # Number of Recruiters: Count recruiters reporting to this team leader (based on reporting_to, not demand assignment)
+                cur.execute("""
+                    SELECT COUNT(*) FROM tbl_users 
+                    WHERE role = 'recruiter' AND reporting_to = %s
+                """, (team_leader_id,))
+                result = cur.fetchone()
+                number_of_recruiters = result[0] if result else 0
+                print(f"DEBUG: Number of recruiters (reporting_to): {number_of_recruiters}")
                 
                 return {
                     "total_submissions": total_submissions,
@@ -1986,21 +2037,25 @@ async def get_daily_submissions_trend(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
-                    FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_data = {row[0]: row[1] for row in recruiter_rows}
-                recruiter_ids = list(recruiter_data.keys())
+                # Get demand_ids and recruiter_ids based on tl_id (not reporting_to)
+                demand_ids, recruiter_ids = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
+                
+                # Get recruiter names for display
+                recruiter_data = {}
+                if recruiter_ids:
+                    cur.execute("""
+                        SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
+                        FROM tbl_users 
+                        WHERE id = ANY(%s)
+                    """, (recruiter_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_data = {row[0]: row[1] for row in recruiter_rows}
                 
                 print(f"DEBUG: Team Leader ID: {team_leader_id}")
-                print(f"DEBUG: Found {len(recruiter_ids)} recruiters: {recruiter_ids}")
+                print(f"DEBUG: Found {len(demand_ids)} demands, {len(recruiter_ids)} recruiters: {recruiter_ids}")
                 
-                if not recruiter_ids:
-                    print("DEBUG: No recruiters found for this team leader")
+                if not recruiter_ids or not demand_ids:
+                    print("DEBUG: No recruiters or demands found for this team leader")
                     return {"daily_trend": []}
                 
                 # Build date filter for WHERE clause - use recruiter_date (or legacy cv_date) if available, otherwise fallback to updated_at
@@ -2070,6 +2125,7 @@ async def get_daily_submissions_trend(
                     FROM tbl_recruiter_activity ra
                     CROSS JOIN LATERAL jsonb_array_elements(ra.cv_list) AS cv
                     WHERE ra.recruiter_id = ANY(%s)
+                    AND ra.demand_id = ANY(%s)
                     AND ra.cv_list IS NOT NULL
                     AND jsonb_array_length(ra.cv_list) > 0
                     AND (
@@ -2092,7 +2148,7 @@ async def get_daily_submissions_trend(
                 """
                 
                 # ANY(%s) expects a single array parameter, not expanded tuple
-                params = [recruiter_ids] + where_date_params if where_date_params else [recruiter_ids]
+                params = [recruiter_ids, demand_ids] + where_date_params if where_date_params else [recruiter_ids, demand_ids]
                 print(f"DEBUG: Executing query with params: {params}")
                 print(f"DEBUG: Date filter: start_date={start_date}, end_date={end_date}")
                 cur.execute(query, params)
@@ -2191,18 +2247,22 @@ async def get_demand_by_recruiters(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
-                    FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_data = {row[0]: row[1] for row in recruiter_rows}
-                recruiter_ids = list(recruiter_data.keys())
+                # Get demand_ids and recruiter_ids based on tl_id (not reporting_to)
+                demand_ids, recruiter_ids = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
-                if not recruiter_ids:
+                if not demand_ids:
                     return {"distribution": []}
+                
+                # Get recruiter names for display
+                recruiter_data = {}
+                if recruiter_ids:
+                    cur.execute("""
+                        SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
+                        FROM tbl_users 
+                        WHERE id = ANY(%s)
+                    """, (recruiter_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_data = {row[0]: row[1] for row in recruiter_rows}
                 
                 # Build date filter for demand_date
                 date_filter = ""
@@ -2217,7 +2277,7 @@ async def get_demand_by_recruiters(
                     date_filter = "AND ds.demand_date <= %s"
                     date_params = [end_date]
                 
-                # Count open demands per recruiter
+                # Count open demands per recruiter - filter by tl_id and assigned recruiters
                 query = f"""
                     SELECT 
                         (assignment->>'recruiter_id')::int as recruiter_id,
@@ -2225,12 +2285,13 @@ async def get_demand_by_recruiters(
                     FROM tbl_demand_sheet ds,
                     jsonb_array_elements(ds.assigned_to) AS assignment
                     WHERE ds.status = 'open'
+                    AND ds.tl_id = %s
                     AND ds.assigned_to IS NOT NULL
                     AND (assignment->>'recruiter_id')::int = ANY(%s)
                     {date_filter}
                     GROUP BY (assignment->>'recruiter_id')::int
                 """
-                params = [recruiter_ids] + date_params
+                params = [team_leader_id, recruiter_ids] + date_params
                 cur.execute(query, params)
                 
                 rows = cur.fetchall()
@@ -2271,15 +2332,10 @@ async def get_demand_by_spocs(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                # Get demand_ids based on tl_id (not reporting_to)
+                demand_ids, _ = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
-                if not recruiter_ids:
+                if not demand_ids:
                     return {"distribution": []}
                 
                 # Build date filter for demand_date
@@ -2295,7 +2351,7 @@ async def get_demand_by_spocs(
                     date_filter = "AND ds.demand_date <= %s"
                     date_params = [end_date]
                 
-                # Count demands per SPOC
+                # Count demands per SPOC - filter by tl_id
                 query = f"""
                     SELECT 
                         ds.spoc_id,
@@ -2303,16 +2359,12 @@ async def get_demand_by_spocs(
                         COUNT(DISTINCT ds.id) as demand_count
                     FROM tbl_demand_sheet ds
                     LEFT JOIN tbl_client_spocs cs ON ds.spoc_id = cs.id
-                    WHERE ds.assigned_to IS NOT NULL
-                    AND EXISTS (
-                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
-                        WHERE (assignment->>'recruiter_id')::int = ANY(%s)
-                    )
+                    WHERE ds.tl_id = %s
                     {date_filter}
                     GROUP BY ds.spoc_id, cs.spoc_name
                     ORDER BY demand_count DESC
                 """
-                params = [recruiter_ids] + date_params
+                params = [team_leader_id] + date_params
                 cur.execute(query, params)
                 
                 rows = cur.fetchall()
@@ -2353,13 +2405,8 @@ async def get_submissions_by_spocs(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                # Get demand_ids and recruiter_ids based on tl_id (not reporting_to)
+                demand_ids, recruiter_ids = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
                 if not recruiter_ids:
                     return {"spoc_submissions": []}
@@ -2377,7 +2424,7 @@ async def get_submissions_by_spocs(
                     date_filter = "AND s.submission_date <= %s"
                     date_params = [end_date]
                 
-                # Count submissions per SPOC from tbl_submissions
+                # Count submissions per SPOC from tbl_submissions - filter by recruiter_ids assigned to TL's demands
                 query = f"""
                     SELECT 
                         s.spoc_id,
@@ -2386,11 +2433,12 @@ async def get_submissions_by_spocs(
                     FROM tbl_submissions s
                     LEFT JOIN tbl_client_spocs cs ON s.spoc_id = cs.id
                     WHERE s.recruiter_id = ANY(%s)
+                    AND s.demand_id = ANY(%s)
                     {date_filter}
                     GROUP BY s.spoc_id, cs.spoc_name
                     ORDER BY submission_count DESC
                 """
-                params = [recruiter_ids] + date_params
+                params = [recruiter_ids, demand_ids] + date_params
                 cur.execute(query, params)
                 
                 rows = cur.fetchall()
@@ -2429,15 +2477,10 @@ async def get_demand_by_status(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                # Get demand_ids based on tl_id (not reporting_to)
+                demand_ids, _ = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
-                if not recruiter_ids:
+                if not demand_ids:
                     return {"status_counts": []}
                 
                 # Build date filter for updated_at
@@ -2453,26 +2496,18 @@ async def get_demand_by_status(
                     date_filter = "AND DATE(ds.updated_at) <= %s"
                     date_params = [end_date]
                 
-                # Get demands assigned to these recruiters and count by status from demand_sheet
-                # Handle status column type (could be enum or varchar)
+                # Get demands created by this TL and count by status - filter by tl_id
                 query = f"""
                     SELECT 
                         COALESCE(LOWER(CAST(ds.status AS TEXT)), 'unknown') as status,
                         COUNT(DISTINCT ds.id) as count
                     FROM tbl_demand_sheet ds
-                    WHERE ds.assigned_to IS NOT NULL
-                    AND ds.assigned_to != '[]'::jsonb
-                    AND jsonb_typeof(ds.assigned_to) = 'array'
-                    AND EXISTS (
-                        SELECT 1 FROM jsonb_array_elements(ds.assigned_to) AS assignment
-                        WHERE assignment ? 'recruiter_id'
-                        AND (assignment->>'recruiter_id')::int = ANY(%s)
-                    )
+                    WHERE ds.tl_id = %s
                     {date_filter}
                     GROUP BY COALESCE(LOWER(CAST(ds.status AS TEXT)), 'unknown')
                     ORDER BY count DESC
                 """
-                params = [recruiter_ids] + date_params
+                params = [team_leader_id] + date_params
                 cur.execute(query, params)
                 
                 rows = cur.fetchall()
@@ -2512,15 +2547,10 @@ async def get_demand_by_skill(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_ids = [row[0] for row in recruiter_rows] if recruiter_rows else []
+                # Get demand_ids based on tl_id (not reporting_to)
+                demand_ids, _ = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
-                if not recruiter_ids:
+                if not demand_ids:
                     return {"skill_distribution": []}
                 
                 # Build date filter for demand_date
@@ -2536,19 +2566,18 @@ async def get_demand_by_skill(
                     date_filter = "AND ds.demand_date <= %s"
                     date_params = [end_date]
                 
-                # Get skills from demand_sheet via recruiter_activity.demand_id
+                # Get skills from demand_sheet - filter by tl_id
                 query = f"""
                     SELECT 
                         COALESCE(ds.skill, 'Unknown') as skill,
-                        COUNT(DISTINCT ra.demand_id) as demand_count
-                    FROM tbl_recruiter_activity ra
-                    LEFT JOIN tbl_demand_sheet ds ON ra.demand_id = ds.id
-                    WHERE ra.recruiter_id = ANY(%s)
+                        COUNT(DISTINCT ds.id) as demand_count
+                    FROM tbl_demand_sheet ds
+                    WHERE ds.tl_id = %s
                     {date_filter}
                     GROUP BY ds.skill
                     ORDER BY demand_count DESC
                 """
-                params = [recruiter_ids] + date_params
+                params = [team_leader_id] + date_params
                 cur.execute(query, params)
                 
                 rows = cur.fetchall()
@@ -2631,21 +2660,26 @@ async def get_submissions_by_recruiters(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get all recruiters reporting to this team leader
-                cur.execute("""
-                    SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
-                    FROM tbl_users 
-                    WHERE role = 'recruiter' AND reporting_to = %s
-                """, (team_leader_id,))
-                recruiter_rows = cur.fetchall()
-                recruiter_data = {row[0]: row[1] for row in recruiter_rows}
-                recruiter_ids = list(recruiter_data.keys())
+                # Get demand_ids and recruiter_ids based on tl_id (not reporting_to)
+                demand_ids, recruiter_ids = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
                 
-                if not recruiter_ids:
+                # Get recruiter names for display
+                recruiter_data = {}
+                if recruiter_ids:
+                    cur.execute("""
+                        SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
+                        FROM tbl_users 
+                        WHERE id = ANY(%s)
+                    """, (recruiter_ids,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_data = {row[0]: row[1] for row in recruiter_rows}
+                
+                if not recruiter_ids or not demand_ids:
                     return {"recruiter_submissions": []}
                 
                 # Get submissions where status in (0,1)
                 # Group by recruiter_id to count submissions per recruiter
+                # Filter by both recruiter_ids and demand_ids
                 query = f"""
                     SELECT 
                         ra.recruiter_id,
@@ -2653,6 +2687,7 @@ async def get_submissions_by_recruiters(
                     FROM tbl_recruiter_activity ra
                     CROSS JOIN LATERAL jsonb_array_elements(ra.cv_list) AS cv
                     WHERE ra.recruiter_id = ANY(%s)
+                    AND ra.demand_id = ANY(%s)
                     AND ra.cv_list IS NOT NULL
                     AND jsonb_array_length(ra.cv_list) > 0
                     AND (
@@ -2670,7 +2705,7 @@ async def get_submissions_by_recruiters(
                     ORDER BY submission_count DESC
                 """
                 # ANY(%s) expects a single array parameter, not expanded tuple
-                params = [recruiter_ids] + date_params if date_params else [recruiter_ids]
+                params = [recruiter_ids, demand_ids] + date_params if date_params else [recruiter_ids, demand_ids]
                 cur.execute(query, params)
                 
                 rows = cur.fetchall()

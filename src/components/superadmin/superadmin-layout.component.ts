@@ -14,8 +14,8 @@ import { environment } from '../../environments/environment';
     <div class="superadmin-dashboard">
       <div class="superadmin-sidebar">
         <div class="superadmin-sidebar-header">
-          <div class="superadmin-sidebar-logo">Super Admin</div>
-          <div class="superadmin-sidebar-subtitle">Management Dashboard</div>
+          <h1 class="superadmin-sidebar-title">{{ getUserDisplayName() }}</h1>
+          <p class="superadmin-sidebar-subtitle">Super Admin</p>
         </div>
         <nav class="superadmin-sidebar-nav">
           <a routerLink="/superadmin/dashboard" routerLinkActive="active" class="superadmin-nav-item">
@@ -76,6 +76,9 @@ import { environment } from '../../environments/environment';
       <div class="superadmin-main-content">
         <header class="superadmin-header">
           <div class="superadmin-header-content">
+            <div class="superadmin-header-left">
+              <!-- Left side content can be added here if needed -->
+            </div>
             <div class="superadmin-user-info">
               <div class="user-initials">{{ getUserInitials() }}</div>
             </div>
@@ -109,21 +112,29 @@ import { environment } from '../../environments/environment';
     }
     
     .superadmin-sidebar-header { 
-      padding: 24px; 
+      padding: 24px 20px; 
       border-bottom: 1px solid rgba(255, 255, 255, 0.1); 
-      text-align: center; 
+      background: transparent;
+      color: white;
     }
     
-    .superadmin-sidebar-logo { 
-      font-size: 24px; 
-      font-weight: 700; 
-      color: #fff; 
-      margin-bottom: 8px; 
+    .superadmin-sidebar-title {
+      font-size: 18px !important;
+      font-weight: 600 !important;
+      margin: 0 0 4px 0 !important;
+      color: white !important;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif !important;
+      display: block !important;
+      visibility: visible !important;
     }
     
     .superadmin-sidebar-subtitle { 
-      color: rgba(255, 255, 255, 0.8); 
-      font-size: 14px; 
+      font-size: 12px !important;
+      opacity: 0.8 !important;
+      margin: 0 !important;
+      color: rgba(255, 255, 255, 0.8) !important;
+      display: block !important;
+      visibility: visible !important;
     }
     
     .superadmin-sidebar-nav { 
@@ -224,10 +235,22 @@ import { environment } from '../../environments/environment';
     .superadmin-header-content {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
+      justify-content: space-between;
       padding: 0 32px;
       width: 100%;
       height: 100%;
+    }
+
+    .superadmin-header-left {
+      display: flex;
+      align-items: center;
+    }
+
+    .superadmin-header-role {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--kudzu-primary);
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
     }
 
 
@@ -561,7 +584,7 @@ export class SuperAdminLayoutComponent implements OnInit {
       return this.userInfo.display_name;
     }
     if (this.userInfo.first_name && this.userInfo.last_name) {
-      return `${this.userInfo.first_name} ${this.userInfo.last_name}`;
+      return `${this.userInfo.first_name} ${this.userInfo.last_name}`.trim();
     }
     if (this.userInfo.first_name) {
       return this.userInfo.first_name;

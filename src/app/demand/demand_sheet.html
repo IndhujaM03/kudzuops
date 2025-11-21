@@ -1089,6 +1089,7 @@
                   </div>
                   <label class="dropdown-item" *ngFor="let tl of filteredTeamLeaders">
                     <input type="radio" [value]="tl.id" [(ngModel)]="selectedTeamLeaderId" name="teamLeader" 
+                           (change)="onTeamLeaderChange()"
                            class="item-radio" />
                     <span class="item-name">{{ getTeamLeaderDisplayName(tl) }}</span>
                     <div class="item-status" [class.selected]="selectedTeamLeaderId == tl.id">

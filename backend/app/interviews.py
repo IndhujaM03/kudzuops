@@ -27,13 +27,15 @@ if not DATABASE_DSN:
 
 router = APIRouter(prefix="/api", tags=["Interviews"])
 
-# Import recruiter ID extraction function
+# Import recruiter ID extraction function and get_current_user
 try:
-    from .login import extract_recruiter_id_from_request
+    from .login import extract_recruiter_id_from_request, get_current_user
 except ImportError:
     # Fallback if import fails
     def extract_recruiter_id_from_request(request: Request, query_param: Optional[int] = None) -> Optional[int]:
         return None
+    async def get_current_user():
+        return {"uid": 1, "role": "team_leader"}
 
 # Pydantic models
 class InterviewCreate(BaseModel):
@@ -468,27 +470,34 @@ def _ensure_interview_schedule_table():
         print(f"Error ensuring interview schedule table: {e}")
 
 @router.get("/interview-schedule/waiting")
-def get_waiting_candidates(
+async def get_waiting_candidates(
     request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(1000, ge=1, le=10000),
-    search: Optional[str] = Query(None)
+    search: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Get candidates in Waiting tab: status='scheduled' and round_status=0, filtered by logged-in recruiter"""
+    """Get candidates in Waiting tab: status='scheduled' and round_status=0, filtered by user role (TL by tl_id, Recruiter by recruiter_id)"""
     _ensure_interview_schedule_table()
     try:
-        # Extract recruiter_id from request (JWT token or header)
-        recruiter_id = extract_recruiter_id_from_request(request)
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        user_role = current_user.get('role', '').lower()
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 where_conditions = ["s.status = 'scheduled'"]
                 params = []
                 
-                # Filter by recruiter_id if available
-                if recruiter_id:
+                # Filter by role: Recruiters see their own records, TLs see their team's records
+                if user_role in ['recruiter', 'recruiters']:
                     where_conditions.append("s.recruiter_id = %s")
-                    params.append(recruiter_id)
+                    params.append(user_id)
+                else:
+                    # Team Leader or other roles: filter by tl_id
+                    where_conditions.append("d.tl_id = %s")
+                    params.append(user_id)
                 
                 # Filter for round_status = 0 in JSON (handle NULL)
                 where_conditions.append("""
@@ -506,7 +515,7 @@ def get_waiting_candidates(
                 where_clause = " AND ".join(where_conditions)
                 
                 # Count total
-                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}"
+                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id WHERE {where_clause}"
                 cur.execute(count_query, params)
                 total = int(cur.fetchone()[0])
                 
@@ -521,6 +530,7 @@ def get_waiting_candidates(
                         s.recruiter_id, 
                         s.round, s.status, s.interview_schedules, s.created_at
                     FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
                     LEFT JOIN tbl_users u ON s.recruiter_id = u.id
                     WHERE {where_clause}
                     ORDER BY s.created_at DESC
@@ -582,17 +592,20 @@ def get_waiting_candidates(
         raise HTTPException(status_code=500, detail=f"Failed to fetch waiting candidates: {str(e)}")
 
 @router.get("/interview-schedule/scheduled")
-def get_scheduled_candidates(
+async def get_scheduled_candidates(
     request: Request,
     page: int = Query(1, ge=1),
     size: int = Query(1000, ge=1, le=10000),
-    search: Optional[str] = Query(None)
+    search: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Get candidates in Scheduled tab: status='slot_allocated' OR status='confirmed' with at least one slot_status=1, filtered by logged-in recruiter"""
+    """Get candidates in Scheduled tab: status='slot_allocated' or 'confirmed' with slot_status=1, filtered by user role (TL by tl_id, Recruiter by recruiter_id)"""
     _ensure_interview_schedule_table()
     try:
-        # Extract recruiter_id from request (JWT token or header)
-        recruiter_id = extract_recruiter_id_from_request(request)
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        user_role = current_user.get('role', '').lower()
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
@@ -600,10 +613,14 @@ def get_scheduled_candidates(
                 where_conditions = ["(s.status = 'slot_allocated' OR s.status = 'confirmed')"]
                 params = []
                 
-                # Filter by recruiter_id if available
-                if recruiter_id:
+                # Filter by role: Recruiters see their own records, TLs see their team's records
+                if user_role in ['recruiter', 'recruiters']:
                     where_conditions.append("s.recruiter_id = %s")
-                    params.append(recruiter_id)
+                    params.append(user_id)
+                else:
+                    # Team Leader or other roles: filter by tl_id
+                    where_conditions.append("d.tl_id = %s")
+                    params.append(user_id)
                 
                 # Filter for at least one slot with slot_status = 1 (handle NULL)
                 where_conditions.append("""
@@ -622,7 +639,7 @@ def get_scheduled_candidates(
                 where_clause = " AND ".join(where_conditions)
                 
                 # Count total
-                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}"
+                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id WHERE {where_clause}"
                 cur.execute(count_query, params)
                 total = int(cur.fetchone()[0])
                 
@@ -642,6 +659,7 @@ def get_scheduled_candidates(
                         s.interview_schedules, 
                         s.created_at
                     FROM tbl_interview_schedule s
+                    LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id
                     LEFT JOIN tbl_users u ON s.recruiter_id = u.id
                     WHERE {where_clause}
                     ORDER BY s.created_at DESC
@@ -844,18 +862,23 @@ def reject_all_slots(schedule_id: int, reject: RejectAllSlots) -> Dict[str, Any]
 
 
 @router.get("/interview-schedule/reschedule")
-def get_reschedule_candidates(
+async def get_reschedule_candidates(
     page: int = Query(1, ge=1),
     size: int = Query(1000, ge=1, le=10000),
     search: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Get candidates whose interviews require rescheduling (status='reschedule')."""
+    """Get candidates whose interviews require rescheduling (status='reschedule'), filtered by logged-in TL's tl_id."""
     _ensure_interview_schedule_table()
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                where_conditions = ["s.status = 'reschedule'"]
-                params: List[Any] = []
+                where_conditions = ["s.status = 'reschedule'", "d.tl_id = %s"]
+                params: List[Any] = [team_leader_id]
 
                 if search:
                     like = f"%{search}%"
@@ -864,7 +887,7 @@ def get_reschedule_candidates(
 
                 where_clause = " AND ".join(where_conditions)
 
-                cur.execute(f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}", params)
+                cur.execute(f"SELECT COUNT(*) FROM tbl_interview_schedule s LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id WHERE {where_clause}", params)
                 total = int(cur.fetchone()[0])
 
                 query = f"""
@@ -1324,18 +1347,23 @@ def update_reschedule_slots(schedule_id: int, payload: RescheduleUpdateRequest) 
 
 
 @router.get("/interview-schedule/all")
-def get_all_interview_schedules(
+async def get_all_interview_schedules(
     page: int = Query(1, ge=1),
     size: int = Query(1000, ge=1, le=10000),
-    search: Optional[str] = Query(None)
+    search: Optional[str] = Query(None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Get all interview schedules without filtering by status"""
+    """Get all interview schedules without filtering by status, filtered by logged-in TL's tl_id"""
     _ensure_interview_schedule_table()
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                where_conditions = ["TRUE"]
-                params: List[Any] = []
+                where_conditions = ["d.tl_id = %s"]
+                params: List[Any] = [team_leader_id]
 
                 if search:
                     search_pattern = f"%{search}%"
@@ -1346,7 +1374,7 @@ def get_all_interview_schedules(
 
                 where_clause = " AND ".join(where_conditions)
 
-                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s WHERE {where_clause}"
+                count_query = f"SELECT COUNT(*) FROM tbl_interview_schedule s LEFT JOIN tbl_demand_sheet d ON s.demand_id = d.id WHERE {where_clause}"
                 cur.execute(count_query, params)
                 total = int(cur.fetchone()[0])
 

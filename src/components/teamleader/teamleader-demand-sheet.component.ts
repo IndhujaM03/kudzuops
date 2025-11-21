@@ -545,6 +545,104 @@ interface DemandItem {
       </div>
     </div>
 
+    <!-- Recruiter Assignment Popup -->
+    <div class="modal-overlay recruiter-popup-overlay" *ngIf="showRecruiterPopup()" (click)="closeRecruiterPopup()">
+      <div class="modal-content recruiter-popup-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3 class="modal-title">Assign Recruiters</h3>
+          <button class="modal-close" (click)="closeRecruiterPopup()">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="modal-body recruiter-popup-body">
+          <!-- Team Leader Filter Section -->
+          <div class="tl-filter-section">
+            <label class="filter-label">Filter by Team Leader</label>
+            <div class="tl-filter-chips">
+              <button 
+                class="tl-filter-chip" 
+                [class.active]="selectedTeamLeaderId() === null"
+                (click)="selectTeamLeader(null)">
+                All Recruiters
+              </button>
+              <button 
+                *ngFor="let tl of teamLeaders()" 
+                class="tl-filter-chip"
+                [class.active]="selectedTeamLeaderId() === tl.id"
+                (click)="selectTeamLeader(tl.id)">
+                {{ getTeamLeaderDisplayName(tl) }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Recruiter Search -->
+          <div class="recruiter-search-section">
+            <input 
+              type="text" 
+              class="recruiter-search-input"
+              [value]="recruiterSearchTerm()"
+              (input)="recruiterSearchTerm.set($any($event.target).value); filterRecruiters()"
+              placeholder="Search recruiters..."
+            />
+          </div>
+
+          <!-- Selected Recruiters Display -->
+          <div class="selected-recruiters-section" *ngIf="selectedRecruiterIds().size > 0">
+            <label class="section-label">Selected Recruiters ({{ selectedRecruiterIds().size }})</label>
+            <div class="selected-recruiters-list">
+              <div class="selected-recruiter-item" *ngFor="let recruiterId of getSelectedRecruiterIdsArray()">
+                <span>{{ getRecruiterDisplayName(allRecruiters().find(r => r.id === recruiterId)) }}</span>
+                <button class="remove-recruiter-btn" (click)="toggleRecruiter(recruiterId)" type="button">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recruiters List -->
+          <div class="recruiters-list-section">
+            <label class="section-label">Available Recruiters ({{ filteredRecruiters().length }})</label>
+            <div class="recruiters-list">
+              <div *ngIf="filteredRecruiters().length === 0" class="empty-recruiters">
+                <span>No recruiters found</span>
+              </div>
+              <label 
+                *ngFor="let recruiter of filteredRecruiters()" 
+                class="recruiter-item"
+                [class.selected]="selectedRecruiterIds().has(recruiter.id)">
+                <input 
+                  type="checkbox"
+                  [checked]="selectedRecruiterIds().has(recruiter.id)"
+                  (change)="toggleRecruiter(recruiter.id)"
+                  class="recruiter-checkbox"
+                />
+                <span class="recruiter-name">{{ getRecruiterDisplayName(recruiter) }}</span>
+                <span class="recruiter-email">{{ recruiter.email }}</span>
+                <div class="recruiter-check-icon" *ngIf="selectedRecruiterIds().has(recruiter.id)">
+                  <svg fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer recruiter-popup-footer">
+          <button class="btn-cancel" (click)="closeRecruiterPopup()">
+            Cancel
+          </button>
+          <button 
+            class="btn-assign-primary" 
+            (click)="assignSelectedRecruiters()"
+            [disabled]="selectedRecruiterIds().size === 0">
+            Assign ({{ selectedRecruiterIds().size }})
+          </button>
+        </div>
+      </div>
+    </div>
+
   `,
   styles: [`
     .tl-demand-wrapper { 
@@ -1028,6 +1126,251 @@ interface DemandItem {
       background: rgba(24, 45, 23, 0.05);
       border-color: var(--kudzu-primary);
     }
+
+    /* Recruiter Popup Styles */
+    .recruiter-popup-overlay {
+      z-index: 100001 !important;
+    }
+
+    .recruiter-popup-content {
+      max-width: 700px !important;
+      width: 90% !important;
+      max-height: 85vh !important;
+    }
+
+    .recruiter-popup-body {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 20px;
+    }
+
+    /* Team Leader Filter Section */
+    .tl-filter-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .filter-label {
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+      margin: 0;
+    }
+
+    .tl-filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tl-filter-chip {
+      padding: 8px 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 20px;
+      background: white;
+      color: #374151;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+    }
+
+    .tl-filter-chip:hover {
+      background: rgba(24, 45, 23, 0.05);
+      border-color: var(--kudzu-primary);
+      color: var(--kudzu-primary);
+    }
+
+    .tl-filter-chip.active {
+      background: var(--kudzu-primary);
+      color: white;
+      border-color: var(--kudzu-primary);
+    }
+
+    /* Recruiter Search Section */
+    .recruiter-search-section {
+      width: 100%;
+    }
+
+    .recruiter-search-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+      transition: all 0.2s;
+    }
+
+    .recruiter-search-input:focus {
+      outline: none;
+      border-color: var(--kudzu-primary);
+      box-shadow: 0 0 0 3px rgba(24, 45, 23, 0.1);
+    }
+
+    /* Selected Recruiters Section */
+    .selected-recruiters-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #6b7280;
+      margin: 0;
+    }
+
+    .selected-recruiters-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .selected-recruiter-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(24, 45, 23, 0.1);
+      color: var(--kudzu-primary);
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .remove-recruiter-btn {
+      background: none;
+      border: none;
+      color: var(--kudzu-primary);
+      cursor: pointer;
+      padding: 0;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.2s;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .remove-recruiter-btn:hover {
+      background: rgba(24, 45, 23, 0.2);
+    }
+
+    /* Recruiters List Section */
+    .recruiters-list-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .recruiters-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .empty-recruiters {
+      padding: 20px;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 14px;
+    }
+
+    .recruiter-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: white;
+    }
+
+    .recruiter-item:hover {
+      background: rgba(24, 45, 23, 0.02);
+      border-color: var(--kudzu-primary);
+    }
+
+    .recruiter-item.selected {
+      background: rgba(24, 45, 23, 0.05);
+      border-color: var(--kudzu-primary);
+    }
+
+    .recruiter-checkbox {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--kudzu-primary);
+    }
+
+    .recruiter-name {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 500;
+      color: #111827;
+    }
+
+    .recruiter-email {
+      font-size: 12px;
+      color: #6b7280;
+      flex: 1;
+    }
+
+    .recruiter-check-icon {
+      width: 20px;
+      height: 20px;
+      color: var(--kudzu-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Recruiter Popup Footer */
+    .recruiter-popup-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      padding: 16px 20px;
+      border-top: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .btn-assign-primary {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      background: var(--kudzu-primary);
+      color: white;
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+    }
+
+    .btn-assign-primary:hover:not(:disabled) {
+      background: var(--kudzu-primary-dark, #182d17);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(24, 45, 23, 0.2);
+    }
+
+    .btn-assign-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
   `]
 })
 export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
@@ -1059,6 +1402,16 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
   savingReschedule = false;
   rescheduleCandidates = signal<any[]>([]);
   hasRescheduleRecords = signal(false);
+  
+  // Recruiter assignment popup state
+  showRecruiterPopup = signal(false);
+  selectedDemandForAssignment: number | null = null;
+  teamLeaders = signal<any[]>([]);
+  allRecruiters = signal<any[]>([]);
+  filteredRecruiters = signal<any[]>([]);
+  selectedTeamLeaderId = signal<number | null>(null);
+  selectedRecruiterIds = signal<Set<number>>(new Set());
+  recruiterSearchTerm = signal('');
   
   activeTab = signal<'unassigned' | 'assigned' | 'cv-received' | 'submitted' | 'reschedule'>('unassigned');
 
@@ -1555,8 +1908,180 @@ export class TeamLeaderDemandSheetComponent implements OnInit, OnDestroy {
 
   assignDemand(demandId: number) {
     console.log('Assigning demand:', demandId);
-    // TODO: Implement assign demand logic
-    alert('Demand assignment functionality will be implemented');
+    this.selectedDemandForAssignment = demandId;
+    this.selectedTeamLeaderId.set(null);
+    this.selectedRecruiterIds.set(new Set());
+    this.recruiterSearchTerm.set('');
+    this.showRecruiterPopup.set(true);
+    
+    // Fetch team leaders and all recruiters
+    this.fetchTeamLeaders();
+    this.fetchAllRecruiters();
+  }
+
+  closeRecruiterPopup() {
+    this.showRecruiterPopup.set(false);
+    this.selectedDemandForAssignment = null;
+    this.selectedTeamLeaderId.set(null);
+    this.selectedRecruiterIds.set(new Set());
+    this.recruiterSearchTerm.set('');
+  }
+
+  fetchTeamLeaders() {
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    
+    this.http.get<any[]>(`${this.apiBase}/teamleaders`, { headers }).subscribe({
+      next: (data) => {
+        console.log('✅ Team leaders fetched:', data);
+        this.teamLeaders.set(data || []);
+      },
+      error: (error) => {
+        console.error('❌ Failed to fetch team leaders:', error);
+        this.teamLeaders.set([]);
+      }
+    });
+  }
+
+  fetchAllRecruiters() {
+    const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    
+    // Use the recruiters endpoint that includes reporting_to field
+    console.log('🔍 Fetching all recruiters from:', `${this.apiBase}/users?role=recruiter`);
+    this.http.get<any[]>(`${this.apiBase}/users?role=recruiter`, { headers }).subscribe({
+      next: (data) => {
+        console.log('✅ All recruiters fetched:', data);
+        // Filter only approved recruiters (API already filters by approval_status, but double-check)
+        const approvedRecruiters = (data || []).filter(r => 
+          r.role === 'recruiter' && (r.approval_status === true || r.is_approved === true || r.approval_status !== false)
+        );
+        this.allRecruiters.set(approvedRecruiters);
+        console.log('✅ Approved recruiters:', approvedRecruiters);
+        this.filterRecruiters();
+      },
+      error: (error) => {
+        console.error('❌ Failed to fetch recruiters:', error);
+        // Fallback to demand endpoint
+        this.http.get<any[]>(`${this.apiBase}/demand/users/recruiters`, { headers }).subscribe({
+          next: (data) => {
+            console.log('✅ Recruiters fetched from fallback endpoint:', data);
+            this.allRecruiters.set(data || []);
+            this.filterRecruiters();
+          },
+          error: (err) => {
+            console.error('❌ Failed to fetch recruiters from fallback endpoint:', err);
+            this.allRecruiters.set([]);
+            this.filterRecruiters();
+          }
+        });
+      }
+    });
+  }
+
+  selectTeamLeader(tlId: number | null) {
+    console.log(`🎯 Team Leader selected: ${tlId}`, tlId ? this.teamLeaders().find(tl => tl.id === tlId) : 'All Recruiters');
+    this.selectedTeamLeaderId.set(tlId);
+    // Clear selected recruiters when TL filter changes
+    this.selectedRecruiterIds.set(new Set());
+    this.filterRecruiters();
+  }
+
+  filterRecruiters() {
+    const selectedTlId = this.selectedTeamLeaderId();
+    const searchTerm = (this.recruiterSearchTerm() || '').toLowerCase().trim();
+
+    // Filter by Team Leader if selected
+    if (selectedTlId) {
+      console.log(`🔍 Filtering recruiters for TL ID: ${selectedTlId}`);
+      const token = localStorage.getItem('access_token') || localStorage.getItem('teamleader_token') || '';
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
+      const apiUrl = `${this.apiBase}/teamleaders/${selectedTlId}/recruiters`;
+      console.log(`🌐 Calling API: ${apiUrl}`);
+      
+      this.http.get<any[]>(apiUrl, { headers }).subscribe({
+        next: (data) => {
+          console.log(`✅ Fetched ${data?.length || 0} recruiters for TL ${selectedTlId}:`, data);
+          let recruiters = data || [];
+          // Apply search filter
+          if (searchTerm) {
+            recruiters = recruiters.filter(r => {
+              const name = `${r.first_name || ''} ${r.last_name || ''}`.trim().toLowerCase() || r.email?.toLowerCase() || '';
+              return name.includes(searchTerm) || r.email?.toLowerCase().includes(searchTerm);
+            });
+            console.log(`🔍 After search filter (${searchTerm}): ${recruiters.length} recruiters`);
+          }
+          this.filteredRecruiters.set(recruiters);
+        },
+        error: (error) => {
+          console.error('❌ Failed to fetch recruiters for TL:', error);
+          console.error('❌ Error details:', error.error || error.message);
+          this.filteredRecruiters.set([]);
+        }
+      });
+    } else {
+      // Show all recruiters, but apply search filter
+      console.log('🔍 Showing all recruiters (no TL filter)');
+      let recruiters = [...this.allRecruiters()];
+      if (searchTerm) {
+        recruiters = recruiters.filter(r => {
+          const name = `${r.first_name || ''} ${r.last_name || ''}`.trim().toLowerCase() || r.email?.toLowerCase() || '';
+          return name.includes(searchTerm) || r.email?.toLowerCase().includes(searchTerm);
+        });
+        console.log(`🔍 After search filter (${searchTerm}): ${recruiters.length} recruiters`);
+      }
+      this.filteredRecruiters.set(recruiters);
+    }
+  }
+
+  toggleRecruiter(recruiterId: number) {
+    const current = new Set(this.selectedRecruiterIds());
+    if (current.has(recruiterId)) {
+      current.delete(recruiterId);
+    } else {
+      current.add(recruiterId);
+    }
+    this.selectedRecruiterIds.set(current);
+  }
+
+  getRecruiterDisplayName(recruiter: any): string {
+    if (!recruiter) return 'Unknown';
+    const name = `${recruiter.first_name || ''} ${recruiter.last_name || ''}`.trim();
+    return name || recruiter.name || recruiter.email || 'Unknown';
+  }
+
+  getTeamLeaderDisplayName(tl: any): string {
+    if (!tl) return 'Unknown';
+    const name = `${tl.first_name || ''} ${tl.last_name || ''}`.trim();
+    return name || tl.email || 'Unknown';
+  }
+
+  getSelectedRecruiterIdsArray(): number[] {
+    return Array.from(this.selectedRecruiterIds());
+  }
+
+  assignSelectedRecruiters() {
+    if (!this.selectedDemandForAssignment || this.selectedRecruiterIds().size === 0) {
+      this.toastService.error('Please select at least one recruiter');
+      return;
+    }
+
+    const recruiterIds = Array.from(this.selectedRecruiterIds());
+    this.teamLeaderService.assignDemandToRecruiters(this.selectedDemandForAssignment, recruiterIds)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.toastService.success('Demand assigned successfully');
+          this.closeRecruiterPopup();
+          this.loadUnassignedDemands();
+          this.loadAssignedDemands();
+        },
+        error: (error) => {
+          console.error('Failed to assign demand:', error);
+          this.toastService.error(`Failed to assign demand: ${error.error?.detail || error.message}`);
+        }
+      });
   }
 
   // Status editing methods

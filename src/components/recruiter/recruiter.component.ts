@@ -252,6 +252,13 @@ import { environment } from '../../environments/environment';
       align-items: center;
     }
 
+    .header-role {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--kudzu-primary);
+      font-family: "Manrope", "Manrope Placeholder", sans-serif;
+    }
+
     .header-right {
       display: flex;
       align-items: center;

@@ -41,6 +41,28 @@ except ImportError:
 
 router = APIRouter(prefix="/api/demand", tags=["demand"])
 
+
+def _get_team_leader_id(cur) -> Optional[int]:
+    """Fetch the Team Leader's user ID from tbl_users table based on role."""
+    try:
+        # Get the first active team leader (role = 'team_leader' or 'tl')
+        cur.execute("""
+            SELECT id FROM tbl_users 
+            WHERE role IN ('team_leader', 'tl') 
+            AND is_active = TRUE 
+            AND approval_status = TRUE
+            ORDER BY id ASC 
+            LIMIT 1
+        """)
+        result = cur.fetchone()
+        if result:
+            return result[0]
+        return None
+    except Exception as e:
+        print(f"Error fetching team leader ID: {e}")
+        return None
+
+
 # Pydantic Models
 class DemandCreateRequest(BaseModel):
     client_id: int
@@ -470,19 +492,22 @@ async def create_demand(request: DemandCreateRequest, current_user: Dict[str, An
                 if not cur.fetchone():
                     raise HTTPException(status_code=404, detail="SPOC not found or doesn't belong to client")
                 
+                # Fetch Team Leader ID
+                tl_id = _get_team_leader_id(cur)
+                
                 # Create demand (without created_by for now due to FK constraint issues)
                 cur.execute("""
                     INSERT INTO tbl_demand_sheet (
                         client_id, spoc_id, job_title, skill, job_description, job_description_url,
                         no_of_positions, priority, experience_level, location, salary_range,
-                        start_date, end_date, requirements, remarks
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        start_date, end_date, requirements, remarks, tl_id
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
                     request.client_id, request.spoc_id, request.job_title, request.skill,
                     request.job_description, request.job_description_url, request.no_of_positions,
                     request.priority, request.experience_level, request.location, request.salary_range,
-                    request.start_date, request.end_date, request.requirements, request.remarks
+                    request.start_date, request.end_date, request.requirements, request.remarks, tl_id
                 ))
                 
                 demand_id = cur.fetchone()[0]
@@ -1006,7 +1031,7 @@ async def get_all_recruiters(
                 cur.execute("""
                     SELECT id, email, first_name, last_name, role
                     FROM tbl_users 
-                    WHERE role = 'recruiter' AND (approval_status = TRUE OR is_approved = TRUE)
+                    WHERE role = 'recruiter' AND approval_status = TRUE
                     ORDER BY first_name, last_name
                 """)
                 
@@ -1039,7 +1064,7 @@ async def get_recruiters_for_tl(
                 cur.execute("""
                     SELECT id, email, first_name, last_name, role
                     FROM tbl_users 
-                    WHERE reporting_to = %s AND role = 'recruiter' AND (approval_status = TRUE OR is_approved = TRUE)
+                    WHERE reporting_to = %s AND role = 'recruiter' AND approval_status = TRUE
                     ORDER BY first_name, last_name
                 """, (tl_id,))
                 

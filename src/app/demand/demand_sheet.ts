@@ -787,15 +787,27 @@ export class DemandSheetComponent implements OnInit {
     }
     // Filter recruiters based on selected Team Leader
     console.log('🔍 Fetching recruiters for TL:', tlId);
-    this.http.get<any[]>(`${this.apiBase}/teamleaders/${tlId}/recruiters`).subscribe({
+    const token = localStorage.getItem('access_token') || '';
+    const headers: { [key: string]: string } = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const apiUrl = `${this.apiBase}/teamleaders/${tlId}/recruiters`;
+    console.log('🌐 Calling API:', apiUrl);
+    
+    this.http.get<any[]>(apiUrl, { headers }).subscribe({
       next: (rows) => {
         console.log('✅ Recruiters fetched for TL:', rows);
         // Update the recruiter list to show only those under this TL
         this.recruiters = rows || [];
         this.filteredRecruiters = [...this.recruiters];
+        console.log('✅ Updated recruiters list:', this.recruiters);
+        console.log('✅ Updated filtered recruiters:', this.filteredRecruiters);
       },
       error: (err) => {
         console.error('❌ Error fetching recruiters for TL:', err);
+        console.error('❌ Error details:', err.error || err.message);
         this.recruiters = [];
         this.filteredRecruiters = [];
       },

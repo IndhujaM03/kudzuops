@@ -11,8 +11,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, Depends
 from dotenv import load_dotenv
+
+try:
+    from .login import get_current_user
+except ImportError:
+    async def get_current_user():
+        return {"uid": 1, "role": "team_leader"}
 
 # Load .env file
 backend_env = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -254,18 +260,23 @@ def _coerce_documents(raw: Any) -> Optional[Dict[str, Any]]:
 
 
 @router.get("/onboarding")
-def get_candidate_onboarding(
+async def get_candidate_onboarding(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     status: Optional[str] = Query(None, description="Filter by status (e.g., 'completed')"),
     pending_only: bool = Query(False, description="Filter for pending onboarding (generated_link is empty)"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 # Build WHERE clause based on filters
-                where_conditions = []
-                params = []
+                where_conditions = ["d.tl_id = %s"]
+                params = [team_leader_id]
                 
                 if pending_only:
                     where_conditions.append("(o.generated_link IS NULL OR o.generated_link = '')")
@@ -274,12 +285,10 @@ def get_candidate_onboarding(
                     where_conditions.append("LOWER(o.status) = LOWER(%s)")
                     params.append(status)
                 
-                where_clause = ""
-                if where_conditions:
-                    where_clause = "WHERE " + " AND ".join(where_conditions)
+                where_clause = "WHERE " + " AND ".join(where_conditions)
                 
                 # Count query
-                count_query = f"SELECT COUNT(*) FROM tbl_candidate_onboarding o {where_clause}"
+                count_query = f"SELECT COUNT(*) FROM tbl_candidate_onboarding o LEFT JOIN tbl_demand_sheet d ON o.demand_id = d.id {where_clause}"
                 cur.execute(count_query, params)
                 total = int(cur.fetchone()[0]) if cur.rowcount != 0 else 0
 
@@ -297,6 +306,7 @@ def get_candidate_onboarding(
                             CAST(u.id AS TEXT)
                         ) AS recruiter_name
                     FROM tbl_candidate_onboarding o
+                    LEFT JOIN tbl_demand_sheet d ON o.demand_id = d.id
                     LEFT JOIN tbl_clients c ON c.id = o.client_id
                     LEFT JOIN tbl_users u ON u.id = o.recruiter_id
                     {where_clause}

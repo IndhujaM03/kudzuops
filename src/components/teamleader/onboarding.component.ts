@@ -70,12 +70,10 @@ interface CandidateOnboarding {
                 <td>{{ record.demand_id }}</td>
                 <td>{{ record.skill || '—' }}</td>
                 <td>
-                  <ng-container *ngIf="getInterviewRounds(record.interview_schedules) as rounds">
-                    <span *ngIf="rounds.length > 0; else noRounds">{{ rounds.join(', ') }}</span>
-                  </ng-container>
-                  <ng-template #noRounds>
-                    <span>N/A</span>
-                  </ng-template>
+                  <div class="rounds-container">
+                    <span *ngFor="let round of getInterviewRounds(record.interview_schedules)" class="round-badge">{{ round }}</span>
+                    <span *ngIf="getInterviewRounds(record.interview_schedules).length === 0" class="text-gray-400">N/A</span>
+                  </div>
                 </td>
                 <td>
                   <button *ngIf="record.cv_path" 
@@ -206,24 +204,45 @@ interface CandidateOnboarding {
       background: white;
     }
 
+    .glassy-table tbody td .rounds-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
     .glassy-table tbody tr:last-child td {
       border-bottom: none;
     }
 
-    .rounds-info {
+    .rounds-container {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+      align-items: center;
     }
 
     .round-badge {
-      display: inline-block;
-      padding: 4px 10px;
-      background: #dbeafe;
-      color: #1e40af;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-width: 32px !important;
+      width: 32px !important;
+      height: 32px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: #e0f2fe !important;
+      color: #0369a1 !important;
+      border-radius: 50% !important;
+      font-size: 12px !important;
+      font-weight: 600 !important;
+      white-space: nowrap !important;
+      line-height: 1 !important;
+      border: 1px solid #bae6fd !important;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+      flex-shrink: 0 !important;
+      visibility: visible !important;
+      opacity: 1 !important;
     }
 
     .cv-icon-btn {

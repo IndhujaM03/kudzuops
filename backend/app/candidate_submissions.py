@@ -3,7 +3,13 @@ import json
 from typing import Any, Dict, List, Optional
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+
+try:
+    from .login import get_current_user
+except ImportError:
+    async def get_current_user():
+        return {"uid": 1, "role": "team_leader"}
 
 # Import helper function from recruiter_activity
 from .recruiter_activity import _check_and_close_activity_on_submission
@@ -347,16 +353,21 @@ def admin_demand_submitted(demand_id: int) -> Dict[str, Any]:
 
 
 @router.get("/candidate-onboarding/all")
-def list_candidate_onboarding(
+async def list_candidate_onboarding(
     page: int = Query(1, ge=1),
     size: int = Query(100, ge=1, le=500),
     search: Optional[str] = Query(None, description="Candidate name/email/skills search"),
     status: Optional[str] = Query(None, description="Filter by status"),
     demand_id: Optional[int] = Query(None, description="Filter by demand id"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Lightweight onboarding list for Team Leader UI."""
+    """Lightweight onboarding list for Team Leader UI, filtered by logged-in TL's tl_id."""
     _ensure_tables()
     try:
+        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not team_leader_id:
+            raise HTTPException(status_code=401, detail="User ID not found in token")
+        
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 # Ensure demand_id column exists
@@ -364,8 +375,8 @@ def list_candidate_onboarding(
                     "ALTER TABLE tbl_candidate_onboarding ADD COLUMN IF NOT EXISTS demand_id BIGINT;"
                 )
                 
-                where_parts: List[str] = []
-                params: List[Any] = []
+                where_parts: List[str] = ["d.tl_id = %s"]
+                params: List[Any] = [team_leader_id]
 
                 if search:
                     like = f"%{search}%"
@@ -383,7 +394,7 @@ def list_candidate_onboarding(
                     where_parts.append("o.demand_id = %s")
                     params.append(demand_id)
 
-                where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+                where_clause = f"WHERE {' AND '.join(where_parts)}"
                 
                 # Build COUNT query with same joins as main query
                 count_query = f"""
