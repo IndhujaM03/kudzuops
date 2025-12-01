@@ -2247,23 +2247,6 @@ async def get_demand_by_recruiters(
         
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
-                # Get demand_ids and recruiter_ids based on tl_id (not reporting_to)
-                demand_ids, recruiter_ids = _get_tl_demand_and_recruiter_ids(cur, team_leader_id)
-                
-                if not demand_ids:
-                    return {"distribution": []}
-                
-                # Get recruiter names for display
-                recruiter_data = {}
-                if recruiter_ids:
-                    cur.execute("""
-                        SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
-                        FROM tbl_users 
-                        WHERE id = ANY(%s)
-                    """, (recruiter_ids,))
-                    recruiter_rows = cur.fetchall()
-                    recruiter_data = {row[0]: row[1] for row in recruiter_rows}
-                
                 # Build date filter for demand_date
                 date_filter = ""
                 date_params = []
@@ -2277,24 +2260,73 @@ async def get_demand_by_recruiters(
                     date_filter = "AND ds.demand_date <= %s"
                     date_params = [end_date]
                 
-                # Count open demands per recruiter - filter by tl_id and assigned recruiters
+                # Count demands per recruiter - get recruiters directly from assigned_to field
+                # Include all statuses except 'rejected' (include: open, in_progress, assigned, processing, closed, on_hold)
                 query = f"""
                     SELECT 
                         (assignment->>'recruiter_id')::int as recruiter_id,
-                        COUNT(*) as demand_count
-                    FROM tbl_demand_sheet ds,
-                    jsonb_array_elements(ds.assigned_to) AS assignment
-                    WHERE ds.status = 'open'
-                    AND ds.tl_id = %s
+                        COUNT(DISTINCT ds.id) as demand_count
+                    FROM tbl_demand_sheet ds
+                    JOIN jsonb_array_elements(ds.assigned_to) AS assignment ON true
+                    WHERE ds.tl_id = %s
                     AND ds.assigned_to IS NOT NULL
-                    AND (assignment->>'recruiter_id')::int = ANY(%s)
+                    AND ds.assigned_to != '[]'::jsonb
+                    AND ds.status != 'rejected'
+                    AND (assignment->>'recruiter_id') IS NOT NULL
+                    AND (assignment->>'recruiter_id')::text != ''
                     {date_filter}
                     GROUP BY (assignment->>'recruiter_id')::int
                 """
-                params = [team_leader_id, recruiter_ids] + date_params
-                cur.execute(query, params)
+                params = [team_leader_id] + date_params
                 
+                # Debug: Check if there are any demands with assigned_to for this TL
+                debug_query = """
+                    SELECT COUNT(*) as total_demands,
+                           COUNT(CASE WHEN assigned_to IS NOT NULL AND assigned_to != '[]'::jsonb THEN 1 END) as demands_with_assignments
+                    FROM tbl_demand_sheet
+                    WHERE tl_id = %s
+                """
+                cur.execute(debug_query, (team_leader_id,))
+                debug_row = cur.fetchone()
+                print(f"DEBUG demand-by-recruiters: TL ID={team_leader_id}, Total demands={debug_row[0]}, With assignments={debug_row[1]}")
+                
+                # Debug: Check sample assigned_to data
+                sample_query = """
+                    SELECT id, status, assigned_to, demand_date
+                    FROM tbl_demand_sheet
+                    WHERE tl_id = %s
+                    AND assigned_to IS NOT NULL
+                    AND assigned_to != '[]'::jsonb
+                    LIMIT 3
+                """
+                cur.execute(sample_query, (team_leader_id,))
+                sample_rows = cur.fetchall()
+                print(f"DEBUG demand-by-recruiters: Sample demands with assignments: {sample_rows}")
+                
+                cur.execute(query, params)
                 rows = cur.fetchall()
+                
+                print(f"DEBUG demand-by-recruiters: Query returned {len(rows)} rows")
+                if rows:
+                    print(f"DEBUG demand-by-recruiters: Sample rows: {rows[:3]}")
+                
+                if not rows:
+                    return {"distribution": []}
+                
+                # Get all unique recruiter IDs from the results
+                recruiter_ids_from_results = [row[0] for row in rows if row[0] is not None]
+                
+                # Get recruiter names for display
+                recruiter_data = {}
+                if recruiter_ids_from_results:
+                    cur.execute("""
+                        SELECT id, COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), first_name, last_name, email) as name
+                        FROM tbl_users 
+                        WHERE id = ANY(%s)
+                    """, (recruiter_ids_from_results,))
+                    recruiter_rows = cur.fetchall()
+                    recruiter_data = {row[0]: row[1] for row in recruiter_rows}
+                
                 total = sum(row[1] for row in rows) if rows else 0
                 
                 distribution = [
@@ -2304,7 +2336,7 @@ async def get_demand_by_recruiters(
                         "count": row[1],
                         "percentage": round((row[1] / total * 100) if total > 0 else 0, 1)
                     }
-                    for row in rows
+                    for row in rows if row[0] is not None
                 ]
                 
                 return {"distribution": distribution}

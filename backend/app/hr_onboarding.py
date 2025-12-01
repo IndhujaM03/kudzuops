@@ -263,32 +263,62 @@ def _coerce_documents(raw: Any) -> Optional[Dict[str, Any]]:
 async def get_candidate_onboarding(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    status: Optional[str] = Query(None, description="Filter by status (e.g., 'completed')"),
-    pending_only: bool = Query(False, description="Filter for pending onboarding (generated_link is empty)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (e.g., 'completed')"
+    ),
+    pending_only: bool = Query(
+        False, description="Filter for pending onboarding (generated_link is empty)"
+    ),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    """
+    List onboarding records.
+
+    Behaviour by role:
+    - HR / Super Admin: see all onboarding records (no tl_id filter).
+    - Team Leader: only records for demands where they are the TL (d.tl_id = current user id).
+    - Other roles: currently behave like HR (no tl_id filter).
+    """
     try:
-        team_leader_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
-        if not team_leader_id:
+        user_id = (
+            current_user.get("uid")
+            or current_user.get("user_id")
+            or current_user.get("id")
+        )
+        if not user_id:
             raise HTTPException(status_code=401, detail="User ID not found in token")
-        
+
+        role = (current_user.get("role") or "").lower()
+
         with psycopg.connect(DATABASE_DSN) as conn:
             with conn.cursor() as cur:
                 # Build WHERE clause based on filters
-                where_conditions = ["d.tl_id = %s"]
-                params = [team_leader_id]
-                
+                where_conditions = ["TRUE"]
+                params: List[Any] = []
+
+                # Restrict by TL only for team_leader role
+                if role == "team_leader":
+                    where_conditions.append("d.tl_id = %s")
+                    params.append(user_id)
+
                 if pending_only:
-                    where_conditions.append("(o.generated_link IS NULL OR o.generated_link = '')")
-                
+                    where_conditions.append(
+                        "(o.generated_link IS NULL OR o.generated_link = '')"
+                    )
+
                 if status:
                     where_conditions.append("LOWER(o.status) = LOWER(%s)")
                     params.append(status)
-                
+
                 where_clause = "WHERE " + " AND ".join(where_conditions)
-                
+
                 # Count query
-                count_query = f"SELECT COUNT(*) FROM tbl_candidate_onboarding o LEFT JOIN tbl_demand_sheet d ON o.demand_id = d.id {where_clause}"
+                count_query = (
+                    "SELECT COUNT(*) "
+                    "FROM tbl_candidate_onboarding o "
+                    "LEFT JOIN tbl_demand_sheet d ON o.demand_id = d.id "
+                    f"{where_clause}"
+                )
                 cur.execute(count_query, params)
                 total = int(cur.fetchone()[0]) if cur.rowcount != 0 else 0
 
