@@ -289,9 +289,9 @@ ALTER TABLE tbl_users ADD COLUMN IF NOT EXISTS reporting_to BIGINT REFERENCES tb
 -- INDEXES FOR PERFORMANCE
 -- ==============================================
 
--- Users indexes
-CREATE INDEX IF NOT EXISTS idx_users_user_type ON tbl_users(user_type);
-CREATE INDEX IF NOT EXISTS idx_users_is_active ON tbl_users(is_active);
+-- Users indexes (on underlying users table, not the view)
+CREATE INDEX IF NOT EXISTS idx_users_user_type ON users(user_type);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
 -- Client SPOCs indexes
 CREATE INDEX IF NOT EXISTS idx_client_spocs_client ON tbl_client_spocs(client_id);
@@ -300,7 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_client_spocs_client ON tbl_client_spocs(client_id
 CREATE INDEX IF NOT EXISTS idx_demand_sheet_client ON tbl_demand_sheet(client_id);
 CREATE INDEX IF NOT EXISTS idx_tbl_demand_sheet_required_cv_count ON tbl_demand_sheet(required_cv_count);
 CREATE INDEX IF NOT EXISTS idx_tbl_demand_sheet_status_required_cv ON tbl_demand_sheet(status, required_cv_count);
-CREATE INDEX IF NOT EXISTS idx_demand_sheet_assigned_to ON tbl_demand_sheet USING GIN (assigned_to);
+CREATE INDEX IF NOT EXISTS idx_demand_sheet_assigned_to ON tbl_demand_sheet (assigned_to);
 
 -- Recruiter Activity indexes
 CREATE INDEX IF NOT EXISTS idx_recruiter_activity_recruiter_demand ON tbl_recruiter_activity(recruiter_id, demand_id);

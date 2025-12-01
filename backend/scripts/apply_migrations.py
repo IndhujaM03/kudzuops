@@ -4,6 +4,12 @@ import glob
 import psycopg
 from dotenv import load_dotenv, find_dotenv
 
+# Fix Unicode encoding for Windows console
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 
 def get_dsn() -> str:
     # Load environment variables from .env (backend or project root)

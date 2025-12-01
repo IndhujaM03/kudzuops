@@ -45,11 +45,10 @@ router = APIRouter(prefix="/api/demand", tags=["demand"])
 def _get_team_leader_id(cur) -> Optional[int]:
     """Fetch the Team Leader's user ID from tbl_users table based on role."""
     try:
-        # Get the first active team leader (role = 'team_leader' or 'tl')
+        # Get the first approved team leader (role = 'team_leader' or 'tl')
         cur.execute("""
             SELECT id FROM tbl_users 
             WHERE role IN ('team_leader', 'tl') 
-            AND is_active = TRUE 
             AND approval_status = TRUE
             ORDER BY id ASC 
             LIMIT 1

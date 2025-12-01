@@ -83,10 +83,15 @@ export class ClusterManagerLayoutComponent implements OnInit {
   private router = inject(Router);
   private http = inject(HttpClient);
   private auth = inject(AuthService);
-  private apiBase = environment.apiBase || 'http://localhost:8000';
+  private apiBase = environment.apiBase;
   currentUser: any = { first_name: '', last_name: '' };
 
   ngOnInit(): void {
+    if (!this.apiBase) {
+      console.error('API base URL is not configured in environment.apiBase');
+      throw new Error('API base URL is not configured');
+    }
+
     this.loadUserInfo();
   }
 

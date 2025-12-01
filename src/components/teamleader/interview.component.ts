@@ -54,7 +54,7 @@ export class InterviewComponent implements OnInit {
   private http = inject(HttpClient);
   private toastService = inject(ToastService);
 
-  apiBase = environment.apiBase || '';
+  apiBase = environment.apiBase;
   loading = signal(false);
   errorMsg = signal<string | null>(null);
 
@@ -112,6 +112,12 @@ export class InterviewComponent implements OnInit {
   private snackbarTimer: any = null;
 
   ngOnInit(): void {
+    if (!this.apiBase) {
+      console.error('API base URL is not configured in environment.apiBase');
+      this.errorMsg.set('API base URL is not configured. Please contact the administrator.');
+      return;
+    }
+
     this.loadInterviewSchedules();
   }
 

@@ -9,10 +9,10 @@ BEGIN
         WHERE table_name = 'tbl_users' AND column_name = 'role'
     ) THEN
         -- If role is not already character varying, coerce it via text
-        EXECUTE $$
+        EXECUTE $sql$
             ALTER TABLE tbl_users
             ALTER COLUMN role TYPE character varying(50) USING role::text
-        $$;
+        $sql$;
     END IF;
 END
 $$;

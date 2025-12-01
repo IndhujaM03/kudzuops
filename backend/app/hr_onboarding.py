@@ -31,14 +31,25 @@ try:
 except Exception:
     DATABASE_DSN = os.getenv("DATABASE_URL", "")
 
-# Fallback to default if still empty
-if not DATABASE_DSN:
-    DATABASE_DSN = "postgresql://kudzuops:kudzu%40%402025@127.0.0.1:5432/kudzuops"
-FRONTEND_BASE_URL = (
-    os.getenv("ONBOARDING_FORM_BASE_URL")
-    or os.getenv("FRONTEND_BASE_URL")
-    or "http://localhost:4200"
-)
+
+def _get_frontend_base_url() -> str:
+    """
+    Resolve the base URL for the public onboarding form.
+
+    Only environment variables are used. If neither
+    ONBOARDING_FORM_BASE_URL nor FRONTEND_BASE_URL is set,
+    an HTTP 500 error is raised instead of defaulting to localhost.
+    """
+    base = os.getenv("ONBOARDING_FORM_BASE_URL") or os.getenv("FRONTEND_BASE_URL")
+    if not base:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Onboarding frontend base URL is not configured. "
+                "Please set ONBOARDING_FORM_BASE_URL or FRONTEND_BASE_URL on the server."
+            ),
+        )
+    return base.rstrip("/")
 ONBOARDING_STATIC_PREFIX = "/onboarding-files"
 
 APP_DIR = Path(__file__).resolve().parent
@@ -369,7 +380,7 @@ async def get_candidate_onboarding(
 @router.post("/onboarding/{candidate_id}/generate-link")
 def generate_onboarding_link(candidate_id: int) -> Dict[str, Any]:
     token = uuid.uuid4().hex
-    base_url = FRONTEND_BASE_URL.rstrip("/")
+    base_url = _get_frontend_base_url()
     generated_link = f"{base_url}/onboarding-form/{candidate_id}/{token}"
 
     try:

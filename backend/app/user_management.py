@@ -26,6 +26,60 @@ def get_db_connection():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Database connection failed: {str(e)}')
 
+# Request Models
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class UpdateProfileRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+
+# Define /users/me BEFORE /users to ensure proper route matching
+@router.get('/users/me')
+async def get_current_user_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get current logged-in user's profile"""
+    conn = None
+    try:
+        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
+        if not user_id:
+            raise HTTPException(status_code=401, detail='User ID not found in token')
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            'SELECT id, email, first_name, last_name, role FROM tbl_users WHERE id = %s',
+            (user_id,)
+        )
+        result = cursor.fetchone()
+        
+        cursor.close()
+        conn.close()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail='User not found')
+        
+        return {
+            'id': result[0],
+            'email': result[1],
+            'first_name': result[2] or '',
+            'last_name': result[3] or '',
+            'role': result[4]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if conn:
+            try:
+                cursor.close()
+                conn.close()
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f'Failed to fetch user profile: {str(e)}')
+
 @router.get('/users')
 async def get_users(role: Optional[str] = None):
     """Get all users or users by role"""
@@ -88,59 +142,6 @@ async def get_cluster_managers():
 async def get_managers():
     """Get all managers"""
     return await get_users(role='manager')
-
-# Request Models
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-class UpdateProfileRequest(BaseModel):
-    first_name: str
-    last_name: str
-    email: EmailStr
-
-@router.get('/users/me')
-async def get_current_user_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Get current logged-in user's profile"""
-    conn = None
-    try:
-        user_id = current_user.get('uid') or current_user.get('user_id') or current_user.get('id')
-        if not user_id:
-            raise HTTPException(status_code=401, detail='User ID not found in token')
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            'SELECT id, email, first_name, last_name, role FROM tbl_users WHERE id = %s',
-            (user_id,)
-        )
-        result = cursor.fetchone()
-        
-        cursor.close()
-        conn.close()
-        
-        if not result:
-            raise HTTPException(status_code=404, detail='User not found')
-        
-        return {
-            'id': result[0],
-            'email': result[1],
-            'first_name': result[2] or '',
-            'last_name': result[3] or '',
-            'role': result[4]
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        if conn:
-            try:
-                cursor.close()
-                conn.close()
-            except:
-                pass
-        raise HTTPException(status_code=500, detail=f'Failed to fetch user profile: {str(e)}')
 
 @router.put('/users/update-profile')
 async def update_user_profile(

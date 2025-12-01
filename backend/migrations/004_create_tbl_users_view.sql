@@ -1,7 +1,17 @@
 -- Create or replace a compatibility view so code can reference tbl_users
 -- while the canonical storage remains the users table
--- Drop view first if it exists to avoid conflicts
-DROP VIEW IF EXISTS tbl_users CASCADE;
+-- Drop view or table first if it exists to avoid conflicts
+DO $$
+BEGIN
+    -- Drop table if it exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tbl_users' AND table_type = 'BASE TABLE') THEN
+        DROP TABLE tbl_users CASCADE;
+    END IF;
+    -- Drop view if it exists
+    IF EXISTS (SELECT 1 FROM information_schema.views WHERE table_name = 'tbl_users') THEN
+        DROP VIEW tbl_users CASCADE;
+    END IF;
+END $$;
 CREATE VIEW tbl_users AS
 SELECT
     id,

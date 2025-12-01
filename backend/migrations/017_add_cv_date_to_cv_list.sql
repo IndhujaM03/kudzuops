@@ -44,7 +44,6 @@ END $$;
 
 -- Add comment to document the migration
 COMMENT ON COLUMN tbl_recruiter_activity.cv_list IS 
-'JSONB array of CV entries. Each entry should include cv_date field (YYYY-MM-DD format) for date filtering. ' ||
-'If cv_date is missing, queries will fall back to activity updated_at date.';
+'JSONB array of CV entries. Each entry should include cv_date field (YYYY-MM-DD format) for date filtering. If cv_date is missing, queries will fall back to activity updated_at date.';
 
 

@@ -639,7 +639,7 @@ export class OnboardingComponent implements OnInit {
   private http = inject(HttpClient);
   private sanitizer = inject(DomSanitizer);
 
-  apiBase = environment.apiBase || '';
+  apiBase = environment.apiBase;
   loading = signal(false);
   errorMsg = signal<string | null>(null);
   onboardingRecords = signal<CandidateOnboarding[]>([]);
@@ -655,6 +655,12 @@ export class OnboardingComponent implements OnInit {
   selectedCvUrl = signal<string | null>(null);
 
   ngOnInit(): void {
+    if (!this.apiBase) {
+      console.error('API base URL is not configured in environment.apiBase');
+      this.errorMsg.set('API base URL is not configured. Please contact the administrator.');
+      return;
+    }
+
     this.loadOnboardingRecords();
   }
 

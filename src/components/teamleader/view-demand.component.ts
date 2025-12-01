@@ -22,7 +22,7 @@ export class ViewDemandComponent implements OnInit {
   errorMsg = signal<string | null>(null);
   successMsg = signal<string | null>(null);
 
-  apiBase = environment.apiBase || '';
+  apiBase = environment.apiBase;
 
   // Tabs state
   activeTab: 'unassigned' | 'assigned' | 'cv_received' | 'submitted' = 'unassigned';
@@ -66,6 +66,12 @@ export class ViewDemandComponent implements OnInit {
   ]);
 
   ngOnInit(): void {
+    if (!this.apiBase) {
+      console.error('API base URL is not configured in environment.apiBase');
+      this.errorMsg.set('API base URL is not configured. Please contact the administrator.');
+      return;
+    }
+
     console.log('ViewDemandComponent initialized - Status edit feature enabled');
     this.loadUnassigned();
     this.loadAssigned();
